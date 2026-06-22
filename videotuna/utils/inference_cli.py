@@ -8,14 +8,13 @@ from typing import Any, Optional
 from loguru import logger
 from omegaconf import DictConfig, OmegaConf
 
-from videotuna.utils.memory_presets import apply_memory_preset
-
 from videotuna.settings import (
     ENV_ATTN_BACKEND,
     ENV_CPU_MODE,
     ENV_TORCH_COMPILE,
     get_settings,
 )
+from videotuna.utils.memory_presets import apply_memory_preset
 
 
 def apply_compile_env(compile_flag: bool) -> None:
@@ -37,7 +36,11 @@ def apply_cpu_smoke_env(args: Any) -> None:
 
 def validate_cpu_offload_flags(args: Any) -> None:
     """Reject GPU VRAM offload flags when running CPU-only inference."""
-    from videotuna.utils.device_utils import detect_compute_backend, gpu_is_available, resolve_cpu_mode
+    from videotuna.utils.device_utils import (
+        detect_compute_backend,
+        gpu_is_available,
+        resolve_cpu_mode,
+    )
 
     cpu_mode = resolve_cpu_mode(cli_smoke=getattr(args, "cpu_smoke", False))
     device = (getattr(args, "device", None) or "").strip().lower()

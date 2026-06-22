@@ -69,8 +69,8 @@ def test_checkpoint_save_with_mock_transformer(tmp_path):
     pytest.importorskip("peft")
     from typing import Any, cast
 
-    from peft import LoraConfig, get_peft_model
     from diffusers import FluxTransformer2DModel
+    from peft import LoraConfig, get_peft_model
 
     try:
         transformer = FluxTransformer2DModel(

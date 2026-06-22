@@ -12,7 +12,7 @@ import torch
 import torch.nn.functional as F
 from accelerate import Accelerator
 from accelerate.utils import set_seed
-from diffusers import FluxPipeline, FlowMatchEulerDiscreteScheduler
+from diffusers import FlowMatchEulerDiscreteScheduler, FluxPipeline
 from diffusers.optimization import get_scheduler
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
@@ -201,9 +201,7 @@ def train(config: FluxLoraTrainConfig, data_config) -> None:
                 ):
                     if accelerator.is_main_process:
                         unwrapped = accelerator.unwrap_model(transformer)
-                        ckpt = save_lora_checkpoint(
-                            unwrapped, output_dir, global_step
-                        )
+                        ckpt = save_lora_checkpoint(unwrapped, output_dir, global_step)
                         logger.info("Saved LoRA checkpoint to %s", ckpt)
 
                 if global_step >= max_train_steps:
@@ -224,7 +222,9 @@ def train(config: FluxLoraTrainConfig, data_config) -> None:
         logger.info("Training finished. Output: %s", output_dir)
 
 
-def run_training(config_path: str, data_config_path: str, stamp_output: bool = True) -> None:
+def run_training(
+    config_path: str, data_config_path: str, stamp_output: bool = True
+) -> None:
     train_cfg, data_cfg = load_train_config(config_path, data_config_path)
     if stamp_output:
         train_cfg.output_dir = stamp_output_dir(train_cfg.output_dir)

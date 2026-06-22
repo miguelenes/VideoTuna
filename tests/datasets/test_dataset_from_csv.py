@@ -32,7 +32,6 @@ def _has_toy_images():
 
 
 class TestDatasets(unittest.TestCase):
-
     def test_video_dataset_from_csv(self):
         transform_video = transforms.get_transforms_video()
         _use_dummy_video(transform_video)

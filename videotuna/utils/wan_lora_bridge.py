@@ -12,7 +12,6 @@ from loguru import logger
 from peft import LoraConfig, get_peft_model
 from peft.utils import set_peft_model_state_dict
 
-
 # Native Wan 2.1 PEFT targets (training config in wan_t2v_lora.yaml).
 WAN_NATIVE_LORA_TARGETS = ["q", "k", "v", "o", "ffn.0", "ffn.2"]
 

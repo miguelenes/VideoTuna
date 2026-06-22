@@ -104,9 +104,7 @@ def path_exists(cfg, path):
         return False
 
 
-def prepare_inference_args(
-    args: argparse.Namespace, config: DictConfig
-) -> DictConfig:
+def prepare_inference_args(args: argparse.Namespace, config: DictConfig) -> DictConfig:
     """
     Prepare the arguments by updating the config with the command line arguments.
 

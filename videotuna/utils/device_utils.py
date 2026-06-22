@@ -88,8 +88,7 @@ def detect_compute_backend() -> ComputeBackend:
         )
     if not torch.cuda.is_available():
         raise RuntimeError(
-            "VIDEOTUNA_COMPUTE_BACKEND=cuda but torch.cuda.is_available() "
-            "is False."
+            "VIDEOTUNA_COMPUTE_BACKEND=cuda but torch.cuda.is_available() " "is False."
         )
     return "cuda"
 
@@ -386,9 +385,7 @@ def log_startup_device_summary(
         index = device.index if device.index is not None else 0
         gpu_name = torch.cuda.get_device_name(index)
     requested = attn_backend_requested or attn_backend
-    resolved_note = (
-        f" (resolved {attn_backend})" if requested != attn_backend else ""
-    )
+    resolved_note = f" (resolved {attn_backend})" if requested != attn_backend else ""
     preset_note = f", preset={memory_preset}" if memory_preset else ""
     compile_note = ""
     if compile_enabled:
@@ -472,9 +469,7 @@ def _tiered_cpu_error_message(
             f"  - Full override (not recommended): {ENV_CPU_MODE}=force\n"
         )
     elif tier == "cpu_smoke" and cpu_mode == "off":
-        lines.append(
-            f"  - Enable CPU smoke: --cpu-smoke or {ENV_CPU_MODE}=smoke\n"
-        )
+        lines.append(f"  - Enable CPU smoke: --cpu-smoke or {ENV_CPU_MODE}=smoke\n")
     lines.append("See docs/install-cpu.md and docs/capability-matrix.md.")
     return "".join(lines)
 
@@ -563,9 +558,7 @@ def require_accelerator_for_flow(
         )
         return
 
-    raise RuntimeError(
-        _tiered_cpu_error_message(flow_target, resolved_tier, mode)
-    )
+    raise RuntimeError(_tiered_cpu_error_message(flow_target, resolved_tier, mode))
 
 
 def require_nvidia_cuda_for_flow(

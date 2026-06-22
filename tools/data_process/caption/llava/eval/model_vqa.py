@@ -123,7 +123,6 @@ def preprocess_qwen(
 
 
 def eval_model(args):
-
     # Model
     disable_torch_init()
     model_path = os.path.expanduser(args.model_path)
@@ -215,7 +214,6 @@ def eval_model(args):
         ans_file.flush()
 
         if len(line["conversations"]) > 2:
-
             for i in range(2, len(line["conversations"]), 2):
                 input_ids = torch.cat((input_ids, output_ids), dim=1)
 

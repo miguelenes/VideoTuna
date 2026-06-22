@@ -1,14 +1,13 @@
-
 import numpy as np
 import torch
 from tqdm import tqdm
 
-from videotuna.utils.sched_utils import extract_into_tensor, noise_like
 from videotuna.utils.diffusion_utils import (
     make_ddim_sampling_parameters,
     make_ddim_timesteps,
     rescale_noise_cfg,
 )
+from videotuna.utils.sched_utils import extract_into_tensor, noise_like
 
 
 class DDIMSampler(object):
@@ -122,7 +121,6 @@ class DDIMSampler(object):
         # this has to come in the same format as the conditioning, # e.g. as encoded tokens, ...
         **kwargs,
     ):
-
         # check condition bs
         if conditioning is not None:
             if isinstance(conditioning, dict):
@@ -434,7 +432,6 @@ class DDIMSampler(object):
         use_original_steps=False,
         callback=None,
     ):
-
         timesteps = (
             np.arange(self.ddpm_num_timesteps)
             if use_original_steps

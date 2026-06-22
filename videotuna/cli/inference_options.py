@@ -21,15 +21,15 @@ class StandardInferenceOptions:
     cpu_smoke: Annotated[bool | None, Parameter(name="cpu-smoke")] = None
     device: Annotated[str | None, Parameter(name="device", alias="--gpu-id")] = None
     min_vram_gb: Annotated[float | None, Parameter(name="min-vram-gb")] = None
-    memory_preset: Annotated[
-        MemoryPreset | None, Parameter(name="memory-preset")
-    ] = None
-    enable_vae_tiling: Annotated[
-        bool | None, Parameter(name="enable_vae_tiling")
-    ] = None
-    enable_vae_slicing: Annotated[
-        bool | None, Parameter(name="enable_vae_slicing")
-    ] = None
+    memory_preset: Annotated[MemoryPreset | None, Parameter(name="memory-preset")] = (
+        None
+    )
+    enable_vae_tiling: Annotated[bool | None, Parameter(name="enable_vae_tiling")] = (
+        None
+    )
+    enable_vae_slicing: Annotated[bool | None, Parameter(name="enable_vae_slicing")] = (
+        None
+    )
     enable_model_cpu_offload: Annotated[
         bool | None, Parameter(name="enable_model_cpu_offload")
     ] = None

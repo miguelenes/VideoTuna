@@ -128,8 +128,7 @@ def _run_backend(
         **{
             k: v
             for k, v in pipe_kwargs.items()
-            if k
-            not in ("prompt", "num_inference_steps", "generator", "output_type")
+            if k not in ("prompt", "num_inference_steps", "generator", "output_type")
         },
     )
     synchronize_accelerator()
@@ -288,9 +287,7 @@ def main(argv: List[str] | None = None) -> int:  # noqa: C901
                 if row.get("height"):
                     label = f"{label} ({row['height']}p)"
                 fps_str = f"{fps:.3f}" if fps is not None else "n/a"
-                print(
-                    f"| {label} | {row['seconds']:.3f} | {vram:.3f} | {fps_str} |"
-                )
+                print(f"| {label} | {row['seconds']:.3f} | {vram:.3f} | {fps_str} |")
 
     return 0
 

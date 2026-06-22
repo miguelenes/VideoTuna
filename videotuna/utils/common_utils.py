@@ -110,13 +110,10 @@ def instantiate_from_config(config, resolve=False) -> Any:
         raise KeyError("Expected key `target` to instantiate.")
     target = config["target"]
     is_videotuna_diffusers_flow = target.endswith("DiffusersVideoFlow")
-    if (
-        not is_videotuna_diffusers_flow
-        and (
-            "diffusers" in target
-            or target.startswith("transformers")
-            or config.get("use_from_pretrained", False)
-        )
+    if not is_videotuna_diffusers_flow and (
+        "diffusers" in target
+        or target.startswith("transformers")
+        or config.get("use_from_pretrained", False)
     ):
         params = get_params(config, resolve)
         if isinstance(params.get("pretrained_model_name_or_path"), str):
@@ -274,7 +271,9 @@ def monitor_resources(
                 sample["compute_backend"] = detect_compute_backend()
                 compile_on = get_settings().torch_compile
                 sample["torch_compile"] = compile_on
-                sample["compile_mode"] = get_torch_compile_mode() if compile_on else None
+                sample["compile_mode"] = (
+                    get_torch_compile_mode() if compile_on else None
+                )
                 sample["result"] = result
                 if dev_idx is not None and gpu_is_available():
                     sample["gpu_index"] = dev_idx

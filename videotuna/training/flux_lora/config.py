@@ -147,7 +147,9 @@ def load_train_config(
         logger.info("Ignoring unsupported SimpleTuner config keys: %s", sorted(ignored))
 
     data_cfg = _parse_local_backend(backends)
-    instance_data_dir = normalized.get("instance_data_dir") or data_cfg.instance_data_dir
+    instance_data_dir = (
+        normalized.get("instance_data_dir") or data_cfg.instance_data_dir
+    )
     resolution = int(normalized.get("resolution", data_cfg.resolution))
 
     train_cfg = FluxLoraTrainConfig(

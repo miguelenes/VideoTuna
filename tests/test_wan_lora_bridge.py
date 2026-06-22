@@ -29,9 +29,7 @@ def _production_native_keys(
     state: dict[str, torch.Tensor] = {}
     for p in ("q", "k", "v", "o"):
         out_dim = dim_in if p != "o" else dim_in
-        state[f"blocks.{block}.self_attn.{p}.lora_A.weight"] = torch.zeros(
-            rank, dim_in
-        )
+        state[f"blocks.{block}.self_attn.{p}.lora_A.weight"] = torch.zeros(rank, dim_in)
         state[f"blocks.{block}.self_attn.{p}.lora_B.weight"] = torch.zeros(
             out_dim, rank
         )
@@ -67,11 +65,7 @@ def test_load_native_wan_lora_state_dict_filters_non_lora(tmp_path):
 def test_is_native_wan_lora_ckpt(tmp_path):
     ckpt = tmp_path / "lora.ckpt"
     torch.save(
-        {
-            "state_dict": {
-                "blocks.0.self_attn.q.lora_A.weight": torch.zeros(16, 5120)
-            }
-        },
+        {"state_dict": {"blocks.0.self_attn.q.lora_A.weight": torch.zeros(16, 5120)}},
         ckpt,
     )
     assert is_native_wan_lora_ckpt(ckpt)

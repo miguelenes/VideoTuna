@@ -4,14 +4,14 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from videotuna.utils.diffusion_utils import (
+    make_beta_schedule,
+    rescale_zero_terminal_snr,
+)
 from videotuna.utils.sched_utils import (
     default,
     exists,
     noise_like,
-)
-from videotuna.utils.diffusion_utils import (
-    make_beta_schedule,
-    rescale_zero_terminal_snr,
 )
 
 

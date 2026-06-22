@@ -199,7 +199,6 @@ if __name__ == "__main__":
     eval_result_list_detail = dict()
 
     for dataset in preds_all_dict:
-
         preds = preds_all_dict[dataset]
         question_type = preds[0]["question_type"]
 

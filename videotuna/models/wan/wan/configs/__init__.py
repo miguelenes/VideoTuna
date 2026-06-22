@@ -2,14 +2,14 @@
 import copy
 import os
 
-os.environ['TOKENIZERS_PARALLELISM'] = 'false'
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
+from .wan_animate_14B import animate_14B
 from .wan_i2v_A14B import i2v_A14B
 from .wan_s2v_14B import s2v_14B
-from .wan_t2v_A14B import t2v_A14B
 from .wan_t2v_1_3B import t2v_1_3B
+from .wan_t2v_A14B import t2v_A14B
 from .wan_ti2v_5B import ti2v_5B
-from .wan_animate_14B import animate_14B
 
 # Legacy Wan2.1 task name aliases (VideoTuna configs / poetry scripts).
 t2v_14B = t2v_A14B
@@ -31,25 +31,25 @@ WAN_CONFIGS = {
 }
 
 SIZE_CONFIGS = {
-    '720*1280': (720, 1280),
-    '1280*720': (1280, 720),
-    '480*832': (480, 832),
-    '832*480': (832, 480),
-    '704*1280': (704, 1280),
-    '1280*704': (1280, 704),
-    '1024*704': (1024, 704),
-    '704*1024': (704, 1024),
+    "720*1280": (720, 1280),
+    "1280*720": (1280, 720),
+    "480*832": (480, 832),
+    "832*480": (832, 480),
+    "704*1280": (704, 1280),
+    "1280*704": (1280, 704),
+    "1024*704": (1024, 704),
+    "704*1024": (704, 1024),
 }
 
 MAX_AREA_CONFIGS = {
-    '720*1280': 720 * 1280,
-    '1280*720': 1280 * 720,
-    '480*832': 480 * 832,
-    '832*480': 832 * 480,
-    '704*1280': 704 * 1280,
-    '1280*704': 1280 * 704,
-    '1024*704': 1024 * 704,
-    '704*1024': 704 * 1024,
+    "720*1280": 720 * 1280,
+    "1280*720": 1280 * 720,
+    "480*832": 480 * 832,
+    "832*480": 832 * 480,
+    "704*1280": 704 * 1280,
+    "1280*704": 1280 * 704,
+    "1024*704": 1024 * 704,
+    "704*1024": 704 * 1024,
 }
 
 SUPPORTED_SIZES = {

@@ -92,7 +92,6 @@ def tensor_to_mp4(video, savepath, fps, rescale=True, nrow=None):
 
 
 def tensor2videogrids(video, root, filename, fps, rescale=True, clamp=True):
-
     assert video.dim() == 5  # b,c,t,h,w
     assert isinstance(video, torch.Tensor)
 

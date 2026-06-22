@@ -12,8 +12,8 @@ from diffusers.utils import export_to_video
 from loguru import logger
 from omegaconf import DictConfig
 
-from videotuna.settings import get_settings
 from videotuna.base.generation_base import GenerationBase
+from videotuna.settings import get_settings
 from videotuna.utils.common_utils import monitor_resources
 from videotuna.utils.device_utils import resolve_inference_device
 from videotuna.utils.diffusers_optimizations import (

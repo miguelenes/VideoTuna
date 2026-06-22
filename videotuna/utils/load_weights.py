@@ -18,7 +18,6 @@ from videotuna.utils.common_utils import instantiate_from_config
 
 @contextmanager
 def init_weights_on_device(device=torch.device("meta"), include_buffers: bool = False):
-
     old_register_parameter = torch.nn.Module.register_parameter
     if include_buffers:
         old_register_buffer = torch.nn.Module.register_buffer
@@ -155,9 +154,7 @@ def load_from_pretrainedSD_checkpoint(
         model_state_dict.update(state_dict)
         model.load_state_dict(model_state_dict)
 
-    mainlogger.info(
-        "---------------------------- Finish! ----------------------------"
-    )
+    mainlogger.info("---------------------------- Finish! ----------------------------")
     return model, empty_paras
 
 

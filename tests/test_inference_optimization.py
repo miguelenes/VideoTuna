@@ -8,15 +8,15 @@ from unittest import mock
 
 import pytest
 
+from videotuna.cli.inference_options import (
+    StandardInferenceOptions,
+    inference_options_to_namespace,
+)
 from videotuna.utils.common_utils import monitor_resources, save_metrics
 from videotuna.utils.fp8_utils import (
     fp8_map_path,
     precision_from_dtype_flag,
     validate_fp8_inference,
-)
-from videotuna.cli.inference_options import (
-    StandardInferenceOptions,
-    inference_options_to_namespace,
 )
 from videotuna.utils.inference_cli import (
     apply_compile_env,
@@ -300,9 +300,7 @@ def test_apply_diffusers_optimizations_compiles_when_no_offload():
         with mock.patch.object(
             diffusers_optimizations, "apply_diffusers_attention_backend"
         ):
-            with mock.patch.object(
-                diffusers_optimizations, "resolve_inference_device"
-            ):
+            with mock.patch.object(diffusers_optimizations, "resolve_inference_device"):
                 with mock.patch.object(pipe, "to"):
                     diffusers_optimizations.apply_diffusers_optimizations(pipe, args)
     compile_mock.assert_called_once_with(transformer)
@@ -334,7 +332,6 @@ def test_apply_diffusers_optimizations_skips_compile_with_offload():
         ):
             diffusers_optimizations.apply_diffusers_optimizations(pipe, args)
     compile_mock.assert_not_called()
-
 
 
 def test_require_accelerator_for_flow_raises_without_gpu():

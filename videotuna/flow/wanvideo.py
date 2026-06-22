@@ -10,11 +10,6 @@ from PIL import Image
 
 import videotuna.models.wan.wan as wan
 from videotuna.base.generation_base import GenerationBase
-from videotuna.utils.common_utils import monitor_resources
-from videotuna.utils.device_utils import (
-    gpu_is_available,
-    require_xfuser_sequence_parallel,
-)
 from videotuna.models.wan.wan.configs import (
     MAX_AREA_CONFIGS,
     SIZE_CONFIGS,
@@ -27,6 +22,11 @@ from videotuna.models.wan.wan.utils.prompt_extend import (
 )
 from videotuna.utils.args_utils import VideoMode
 from videotuna.utils.attention import maybe_compile_denoiser
+from videotuna.utils.common_utils import monitor_resources
+from videotuna.utils.device_utils import (
+    gpu_is_available,
+    require_xfuser_sequence_parallel,
+)
 from videotuna.utils.wan_training import (
     compute_wan_flow_matching_loss,
     init_wan_training_denoisers,

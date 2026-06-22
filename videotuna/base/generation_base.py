@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 from loguru import logger
 from omegaconf import DictConfig, OmegaConf
+from peft import get_peft_model
 from pytorch_lightning import Trainer
 from torch.optim.lr_scheduler import CosineAnnealingLR, LambdaLR
 
@@ -18,9 +19,10 @@ from videotuna.utils.common_utils import (
     print_green,
     print_yellow,
 )
-from videotuna.utils.device_utils import empty_accelerator_cache, resolve_inference_device
-from peft import get_peft_model
-
+from videotuna.utils.device_utils import (
+    empty_accelerator_cache,
+    resolve_inference_device,
+)
 from videotuna.utils.lora_utils import (
     collect_lora_parameter_names,
     resolve_lora_target_modules,
@@ -481,7 +483,9 @@ class GenerationBase(TrainBase, InferenceBase):
     ) -> None:
         assert ckpt_path is not None, "Please provide a valid checkpoint path."
         ckpt_str = str(ckpt_path)
-        denoiser_path = str(denoiser_ckpt_path) if denoiser_ckpt_path is not None else None
+        denoiser_path = (
+            str(denoiser_ckpt_path) if denoiser_ckpt_path is not None else None
+        )
         lora_path = str(lora_ckpt_path) if lora_ckpt_path is not None else None
 
         # can ovrride following methods

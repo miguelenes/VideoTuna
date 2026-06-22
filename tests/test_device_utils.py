@@ -40,9 +40,13 @@ def test_resolve_inference_device_cpu_when_no_gpu():
 
 def test_resolve_inference_device_cuda_when_gpu():
     with mock.patch.object(device_utils, "gpu_is_available", return_value=True):
-        with mock.patch.object(device_utils, "detect_compute_backend", return_value="cuda"):
+        with mock.patch.object(
+            device_utils, "detect_compute_backend", return_value="cuda"
+        ):
             with mock.patch.object(device_utils.torch.cuda, "set_device"):
-                with mock.patch.object(device_utils.torch.cuda, "device_count", return_value=2):
+                with mock.patch.object(
+                    device_utils.torch.cuda, "device_count", return_value=2
+                ):
                     dev = device_utils.resolve_inference_device()
     assert dev == torch.device("cuda", 0)
 
@@ -50,7 +54,9 @@ def test_resolve_inference_device_cuda_when_gpu():
 def test_resolve_inference_device_indexed():
     with mock.patch.object(device_utils, "gpu_is_available", return_value=True):
         with mock.patch.object(device_utils.torch.cuda, "set_device") as set_dev:
-            with mock.patch.object(device_utils.torch.cuda, "device_count", return_value=2):
+            with mock.patch.object(
+                device_utils.torch.cuda, "device_count", return_value=2
+            ):
                 dev = device_utils.resolve_inference_device("cuda:1")
     assert dev == torch.device("cuda", 1)
     set_dev.assert_called_with(1)
@@ -145,16 +151,22 @@ def test_detect_compute_backend_cuda():
 
 def test_detect_compute_backend_rocm():
     with mock.patch.object(device_utils.torch.cuda, "is_available", return_value=True):
-        with mock.patch.object(device_utils, "_torch_hip_version", return_value="6.2.4"):
+        with mock.patch.object(
+            device_utils, "_torch_hip_version", return_value="6.2.4"
+        ):
             assert device_utils.detect_compute_backend() == "rocm"
 
 
 def test_describe_compute_environment_rocm():
-    with mock.patch.object(device_utils, "_detect_compute_backend_raw", return_value="rocm"):
+    with mock.patch.object(
+        device_utils, "_detect_compute_backend_raw", return_value="rocm"
+    ):
         with mock.patch.object(
             device_utils.torch.cuda, "get_device_name", return_value="gfx1100"
         ):
-            with mock.patch.object(device_utils, "_torch_hip_version", return_value="6.2.4"):
+            with mock.patch.object(
+                device_utils, "_torch_hip_version", return_value="6.2.4"
+            ):
                 with mock.patch.object(device_utils.torch, "__version__", "2.6.0"):
                     desc = device_utils.describe_compute_environment()
     assert "ROCm available" in desc

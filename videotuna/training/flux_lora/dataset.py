@@ -23,17 +23,23 @@ class FluxLoraSample(TypedDict):
     caption: str
 
 
-def _load_caption(image_path: Path, caption_strategy: str, default_caption: str | None) -> str:
+def _load_caption(
+    image_path: Path, caption_strategy: str, default_caption: str | None
+) -> str:
     if caption_strategy == "filename":
         txt_path = image_path.with_suffix(".txt")
         if txt_path.is_file():
             return txt_path.read_text(encoding="utf-8").strip()
         if default_caption:
             return default_caption
-        raise ValueError(f"Missing caption file for {image_path} (caption_strategy=filename)")
+        raise ValueError(
+            f"Missing caption file for {image_path} (caption_strategy=filename)"
+        )
     if default_caption:
         return default_caption
-    raise ValueError(f"Unsupported caption_strategy={caption_strategy!r} without default caption")
+    raise ValueError(
+        f"Unsupported caption_strategy={caption_strategy!r} without default caption"
+    )
 
 
 def _center_square_crop(image: Image.Image) -> Image.Image:
@@ -48,7 +54,9 @@ class FluxLoraImageDataset(Dataset):
     def __init__(self, data_config: FluxLoraDataConfig):
         self.data_dir = Path(data_config.instance_data_dir)
         if not self.data_dir.is_dir():
-            raise FileNotFoundError(f"Training data directory not found: {self.data_dir}")
+            raise FileNotFoundError(
+                f"Training data directory not found: {self.data_dir}"
+            )
 
         self.caption_strategy = data_config.caption_strategy
         self.default_caption = data_config.default_caption
@@ -75,7 +83,9 @@ class FluxLoraImageDataset(Dataset):
                 transforms.Normalize([0.5], [0.5]),
             ]
         )
-        logger.info("Loaded %d training images from %s", len(self.samples), self.data_dir)
+        logger.info(
+            "Loaded %d training images from %s", len(self.samples), self.data_dir
+        )
 
     def __len__(self) -> int:
         return len(self.samples)

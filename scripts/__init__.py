@@ -367,18 +367,31 @@ def install_flash_attn_rocm():
     sys.exit(1)
 
 
+_FORMAT_TARGETS = ["."]
+_LINT_TARGETS = ["videotuna", "tests"]
+
+
 def code_format(check=False):
     """
     Run the code formatting
     """
-    commands = [["isort", "."], ["black", "."]]
+    cmds = (
+        [
+            ["ruff", "format", "--check", *_FORMAT_TARGETS],
+            ["ruff", "check", "--select", "I", *_FORMAT_TARGETS],
+        ]
+        if check
+        else [
+            ["ruff", "check", "--fix", *_LINT_TARGETS],
+            ["ruff", "check", "--select", "I", "--fix", *_FORMAT_TARGETS],
+            ["ruff", "format", *_FORMAT_TARGETS],
+        ]
+    )
     return_code = 0
 
-    for command in commands:
-        if check:
-            command.append("--check")
+    for command in cmds:
         process = subprocess.run(command, check=False)
-        if process.returncode > 0:
+        if process.returncode != 0:
             return_code = process.returncode
             break
 

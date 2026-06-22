@@ -4,9 +4,8 @@
 from __future__ import annotations
 
 import sys
-from pathlib import Path
-
 import tomllib
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PYPROJECT = ROOT / "pyproject.toml"
@@ -56,7 +55,9 @@ def main() -> int:
 
     cuda_has_torch = "triton" in cuda_extra or "xformers" in cuda_extra
     if not cuda_has_torch:
-        errors.append("cuda extra should include CUDA accelerator packages (e.g. xformers)")
+        errors.append(
+            "cuda extra should include CUDA accelerator packages (e.g. xformers)"
+        )
 
     if errors:
         for err in errors:

@@ -23,6 +23,7 @@ from videotuna.utils.device_utils import detect_compute_backend, gpu_is_availabl
 AttnBackend = Literal["flash", "sdpa", "eager"]
 AttnLayout = Literal["bsnd", "bhsd"]
 
+
 def _optional_attr(module_name: str, attr_name: str):
     try:
         module = importlib.import_module(module_name)
@@ -67,7 +68,9 @@ def get_attn_backend() -> AttnBackend:
     if requested in ("flash", "sdpa", "eager"):
         if requested == "flash":
             if detect_compute_backend() in ("rocm", "cpu"):
-                backend_label = "AMD ROCm" if detect_compute_backend() == "rocm" else "CPU"
+                backend_label = (
+                    "AMD ROCm" if detect_compute_backend() == "rocm" else "CPU"
+                )
                 raise RuntimeError(
                     f"VIDEOTUNA_ATTN_BACKEND=flash is not supported on {backend_label}. "
                     "Use VIDEOTUNA_ATTN_BACKEND=sdpa or eager. "

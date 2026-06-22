@@ -79,15 +79,16 @@ def test_provisioning_yaml_structure():
     data = yaml.safe_load(prov_path.read_text(encoding="utf-8"))
     assert data["version"] == 1
     assert "git_repos" in data
-    assert any("PrivTune" in r.get("dest", "") or "VideoTuna" in r.get("dest", "") for r in data["git_repos"])
+    assert any(
+        "PrivTune" in r.get("dest", "") or "VideoTuna" in r.get("dest", "")
+        for r in data["git_repos"]
+    )
     assert "post_commands" in data
     assert any("bootstrap.sh" in c for c in data["post_commands"])
 
 
 def test_flux_cloud_smoke_config_loads():
-    train_cfg, data_cfg = load_train_config(
-        FLUX_CLOUD_SMOKE, FLUX_DATA_CONFIG
-    )
+    train_cfg, data_cfg = load_train_config(FLUX_CLOUD_SMOKE, FLUX_DATA_CONFIG)
     assert train_cfg.max_train_steps == 50
     assert train_cfg.checkpointing_steps == 25
     assert train_cfg.output_dir == "results/train/flux-cloud-smoke"

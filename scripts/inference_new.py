@@ -10,8 +10,8 @@ from pytorch_lightning import seed_everything
 sys.path.insert(0, os.getcwd())
 sys.path.insert(1, f"{os.getcwd()}/src")
 
-from videotuna.settings import get_settings
 from videotuna.base.generation_base import GenerationBase
+from videotuna.settings import get_settings
 from videotuna.utils.args_utils import prepare_inference_args
 from videotuna.utils.attention import (
     get_attn_backend_requested,
@@ -40,6 +40,7 @@ from videotuna.utils.inference_cli import (
     apply_cpu_smoke_limits,
     resolve_offload_mode,
 )
+
 
 def run_inference(args, gpu_num=1, rank=0, **kwargs):
     """
@@ -75,7 +76,9 @@ def _run_inference_impl(args, gpu_num=1, rank=0, **kwargs):
     if cpu_mode == "smoke":
         apply_cpu_smoke_limits(inference_config, flow_config)
 
-    device_prefer = getattr(inference_config, "device", None) or getattr(args, "device", None)
+    device_prefer = getattr(inference_config, "device", None) or getattr(
+        args, "device", None
+    )
     if device_prefer is None and cpu_mode in ("smoke", "force"):
         device_prefer = "cpu"
     device = resolve_inference_device(device_prefer)
@@ -142,7 +145,9 @@ def _run_inference_impl(args, gpu_num=1, rank=0, **kwargs):
 
     # 2. flow inference
     num_frames = int(getattr(inference_config, "frames", 1) or 1)
-    device_index = device.index if device.type == "cuda" and device.index is not None else 0
+    device_index = (
+        device.index if device.type == "cuda" and device.index is not None else 0
+    )
     decorated_inference = monitor_resources(
         frames=num_frames,
         return_metrics=True,

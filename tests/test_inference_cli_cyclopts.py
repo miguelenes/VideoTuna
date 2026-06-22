@@ -26,10 +26,7 @@ def _help_text(command: list[str]) -> str:
         [
             sys.executable,
             "-c",
-            (
-                "from videotuna.cli.inference_app import app; "
-                f"app({command!r})"
-            ),
+            ("from videotuna.cli.inference_app import app; " f"app({command!r})"),
         ],
         capture_output=True,
         text=True,
@@ -75,11 +72,7 @@ def test_flag_parity_across_presets() -> None:
         )
     )
 
-    shared_keys = {
-        k
-        for k in t2i
-        if k not in {"config", "enable_model_cpu_offload"}
-    }
+    shared_keys = {k for k in t2i if k not in {"config", "enable_model_cpu_offload"}}
     for key in shared_keys:
         assert t2i[key] == wan[key], key
 

@@ -380,7 +380,6 @@ def sample_batch_i2v(
 
     batch_samples = []
     for _ in range(n_samples_prompt):
-
         if z0 is not None:
             cond_z0 = z0.clone()
             kwargs.update({"clean_cond": True})
@@ -513,7 +512,6 @@ class AutoWrappedModule(torch.nn.Module):
 
 
 class AutoWrappedLinear(torch.nn.Linear):
-
     def __init__(
         self,
         module: torch.nn.Linear,

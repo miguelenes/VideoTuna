@@ -122,8 +122,6 @@ scikit-learn = "^1.6.1"
 optional = true
 
 [tool.poetry.group.dev.dependencies]
-black = "^24.0.0"
-isort = "^5.12.0"
 mypy = "^1.11.2"
 pytest = "7.2.0"
 pre-commit = "^4.1.0"
@@ -147,8 +145,6 @@ training = [
     "scikit-learn>=1.6.1",
 ]
 dev = [
-    "black>=24.0.0",
-    "isort>=5.12.0",
     "mypy>=1.11.2",
     "pytest==7.2.0",
     "pre-commit>=4.1.0",
@@ -215,14 +211,6 @@ markers = [
     "cpu_smoke: slow CPU integration tests (optional nightly)",
 ]
 
-[tool.black]
-line-length = 88
-target-version = ['py311']
-include = '\.pyi?$'
-
-[tool.isort]
-profile = "black"
-
 [[tool.mypy.overrides]]
 module = []
 ignore_missing_imports = true
@@ -231,9 +219,14 @@ ignore_missing_imports = true
 mypy_path = "typings"
 
 [tool.ruff]
-select = ["E", "F", "C90"]
-ignore = []
-exclude = []
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "C90", "I"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["videotuna"]
 
 [tool.pyrefly]
 search-path = ["typings"]

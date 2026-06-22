@@ -37,7 +37,6 @@ def add_text_to_frame(frame, text="hi", position=(0, 0)):
 
 
 for video_index in range(num_of_videos):
-
     video_paths = []
     for method in methods:
         video_path = sorted(os.listdir(method))[video_index]

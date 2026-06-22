@@ -334,9 +334,7 @@ def safe_save_model_for_hf_trainer(trainer: transformers.Trainer, output_dir: st
                     os.path.join(mm_projector_folder, f"{current_folder}.bin"),
                 )
             else:
-                torch.save(
-                    weight_to_save, os.path.join(output_dir, "mm_projector.bin")
-                )
+                torch.save(weight_to_save, os.path.join(output_dir, "mm_projector.bin"))
         return
 
     if trainer.deepspeed:
@@ -1588,7 +1586,6 @@ class DPODataCollator(DPODataCollatorWithPadding):
         return batch
 
     def __call__(self, features: List[Dict[str, Any]]) -> Dict[str, Any]:
-
         tokenized_batch = []
         Xs, keys = [], []
         for feature in features:

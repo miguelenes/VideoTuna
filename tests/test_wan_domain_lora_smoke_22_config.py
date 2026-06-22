@@ -7,11 +7,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 WAN_DOMAIN_SMOKE_22 = (
-    REPO_ROOT
-    / "configs"
-    / "inference"
-    / "presets"
-    / "wan_domain_lora_smoke_22.yaml"
+    REPO_ROOT / "configs" / "inference" / "presets" / "wan_domain_lora_smoke_22.yaml"
 )
 WAN_DOMAIN_SMOKE_22_LOW_VRAM = (
     REPO_ROOT

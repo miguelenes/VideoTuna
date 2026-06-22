@@ -10,7 +10,10 @@ import sys
 import torch
 from torch import version as torch_version
 
-from videotuna.utils.device_utils import describe_compute_environment, detect_compute_backend
+from videotuna.utils.device_utils import (
+    describe_compute_environment,
+    detect_compute_backend,
+)
 
 
 def _check_import(name: str) -> tuple[bool, str]:
@@ -38,9 +41,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"HIP build: {getattr(torch_version, 'hip', None)}")
 
     if getattr(torch_version, "cuda", None) is not None:
-        errors.append(
-            "PyTorch was built with CUDA; run: poetry run install-cpu-torch"
-        )
+        errors.append("PyTorch was built with CUDA; run: poetry run install-cpu-torch")
     if getattr(torch_version, "hip", None) is not None:
         errors.append("PyTorch reports HIP (ROCm); expected CPU-only wheel.")
 

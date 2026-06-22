@@ -1,4 +1,4 @@
-""" huggingface model adapter
+"""huggingface model adapter
 
 Wraps HuggingFace transformers (https://github.com/huggingface/transformers) models for use as a text tower in CLIP model.
 """
@@ -81,7 +81,6 @@ class ClsPooler(nn.Module):
         self.use_pooler_output = use_pooler_output
 
     def forward(self, x: BaseModelOutput, attention_mask: TensorType):
-
         if (
             self.use_pooler_output
             and isinstance(
