@@ -4,7 +4,6 @@ from typing import Any, Dict, Optional, Union, cast
 
 import torch
 import torch.distributed as dist
-from loguru import logger
 from omegaconf import DictConfig
 from PIL import Image
 
@@ -26,6 +25,11 @@ from videotuna.utils.common_utils import monitor_resources
 from videotuna.utils.device_utils import (
     gpu_is_available,
     require_xfuser_sequence_parallel,
+)
+from videotuna.utils.logging_config import (
+    bound_logger,
+    phase_from_wan_task,
+    resolve_device_label,
 )
 from videotuna.utils.wan_training import (
     compute_wan_flow_matching_loss,
@@ -90,7 +94,9 @@ class WanVideoModelFlow(GenerationBase):
         *args,
         **kwargs,
     ):
-        logger.info("WanVideo flow: starting init")
+        phase = phase_from_wan_task(task)
+        self._log = bound_logger(phase=phase, flow="wanvideo")
+        self._log.info("WanVideo flow: starting init")
         assert ckpt_path is not None, "Please specify the checkpoint directory."
         assert task in WAN_CONFIGS, f"Unsupport task: {task}"
         assert task in EXAMPLE_PROMPT, f"Unsupport task: {task}"
@@ -104,7 +110,7 @@ class WanVideoModelFlow(GenerationBase):
             trainable_components=[],
         )
         self.apply_denoiser_gradient_checkpointing(gradient_checkpointing)
-        logger.info("WanVideo flow: class init finished")
+        self._log.info("WanVideo flow: class init finished")
         self.task = task
         self.ckpt_path = ckpt_path
         self.use_prompt_extend = use_prompt_extend
@@ -120,10 +126,15 @@ class WanVideoModelFlow(GenerationBase):
         world_size = int(os.getenv("WORLD_SIZE", 1))
         local_rank = int(os.getenv("LOCAL_RANK", 0))
         device = local_rank
+        if gpu_is_available():
+            device_label = resolve_device_label(torch.device(f"cuda:{local_rank}"))
+        else:
+            device_label = "cpu"
+        self._log = self._log.bind(device=device_label)
 
         if offload_model is None:
             offload_model = False if world_size > 1 else True
-            logger.info(f"offload_model is not specified, set to {offload_model}.")
+            self._log.info("offload_model is not specified, set to {}.", offload_model)
         if world_size > 1:
             if gpu_is_available():
                 torch.cuda.set_device(local_rank)
@@ -134,7 +145,7 @@ class WanVideoModelFlow(GenerationBase):
                     rank=rank,
                     world_size=world_size,
                 )
-            logger.info("WanVideo flow: Init Process Group")
+            self._log.info("WanVideo flow: Init Process Group")
         else:
             assert not (
                 t5_fsdp or dit_fsdp
@@ -162,7 +173,7 @@ class WanVideoModelFlow(GenerationBase):
                 ring_degree=ring_size,
                 ulysses_degree=ulysses_size,
             )
-            logger.info(
+            self._log.info(
                 "WanVideo flow: Init Ring/Ulysses Seqeunce Parallel Process Group"
             )
 
@@ -179,7 +190,7 @@ class WanVideoModelFlow(GenerationBase):
                 raise NotImplementedError(
                     f"Unsupport prompt_extend_method: {prompt_extend_method}"
                 )
-            logger.info("WanVideo flow: Set Prompt Extention")
+            self._log.info("WanVideo flow: Set Prompt Extention")
 
         cfg = WAN_CONFIGS[task]
         self.cfg = cfg
@@ -190,7 +201,7 @@ class WanVideoModelFlow(GenerationBase):
                 num_heads % ulysses_size == 0
             ), f"`num_heads={num_heads}` cannot be divided evenly by `ulysses_size={ulysses_size}`."
 
-        logger.info(f"WanVideo flow: model config: {cfg}")
+        self._log.info(f"WanVideo flow: model config: {cfg}")
 
         if dist.is_initialized():
             seed_list: list[int | None] = [seed] if rank == 0 else [None]
@@ -199,11 +210,11 @@ class WanVideoModelFlow(GenerationBase):
             assert broadcast_seed is not None
             seed = broadcast_seed
             self.seed = seed
-            logger.info("WanVideo flow: broadcast seed")
+            self._log.info("WanVideo flow: broadcast seed")
 
         use_sp = self.use_sp
         if "t2v" in task or "t2i" in task:
-            logger.info("Creating WanT2V pipeline.")
+            self._log.info("Creating WanT2V pipeline.")
             self.wan_t2v = wan.WanT2V(
                 config=cfg,
                 checkpoint_dir=ckpt_path,
@@ -215,7 +226,7 @@ class WanVideoModelFlow(GenerationBase):
                 t5_cpu=t5_cpu,
             )
         else:
-            logger.info("Creating WanI2V pipeline.")
+            self._log.info("Creating WanI2V pipeline.")
             self.wan_i2v = wan.WanI2V(
                 config=cfg,
                 checkpoint_dir=ckpt_path,
@@ -232,7 +243,7 @@ class WanVideoModelFlow(GenerationBase):
     def _validate_args(self, args):
         # Size reassign and check
         args.size = f"{args.width}*{args.height}"
-        logger.info(f"setting size = width*height == {args.size}")
+        self._log.info(f"setting size = width*height == {args.size}")
         assert (
             args.size in SUPPORTED_SIZES[self.task]
         ), f"Unsupport size {args.size} for task {self.task}, supported sizes are: {', '.join(SUPPORTED_SIZES[self.task])}"
@@ -254,24 +265,26 @@ class WanVideoModelFlow(GenerationBase):
         # load input
         prompt_list = self.load_inference_inputs(args.prompt_file, args.mode)
         if len(prompt_list) > 1:
-            logger.info("Processing prompts sequentially (batch size 1 per prompt).")
+            self._log.info("Processing prompts sequentially (batch size 1 per prompt).")
 
         videos = []
         gpu = []
         time = []
         for prompt in prompt_list:
-            logger.info(f"Input prompt: {prompt}")
+            self._log.info(f"Input prompt: {prompt}")
             if self.use_prompt_extend:
                 assert self.prompt_expander is not None
-                logger.info("Extending prompt ...")
+                self._log.info("Extending prompt ...")
                 if rank == 0:
                     prompt_output = self.prompt_expander(
                         prompt, tar_lang=self.prompt_extend_target_lang, seed=self.seed
                     )
                     assert prompt_output is not None
                     if prompt_output.status == False:
-                        logger.info(f"Extending prompt failed: {prompt_output.message}")
-                        logger.info("Falling back to original prompt.")
+                        self._log.info(
+                            f"Extending prompt failed: {prompt_output.message}"
+                        )
+                        self._log.info("Falling back to original prompt.")
                         input_prompt = prompt
                     else:
                         input_prompt = prompt_output.prompt
@@ -281,9 +294,11 @@ class WanVideoModelFlow(GenerationBase):
                 if dist.is_initialized():
                     dist.broadcast_object_list(input_prompt, src=0)
                 prompt = input_prompt[0]
-                logger.info(f"Extended prompt: {prompt}")
+                self._log.info(f"Extended prompt: {prompt}")
 
-            logger.info(f"Generating {'image' if 't2i' in self.task else 'video'} ...")
+            self._log.info(
+                f"Generating {'image' if 't2i' in self.task else 'video'} ..."
+            )
 
             @monitor_resources(return_metrics=True, frames=frames)
             def _run_generate():
@@ -313,7 +328,7 @@ class WanVideoModelFlow(GenerationBase):
             )
 
         if rank == 0:
-            logger.info("Saving videos")
+            self._log.info("Saving videos")
             filenames = self.process_savename(prompt_list, args.n_samples_prompt)
             self.save_videos(
                 torch.stack(videos).unsqueeze(dim=1),
@@ -345,19 +360,19 @@ class WanVideoModelFlow(GenerationBase):
         ), "prompt and image number should match"
 
         if len(prompt_list) > 1:
-            logger.info("Processing prompts sequentially (batch size 1 per prompt).")
+            self._log.info("Processing prompts sequentially (batch size 1 per prompt).")
 
         videos = []
         gpu = []
         time = []
         for prompt, image_path in zip(prompt_list, image_list):
-            logger.info(f"Input prompt: {prompt}")
-            logger.info(f"Input image: {image_path}")
+            self._log.info(f"Input prompt: {prompt}")
+            self._log.info(f"Input image: {image_path}")
 
             img = Image.open(image_path).convert("RGB")
             if self.use_prompt_extend:
                 assert self.prompt_expander is not None
-                logger.info("Extending prompt ...")
+                self._log.info("Extending prompt ...")
                 if rank == 0:
                     prompt_output = self.prompt_expander(
                         prompt,
@@ -367,8 +382,10 @@ class WanVideoModelFlow(GenerationBase):
                     )
                     assert prompt_output is not None
                     if prompt_output.status == False:
-                        logger.info(f"Extending prompt failed: {prompt_output.message}")
-                        logger.info("Falling back to original prompt.")
+                        self._log.info(
+                            f"Extending prompt failed: {prompt_output.message}"
+                        )
+                        self._log.info("Falling back to original prompt.")
                         input_prompt = prompt
                     else:
                         input_prompt = prompt_output.prompt
@@ -378,9 +395,9 @@ class WanVideoModelFlow(GenerationBase):
                 if dist.is_initialized():
                     dist.broadcast_object_list(input_prompt, src=0)
                 prompt = input_prompt[0]
-                logger.info(f"Extended prompt: {prompt}")
+                self._log.info(f"Extended prompt: {prompt}")
 
-            logger.info("Generating video ...")
+            self._log.info("Generating video ...")
 
             @monitor_resources(return_metrics=True, frames=frames)
             def _run_generate():
@@ -412,7 +429,7 @@ class WanVideoModelFlow(GenerationBase):
             del result_with_metrics
 
         if rank == 0:
-            logger.info("Saving videos")
+            self._log.info("Saving videos")
             filenames = self.process_savename(prompt_list, args.n_samples_prompt)
             self.save_videos(
                 torch.stack(videos).unsqueeze(dim=1),
@@ -468,7 +485,7 @@ class WanVideoModelFlow(GenerationBase):
                 )
 
     def enable_vram_management(self) -> None:
-        logger.info(
+        self._log.info(
             "WanVideoModelFlow: VRAM handled via offload_model in generate(); no-op"
         )
 

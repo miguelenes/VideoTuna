@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import logging
 import math
 from pathlib import Path
 from typing import Any
@@ -25,8 +24,9 @@ from videotuna.training.flux_lora.config import (
 )
 from videotuna.training.flux_lora.dataset import FluxLoraImageDataset
 from videotuna.training.flux_lora.model_utils import load_flux_training_models
+from videotuna.utils.logging_config import bound_logger, resolve_device_label
 
-logger = logging.getLogger(__name__)
+logger = bound_logger(phase="t2i", flow="flux_lora")
 
 
 def create_flux_accelerator(
@@ -135,8 +135,9 @@ def train(config: FluxLoraTrainConfig, data_config) -> None:
         output_dir,
         mixed_precision=config.mixed_precision,
     )
+    log = logger.bind(device=resolve_device_label(accelerator.device))
     if accelerator.is_main_process:
-        logger.info("Training Flux LoRA → %s", output_dir)
+        log.info("Training Flux LoRA → {}", output_dir)
 
     dataset = FluxLoraImageDataset(data_config)
     dataloader = DataLoader(
@@ -239,7 +240,7 @@ def train(config: FluxLoraTrainConfig, data_config) -> None:
                     if accelerator.is_main_process:
                         unwrapped = accelerator.unwrap_model(transformer)
                         ckpt = save_lora_checkpoint(unwrapped, output_dir, global_step)
-                        logger.info("Saved LoRA checkpoint to %s", ckpt)
+                        log.info("Saved LoRA checkpoint to {}", ckpt)
 
                 if global_step >= max_train_steps:
                     break
@@ -257,7 +258,7 @@ def train(config: FluxLoraTrainConfig, data_config) -> None:
                 f,
                 indent=2,
             )
-        logger.info("Training finished. Output: %s", output_dir)
+        log.info("Training finished. Output: {}", output_dir)
 
 
 def run_training(

@@ -9,7 +9,6 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import torch
 from diffusers import FluxPipeline, WanImageToVideoPipeline, WanPipeline
 from diffusers.utils import export_to_video
-from loguru import logger
 from omegaconf import DictConfig
 
 from videotuna.base.generation_base import GenerationBase
@@ -26,6 +25,7 @@ from videotuna.utils.diffusers_quantization import (
     normalize_transformer_quant,
     resolve_quant_components,
 )
+from videotuna.utils.logging_config import bound_logger, resolve_device_label
 from videotuna.utils.wan_lora_bridge import (
     apply_native_wan_lora_to_pipeline,
     is_native_wan_lora_ckpt,
@@ -135,6 +135,7 @@ class DiffusersVideoFlow(GenerationBase):
         self._inference_device: Optional[str] = None
         self._transformer_quant = "none"
         self._quant_backend = "torchao"
+        self._log = bound_logger(phase=self.mode, flow="diffusers_video")
 
     def from_pretrained(
         self,
@@ -157,7 +158,7 @@ class DiffusersVideoFlow(GenerationBase):
         elif denoiser_ckpt_path is not None and self.model_family == "wan":
             self._lora_path = str(denoiser_ckpt_path)
         self._inference_device = device
-        logger.info(
+        self._log.info(
             "DiffusersVideoFlow: model_id={} family={} mode={} lora={}",
             self._model_id,
             self.model_family,
@@ -205,7 +206,7 @@ class DiffusersVideoFlow(GenerationBase):
         pipeline = self._require_pipeline()
         if self.model_family == "flux":
             pipeline.load_lora_weights(self._lora_path)
-            logger.info("Loaded Flux LoRA weights from {}", self._lora_path)
+            self._log.info("Loaded Flux LoRA weights from {}", self._lora_path)
             return
         if self.model_family == "wan":
             if is_native_wan_lora_ckpt(self._lora_path):
@@ -221,14 +222,14 @@ class DiffusersVideoFlow(GenerationBase):
                     reports = apply_native_wan_lora_to_pipeline(
                         pipeline, self._lora_path
                     )
-                logger.info(
+                self._log.info(
                     "Applied native Wan 2.1 LoRA bridge from {} ({})",
                     self._lora_path,
                     [r.as_dict() for r in reports],
                 )
                 return
             pipeline.load_lora_weights(self._lora_path)
-            logger.info("Loaded Wan Diffusers LoRA from {}", self._lora_path)
+            self._log.info("Loaded Wan Diffusers LoRA from {}", self._lora_path)
 
     def _resolve_inputs(
         self, args: DictConfig
@@ -262,6 +263,10 @@ class DiffusersVideoFlow(GenerationBase):
             getattr(args, "quant_backend", None)
         )
         self._dtype = resolve_torch_dtype(getattr(args, "dtype", None))
+        inference_device = resolve_inference_device(
+            getattr(args, "device", None) or self._inference_device
+        )
+        self._log = self._log.bind(device=resolve_device_label(inference_device))
         if self.pipeline is None:
             self._load_pipeline(self._dtype)
         pipeline = self._require_pipeline()
@@ -276,9 +281,7 @@ class DiffusersVideoFlow(GenerationBase):
             args,
             model_family=self.model_family,
             disable_progress_bar=False,
-            device=resolve_inference_device(
-                getattr(args, "device", None) or self._inference_device
-            ),
+            device=inference_device,
         )
 
         prompts, media_paths = self._resolve_inputs(args)

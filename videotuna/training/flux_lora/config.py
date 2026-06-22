@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
-import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from videotuna.utils.logging_config import bound_logger
+
+logger = bound_logger(phase="t2i", flow="flux_lora")
 
 _UNSUPPORTED_KEYS = frozenset(
     {
@@ -144,7 +145,7 @@ def load_train_config(
         normalized[norm_key] = _coerce_value(norm_key, value)
 
     if ignored:
-        logger.info("Ignoring unsupported SimpleTuner config keys: %s", sorted(ignored))
+        logger.info("Ignoring unsupported SimpleTuner config keys: {}", sorted(ignored))
 
     data_cfg = _parse_local_backend(backends)
     instance_data_dir = (

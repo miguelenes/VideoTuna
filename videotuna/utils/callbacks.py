@@ -1,13 +1,13 @@
-import logging
 import os
 import time
 from typing import Any, Optional, Union
 from weakref import proxy
 
-from loguru import logger
 from typing_extensions import override
 
-mainlogger = logging.getLogger("mainlogger")
+from videotuna.utils.logging_config import bound_logger
+
+mainlogger = bound_logger(phase="t2v", flow="wanvideo")
 
 import pytorch_lightning as pl
 import torch
@@ -243,8 +243,11 @@ class VideoTunaModelCheckpoint(pl.callbacks.ModelCheckpoint):
                 new_filename = original_filename.replace("flow", seleted)
                 new_filepath = os.path.join(new_dirpath, new_filename)
                 torch.save(save_dict, new_filepath)
-                logger.info(
-                    f"Deepspeed Saving model {seleted} with {len(new_state_dict)} params to {new_filepath}"
+                mainlogger.info(
+                    "Deepspeed Saving model {} with {} params to {}",
+                    seleted,
+                    len(new_state_dict),
+                    new_filepath,
                 )
         else:
             original_filename = original_dirpath_list[-1]
@@ -255,8 +258,11 @@ class VideoTunaModelCheckpoint(pl.callbacks.ModelCheckpoint):
                 new_filename = original_filename.replace("flow", seleted)
                 new_filepath = os.path.join(new_dirpath, new_filename)
                 torch.save(save_dict, new_filepath)
-                logger.info(
-                    f"Saving model {seleted} with {len(state_dict)} params  to {new_filepath}"
+                mainlogger.info(
+                    "Saving model {} with {} params to {}",
+                    seleted,
+                    len(state_dict),
+                    new_filepath,
                 )
 
     def _format_ckpt_path(
@@ -372,7 +378,7 @@ class ImageLogger(Callback):
                 pl_module.current_epoch, batch_idx, pl_module.global_rank
             )
             if self.to_local:
-                mainlogger.info("Log [%s] batch <%s> to local ..." % (split, filename))
+                mainlogger.info("Log [{}] batch <{}> to local ...", split, filename)
                 filename = "gs{}_".format(pl_module.global_step) + filename
                 log_local(
                     batch_logs,
@@ -382,7 +388,7 @@ class ImageLogger(Callback):
                 )
             else:
                 mainlogger.info(
-                    "Log [%s] batch <%s> to tensorboard ..." % (split, filename)
+                    "Log [{}] batch <{}> to tensorboard ...", split, filename
                 )
                 self.log_to_tensorboard(
                     pl_module, batch_logs, filename, split, save_fps=10

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from typing import TypedDict
 
@@ -12,8 +11,9 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 
 from videotuna.training.flux_lora.config import FluxLoraDataConfig
+from videotuna.utils.logging_config import bound_logger
 
-logger = logging.getLogger(__name__)
+logger = bound_logger(phase="t2i", flow="flux_lora")
 
 _IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 
@@ -84,7 +84,7 @@ class FluxLoraImageDataset(Dataset):
             ]
         )
         logger.info(
-            "Loaded %d training images from %s", len(self.samples), self.data_dir
+            "Loaded {} training images from {}", len(self.samples), self.data_dir
         )
 
     def __len__(self) -> int:
