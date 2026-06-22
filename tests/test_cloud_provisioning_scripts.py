@@ -38,8 +38,10 @@ SECRET_PATTERNS = [
     re.compile(r"sk-[a-zA-Z0-9]{20,}"),
 ]
 
-FLUX_CLOUD_SMOKE = REPO_ROOT / "configs" / "006_flux" / "cloud_smoke.json"
-WAN_CLOUD_SMOKE = (
+FLUX_CLOUD_SMOKE = REPO_ROOT / "configs" / "domain" / "flux_t2i_cloud_smoke.json"
+WAN_CLOUD_SMOKE = REPO_ROOT / "configs" / "domain" / "wan_t2v_lora_cloud_smoke.yaml"
+FLUX_CLOUD_SMOKE_LEGACY = REPO_ROOT / "configs" / "006_flux" / "cloud_smoke.json"
+WAN_CLOUD_SMOKE_LEGACY = (
     REPO_ROOT / "configs" / "008_wanvideo" / "wan2_1_t2v_14B_lora_cloud_smoke.yaml"
 )
 FLUX_DATA_CONFIG = REPO_ROOT / "configs" / "domain" / "flux_t2i_data.json"
@@ -104,6 +106,13 @@ def test_wan_cloud_smoke_yaml_parses():
     assert cfg.train.lightning.trainer.max_epochs == 1
     ckpt_cb = cfg.train.lightning.callbacks.model_checkpoint.params
     assert ckpt_cb.every_n_train_steps == 5
+
+
+def test_legacy_cloud_smoke_symlinks_resolve():
+    assert FLUX_CLOUD_SMOKE_LEGACY.is_file()
+    assert FLUX_CLOUD_SMOKE_LEGACY.resolve() == FLUX_CLOUD_SMOKE.resolve()
+    assert WAN_CLOUD_SMOKE_LEGACY.is_file()
+    assert WAN_CLOUD_SMOKE_LEGACY.resolve() == WAN_CLOUD_SMOKE.resolve()
 
 
 def test_env_cloud_example_exists():

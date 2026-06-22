@@ -1,4 +1,4 @@
-"""Load and normalize `configs/006_flux` SimpleTuner-style JSON configs."""
+"""Load and normalize `configs/domain/` SimpleTuner-style JSON configs."""
 
 from __future__ import annotations
 

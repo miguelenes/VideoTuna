@@ -61,7 +61,7 @@ Prefer **git submodule** or **pip/git dependency** over copying large trees.
 
 ## Flux LoRA training
 
-First-party trainer at `videotuna/training/flux_lora/` (Diffusers + PEFT + Accelerate). Configs under `configs/006_flux/`. Inference via `DiffusersVideoFlow` / `inference-flux-lora`.
+First-party trainer at `videotuna/training/flux_lora/` (Diffusers + PEFT + Accelerate). Configs under `configs/domain/`. Inference via `DiffusersVideoFlow` / `inference-flux-lora`.
 
 ## Removing vendored code
 

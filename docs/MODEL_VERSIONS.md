@@ -17,6 +17,8 @@ PrivTune supports three model families: two for **training** and one for **valid
 | Flux T2I | `configs/domain/flux_t2i.json` + `configs/domain/flux_t2i_data.json` |
 | Wan T2V | `configs/domain/wan_t2v_lora.yaml` |
 | Wan I2V (optional) | `configs/domain/wan_i2v_lora.yaml` |
+| Flux T2I cloud smoke | `configs/domain/flux_t2i_cloud_smoke.json` + `configs/domain/flux_t2i_data.json` |
+| Wan T2V cloud smoke | `configs/domain/wan_t2v_lora_cloud_smoke.yaml` |
 
 Commands: `poetry run train-domain-t2i` / `poetry run train-domain-t2v` / `poetry run train-domain-i2v`
 
@@ -105,7 +107,7 @@ poetry run install-deepspeed
 
 # Short cloud smoke preset (1 epoch, checkpoint every 5 steps)
 poetry run train-domain-t2v \
-  --base configs/008_wanvideo/wan2_1_t2v_14B_lora_cloud_smoke.yaml \
+  --base configs/domain/wan_t2v_lora_cloud_smoke.yaml \
   --devices 0,
 ```
 

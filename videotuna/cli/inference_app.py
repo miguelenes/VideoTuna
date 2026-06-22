@@ -20,7 +20,7 @@ WAN_DOMAIN_SMOKE_22_CONFIG = "configs/inference/presets/wan_domain_lora_smoke_22
 WAN_DOMAIN_I2V_SMOKE_22_CONFIG = (
     "configs/inference/presets/wan_domain_i2v_smoke_22.yaml"
 )
-WAN2_2_T2V_720P_CONFIG = "configs/inference/wan2_2_t2v_a14b.yaml"
+WAN2_2_T2V_720P_CONFIG = "configs/inference/presets/balanced_wan2_2_720p.yaml"
 
 PRESET_DOMAIN_T2I = InferencePreset(
     cli_name="inference-domain-t2i",

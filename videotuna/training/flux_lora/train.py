@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import math
 from pathlib import Path
 from typing import Any
 
@@ -18,11 +17,12 @@ from tqdm.auto import tqdm
 
 from videotuna.training.flux_lora.checkpoint import save_lora_checkpoint
 from videotuna.training.flux_lora.config import (
+    FluxLoraDataConfig,
     FluxLoraTrainConfig,
     load_train_config,
     stamp_output_dir,
 )
-from videotuna.training.flux_lora.dataset import FluxLoraImageDataset
+from videotuna.training.flux_lora.dataset import FluxLoraImageDataset, FluxLoraSample
 from videotuna.training.flux_lora.model_utils import load_flux_training_models
 from videotuna.utils.logging_config import bound_logger, resolve_device_label
 
@@ -58,7 +58,11 @@ def _flux_tracker_config(config: FluxLoraTrainConfig) -> dict[str, Any]:
     }
 
 
-def _prepare_batch_latents(vae, pixel_values, weight_dtype):
+def _prepare_batch_latents(
+    vae: Any,
+    pixel_values: torch.Tensor,
+    weight_dtype: torch.dtype,
+) -> tuple[torch.Tensor, int, int]:
     pixel_values = pixel_values.to(dtype=weight_dtype)
     latents = vae.encode(pixel_values).latent_dist.sample()
     latents = (latents - vae.config.shift_factor) * vae.config.scaling_factor
@@ -71,13 +75,13 @@ def _prepare_batch_latents(vae, pixel_values, weight_dtype):
 
 def _compute_loss(
     pipeline: Any,
-    transformer,
-    batch,
-    weight_dtype,
-    accelerator,
+    transformer: Any,
+    batch: FluxLoraSample,
+    weight_dtype: torch.dtype,
+    accelerator: Accelerator,
 ) -> torch.Tensor:
     pixel_values = batch["pixel_values"]
-    captions = batch["caption"]
+    captions: list[str] | str = batch["caption"]
     if isinstance(captions, str):
         captions = [captions]
 
@@ -126,7 +130,7 @@ def _compute_loss(
     return F.mse_loss(model_pred.float(), target.float(), reduction="mean")
 
 
-def train(config: FluxLoraTrainConfig, data_config) -> None:
+def train(config: FluxLoraTrainConfig, data_config: FluxLoraDataConfig) -> None:
     set_seed(config.seed)
     output_dir = Path(config.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -183,7 +187,6 @@ def train(config: FluxLoraTrainConfig, data_config) -> None:
         eps=1e-8,
     )
 
-    num_update_steps_per_epoch = math.ceil(len(dataloader) / config.train_batch_size)
     max_train_steps = config.max_train_steps
     lr_scheduler = get_scheduler(
         config.lr_scheduler,
@@ -250,7 +253,9 @@ def train(config: FluxLoraTrainConfig, data_config) -> None:
         with open(output_dir / "training_config.json", "w") as f:
             json.dump(
                 {
-                    "pretrained_model_name_or_path": config.pretrained_model_name_or_path,
+                    "pretrained_model_name_or_path": (
+                        config.pretrained_model_name_or_path
+                    ),
                     "lora_rank": config.lora_rank,
                     "max_train_steps": config.max_train_steps,
                     "resolution": config.resolution,

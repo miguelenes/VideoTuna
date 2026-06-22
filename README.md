@@ -143,7 +143,8 @@ videotuna/
   training/flux_lora/   # Phase 1 trainer
   models/wan/           # Phase 2 native stack
   flow/                 # wanvideo (train), diffusers_video (infer)
-configs/domain/         # flux_t2i*.json, wan_t2v_lora.yaml
+configs/domain/         # flux_t2i*.json, wan_t2v_lora.yaml, cloud smoke variants
+configs/inference/presets/  # smoke + Wan 2.2 inference presets
 cloud/vast/             # rented GPU provisioning
 docs/runbooks/          # domain-adult-finetune, wan2.2-inference-profile
 ```

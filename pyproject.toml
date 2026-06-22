@@ -210,12 +210,28 @@ markers = [
     "cpu_smoke: slow CPU integration tests (optional nightly)",
 ]
 
+# Gradual mypy rollout: expand module list here and TYPED_MYPY_PATHS in scripts/__init__.py.
+[tool.mypy]
+python_version = "3.11"
+mypy_path = "typings"
+warn_unused_ignores = true
+
 [[tool.mypy.overrides]]
-module = []
+module = [
+    "videotuna.training.flux_lora.*",
+    "videotuna.utils.device_utils",
+    "videotuna.utils.wan_lora_bridge",
+]
+check_untyped_defs = true
+warn_return_any = true
+
+[[tool.mypy.overrides]]
+module = ["accelerate.*", "torchvision.*"]
 ignore_missing_imports = true
 
-[tool.mypy]
-mypy_path = "typings"
+[[tool.mypy.overrides]]
+module = ["videotuna.models.wan.*"]
+ignore_errors = true
 
 [tool.ruff]
 line-length = 88

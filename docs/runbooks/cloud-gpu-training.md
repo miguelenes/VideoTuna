@@ -166,7 +166,7 @@ export RESUME_CKPT=/workspace/results/train/.../checkpoints/...
 
 1. Run `./cloud/vast/run-smoke-train.sh` before any multi-hour job.
 2. Stop the instance when finished — only persist `results/` and `checkpoints/` via Syncthing.
-3. Use smoke configs: `configs/006_flux/cloud_smoke.json`, `configs/008_wanvideo/wan2_1_t2v_14B_lora_cloud_smoke.yaml`.
+3. Use smoke configs: `configs/domain/flux_t2i_cloud_smoke.json`, `configs/domain/wan_t2v_lora_cloud_smoke.yaml`.
 
 ## Training profiles (`TRAIN_PROFILE`)
 
@@ -174,6 +174,8 @@ export RESUME_CKPT=/workspace/results/train/.../checkpoints/...
 |---------|----------------|
 | `flux-lora` | `configs/domain/flux_t2i.json` |
 | `wan-t2v-lora` | `configs/domain/wan_t2v_lora.yaml` |
+| `flux-lora` (smoke) | `configs/domain/flux_t2i_cloud_smoke.json` |
+| `wan-t2v-lora` (smoke) | `configs/domain/wan_t2v_lora_cloud_smoke.yaml` |
 
 Override with `CONFIG_PATH` and `DATA_CONFIG_PATH` (Flux only) in `.env`.
 

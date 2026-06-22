@@ -12,7 +12,9 @@ current_time = datetime.now().strftime("%Y%m%d%H%M%S")
 
 FLUX_T2I_CONFIG = "configs/domain/flux_t2i.json"
 FLUX_T2I_DATA_CONFIG = "configs/domain/flux_t2i_data.json"
+FLUX_T2I_CLOUD_SMOKE = "configs/domain/flux_t2i_cloud_smoke.json"
 WAN_T2V_LORA_CONFIG = "configs/domain/wan_t2v_lora.yaml"
+WAN_T2V_LORA_CLOUD_SMOKE = "configs/domain/wan_t2v_lora_cloud_smoke.yaml"
 WAN_I2V_LORA_CONFIG = "configs/domain/wan_i2v_lora.yaml"
 
 

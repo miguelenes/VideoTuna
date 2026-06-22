@@ -5,10 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from diffusers import FluxPipeline
+from peft import PeftMixedModel, PeftModel
 from peft.utils import get_peft_model_state_dict
 
 
-def save_lora_checkpoint(transformer, output_dir: str | Path, step: int) -> Path:
+def save_lora_checkpoint(
+    transformer: PeftModel | PeftMixedModel, output_dir: str | Path, step: int
+) -> Path:
     save_path = Path(output_dir) / f"checkpoint-{step}"
     save_path.mkdir(parents=True, exist_ok=True)
 

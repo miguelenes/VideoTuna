@@ -13,7 +13,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 FLUX_TRAIN_CONFIG = REPO_ROOT / "configs" / "domain" / "flux_t2i.json"
 FLUX_DATA_CONFIG = REPO_ROOT / "configs" / "domain" / "flux_t2i_data.json"
+FLUX_CLOUD_SMOKE_CONFIG = REPO_ROOT / "configs" / "domain" / "flux_t2i_cloud_smoke.json"
 WAN_DOMAIN_CONFIG = REPO_ROOT / "configs" / "domain" / "wan_t2v_lora.yaml"
+WAN_CLOUD_SMOKE_CONFIG = (
+    REPO_ROOT / "configs" / "domain" / "wan_t2v_lora_cloud_smoke.yaml"
+)
 WAN_I2V_DOMAIN_CONFIG = REPO_ROOT / "configs" / "domain" / "wan_i2v_lora.yaml"
 FLUX_INFER_SMOKE = (
     REPO_ROOT / "configs" / "inference" / "presets" / "flux_domain_lora_smoke.yaml"
@@ -54,6 +58,23 @@ def test_wan_domain_yaml_parses():
     ckpt_cb = cfg.train.lightning.callbacks.model_checkpoint.params
     assert ckpt_cb["every_n_train_steps"] == 25
     assert cfg.flow.params.ckpt_path == "checkpoints/wan/Wan2.1-T2V-14B"
+
+
+def test_flux_cloud_smoke_train_config_loads():
+    train_cfg, data_cfg = load_train_config(FLUX_CLOUD_SMOKE_CONFIG, FLUX_DATA_CONFIG)
+    assert train_cfg.max_train_steps == 50
+    assert train_cfg.checkpointing_steps == 25
+    assert train_cfg.output_dir == "results/train/flux-cloud-smoke"
+    assert train_cfg.pretrained_model_name_or_path == "checkpoints/flux/FLUX.1-dev"
+    assert data_cfg.instance_data_dir == "data/t2i/domain"
+
+
+def test_wan_cloud_smoke_yaml_parses():
+    cfg = load_wan_lora_config(WAN_CLOUD_SMOKE_CONFIG)
+    assert cfg.train.name == "train_wan_cloud_smoke"
+    assert cfg.train.lightning.trainer.max_epochs == 1
+    ckpt_cb = cfg.train.lightning.callbacks.model_checkpoint.params
+    assert ckpt_cb["every_n_train_steps"] == 5
 
 
 def test_wan_i2v_domain_yaml_parses():
