@@ -28,3 +28,5 @@ temp
 
 
 *.outputs
+.jolli/jollimemory
+.jolli/jollimemory/debug.log

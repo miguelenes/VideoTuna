@@ -188,10 +188,14 @@ def install_rocm():
     """
     Install PyTorch 2.6 + torchvision 0.21 for ROCm 6.2.4 and remove CUDA-only wheels.
 
+    Uninstalls existing torch/torchvision first so pip does not keep a mismatched
+    CUDA torchvision wheel (e.g. 0.21.0+cu126) alongside ROCm torch.
+
     Run after: poetry install -E rocm
+    Re-run after any plain `poetry install` on AMD machines (lockfile pins CUDA torch).
     """
     pip = [sys.executable, "-m", "pip"]
-    for pkg in _CUDA_ONLY_PACKAGES:
+    for pkg in (*_CUDA_ONLY_PACKAGES, "torch", "torchvision"):
         subprocess.run([*pip, "uninstall", pkg, "-y"], check=False)
     result = subprocess.run(
         [
@@ -201,21 +205,43 @@ def install_rocm():
             "torchvision==0.21.0",
             "--index-url",
             _ROCM_TORCH_INDEX,
+            "--force-reinstall",
+            "--no-cache-dir",
         ],
         check=False,
     )
     if result.returncode != 0:
         exit(result.returncode)
+
+    import torch
+    import torchvision
+
+    torch_build = torch.__version__
+    tv_build = torchvision.__version__
+    hip = getattr(torch.version, "hip", None)
+    if hip is None:
+        print(
+            "WARNING: torch installed but torch.version.hip is None. "
+            "Expected a ROCm wheel from the rocm6.2.4 index.",
+            file=sys.stderr,
+        )
+    if "+cu" in tv_build:
+        print(
+            f"ERROR: torch/torchvision build mismatch: torch={torch_build}, "
+            f"torchvision={tv_build}. Re-run: poetry run install-rocm",
+            file=sys.stderr,
+        )
+        exit(1)
+
+    print(f"torch {torch_build}, torchvision {tv_build}, HIP {hip}")
     try:
         from videotuna.utils.device_utils import describe_compute_environment
 
         print(describe_compute_environment())
     except ImportError:
-        import torch
-
         print(
-            f"torch {torch.__version__}, cuda available: {torch.cuda.is_available()}, "
-            f"hip: {getattr(torch.version, 'hip', None)}"
+            f"torch.cuda.is_available()={torch.cuda.is_available()}, "
+            f"hip={hip}"
         )
     exit(0)
 
@@ -223,7 +249,7 @@ def install_rocm():
 def install_cpu_torch():
     """Install CPU-only PyTorch 2.6 wheels (no CUDA/ROCm)."""
     pip = [sys.executable, "-m", "pip"]
-    for pkg in _CUDA_ONLY_PACKAGES:
+    for pkg in (*_CUDA_ONLY_PACKAGES, "torch", "torchvision"):
         subprocess.run([*pip, "uninstall", pkg, "-y"], check=False)
     result = subprocess.run(
         [
@@ -233,6 +259,8 @@ def install_cpu_torch():
             "torchvision==0.21.0",
             "--index-url",
             _CPU_TORCH_INDEX,
+            "--force-reinstall",
+            "--no-cache-dir",
         ],
         check=False,
     )

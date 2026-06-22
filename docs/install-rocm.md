@@ -22,7 +22,9 @@ poetry install -E rocm
 poetry run install-rocm
 ```
 
-`install-rocm` installs `torch==2.6.0` and `torchvision==0.21.0` from `https://download.pytorch.org/whl/rocm6.2.4` and removes CUDA-only packages (xformers, bitsandbytes, xfuser, nvidia-*, triton).
+`install-rocm` removes CUDA-only packages, uninstalls any existing torch/torchvision wheels, then installs matching **ROCm** builds of `torch==2.6.0` and `torchvision==0.21.0` from `https://download.pytorch.org/whl/rocm6.2.4`.
+
+**Important:** The committed `poetry.lock` pins NVIDIA CUDA torch. Any later `poetry install` may restore `+cu126` wheels — re-run `poetry run install-rocm` on AMD machines before inference.
 
 Verify:
 
@@ -74,6 +76,14 @@ poetry run install-cpu-torch
 ```
 
 ## Troubleshooting
+
+**`torchvision::nms` / import errors after `install-rocm`**
+
+torch and torchvision must come from the same ROCm index. If torchvision still shows `+cu126`, re-run:
+
+```bash
+poetry run install-rocm
+```
 
 **`torch.cuda.is_available()` is False**
 

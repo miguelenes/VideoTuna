@@ -32,6 +32,26 @@ from videotuna.utils.device_utils import (
 )
 
 
+def _verify_torch_vision_stack() -> None:
+    """Fail fast when torch and torchvision are from different accelerator builds."""
+    import torch
+    import torchvision
+
+    torch_build = torch.__version__
+    tv_build = torchvision.__version__
+    hip = getattr(torch.version, "hip", None)
+    if hip is not None and "+cu" in tv_build:
+        raise RuntimeError(
+            f"torch/torchvision build mismatch: torch={torch_build} (ROCm), "
+            f"torchvision={tv_build} (CUDA). Run: poetry run install-rocm"
+        )
+    if hip is None and "+rocm" in torch_build.lower():
+        raise RuntimeError(
+            f"torch reports ROCm build ({torch_build}) but HIP is unavailable. "
+            "Run: poetry run install-rocm"
+        )
+
+
 def _run_backend(
     backend: str,
     model_path: str,
@@ -129,6 +149,7 @@ def main(argv: List[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    _verify_torch_vision_stack()
     compute_backend = detect_compute_backend()
     backends = args.backends or ["eager", "sdpa"]
     if (
