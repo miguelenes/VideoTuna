@@ -27,7 +27,7 @@ beautifulsoup4 = "4.12.3"
 peft = "^0.17.0"
 decord = "0.6.0"
 einops = "0.8.0"
-fire = "0.6.0"
+cyclopts = "^3.0.0"
 torch = { version = "^2.6.0", source = "pytorch-cu126" }
 torchvision = { version = "^0.21.0", source = "pytorch-cu126" }
 triton = { version = "3.2.0", markers = "platform_system == 'Linux' and platform_machine == 'x86_64'", optional = true }
@@ -195,18 +195,18 @@ verify-cuda-extras = 'scripts.verify_cuda_extras:main'
 verify-cpu-torch = 'scripts.verify_cpu_torch:main'
 test = 'scripts:test'
 type-check = 'scripts:type_check'
-inference-flux-lora = 'scripts:inference_flux_lora'
-"inference-wan2.2-t2v-720p" = 'scripts:inference_wan2_2_t2v_720p'
+inference-flux-lora = 'videotuna.cli.inference_app:inference_flux_lora_entry'
+"inference-wan2.2-t2v-720p" = 'videotuna.cli.inference_app:inference_wan2_2_t2v_720p_entry'
 train-flux-lora = 'scripts:train_flux_lora'
 train-wan2-1-t2v-lora = 'scripts:train_wan2_1_t2v_lora'
 train-domain-t2i = 'scripts:train_domain_t2i'
 train-domain-t2v = 'scripts:train_domain_t2v'
 train-wan2-1-i2v-lora = 'scripts:train_wan2_1_i2v_lora'
 train-domain-i2v = 'scripts:train_domain_i2v'
-inference-domain-t2i = 'scripts:inference_domain_t2i'
-validate-domain-t2v = 'scripts:validate_domain_t2v'
-validate-domain-i2v = 'scripts:validate_domain_i2v'
-"inference-wan2.2-i2v-720p" = 'scripts:inference_wan2_2_i2v_720p'
+inference-domain-t2i = 'videotuna.cli.inference_app:inference_domain_t2i_entry'
+validate-domain-t2v = 'videotuna.cli.inference_app:validate_domain_t2v_entry'
+validate-domain-i2v = 'videotuna.cli.inference_app:validate_domain_i2v_entry'
+"inference-wan2.2-i2v-720p" = 'videotuna.cli.inference_app:inference_wan2_2_i2v_720p_entry'
 
 [tool.pytest.ini_options]
 markers = [

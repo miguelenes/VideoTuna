@@ -434,32 +434,15 @@ def type_check():
 
 
 def inference_flux_lora():
-    result = subprocess.run(
-        [
-            "python",
-            "scripts/inference_new.py",
-            "--config",
-            "configs/inference/presets/flux_domain_lora_smoke.yaml",
-            "--enable_model_cpu_offload",
-        ]
-        + sys.argv[1:],
-        check=False,
-    )
-    exit(result.returncode)
+    from videotuna.cli.inference_app import inference_flux_lora_entry
+
+    inference_flux_lora_entry()
 
 
 def inference_wan2_2_t2v_720p():
-    result = subprocess.run(
-        [
-            "python",
-            "scripts/inference_new.py",
-            "--config",
-            "configs/inference/wan2_2_t2v_a14b.yaml",
-        ]
-        + sys.argv[1:],
-        check=False,
-    )
-    exit(result.returncode)
+    from videotuna.cli.inference_app import inference_wan2_2_t2v_720p_entry
+
+    inference_wan2_2_t2v_720p_entry()
 
 
 def train_flux_lora():
@@ -565,70 +548,22 @@ def inference_domain_t2i():
 
 def validate_domain_t2v():
     """Canonical Wan 2.2 domain LoRA validation after training."""
-    if not any(arg.startswith("--trained_ckpt") for arg in sys.argv[1:]) and not any(
-        arg.startswith("--lorackpt") for arg in sys.argv[1:]
-    ):
-        print(
-            "Error: validate-domain-t2v requires --trained_ckpt <denoiser.ckpt>",
-            file=sys.stderr,
-        )
-        raise SystemExit(2)
-    result = subprocess.run(
-        [
-            "python",
-            "scripts/inference_new.py",
-            "--config",
-            "configs/inference/presets/wan_domain_lora_smoke_22.yaml",
-            "--enable_model_cpu_offload",
-        ]
-        + sys.argv[1:],
-        check=False,
-    )
-    raise SystemExit(result.returncode)
+    from videotuna.cli.inference_app import validate_domain_t2v_entry
+
+    validate_domain_t2v_entry()
 
 
 def validate_domain_i2v():
     """Canonical Wan 2.2 domain I2V LoRA validation after training."""
-    if not any(arg.startswith("--trained_ckpt") for arg in sys.argv[1:]) and not any(
-        arg.startswith("--lorackpt") for arg in sys.argv[1:]
-    ):
-        print(
-            "Error: validate-domain-i2v requires --trained_ckpt <denoiser.ckpt>",
-            file=sys.stderr,
-        )
-        raise SystemExit(2)
-    if not any(arg.startswith("--prompt_dir") for arg in sys.argv[1:]):
-        print(
-            "Error: validate-domain-i2v requires --prompt_dir <image+prompt pairs>",
-            file=sys.stderr,
-        )
-        raise SystemExit(2)
-    result = subprocess.run(
-        [
-            "python",
-            "scripts/inference_new.py",
-            "--config",
-            "configs/inference/presets/wan_domain_i2v_smoke_22.yaml",
-            "--enable_model_cpu_offload",
-        ]
-        + sys.argv[1:],
-        check=False,
-    )
-    raise SystemExit(result.returncode)
+    from videotuna.cli.inference_app import validate_domain_i2v_entry
+
+    validate_domain_i2v_entry()
 
 
 def inference_wan2_2_i2v_720p():
-    result = subprocess.run(
-        [
-            "python",
-            "scripts/inference_new.py",
-            "--config",
-            "configs/inference/presets/wan_domain_i2v_smoke_22.yaml",
-        ]
-        + sys.argv[1:],
-        check=False,
-    )
-    exit(result.returncode)
+    from videotuna.cli.inference_app import inference_wan2_2_i2v_720p_entry
+
+    inference_wan2_2_i2v_720p_entry()
 
 
 def benchmark_attn_backends():

@@ -4,9 +4,11 @@ import os.path as osp
 from pathlib import Path
 
 import cv2
-import fire
 import pandas as pd
+from cyclopts import App
 from tqdm import tqdm
+
+app = App(help="Convert Vript annotation JSONL to a training CSV.")
 
 
 def read_video_meta(video_path):
@@ -55,7 +57,8 @@ def get_video_data(video_root):
     return video_dict
 
 
-def main(input_path, output_path, video_root):
+@app.default
+def main(input_path: str, output_path: str, video_root: str):
     with open(input_path, "r") as jsonl_file:
         lines = jsonl_file.readlines()
 
@@ -90,5 +93,5 @@ def main(input_path, output_path, video_root):
 
 
 if __name__ == "__main__":
-    # python vript_anno_converter.py --input_path {ROOT}/Vript/vript_captions/vript_short_videos_captions.jsonl --output_path ./test.csv --video_root  {ROOT}/Vript/vript_short_videos_clips
-    fire.Fire(main)
+    # python vript_anno_converter.py --input-path {ROOT}/Vript/vript_captions/vript_short_videos_captions.jsonl --output-path ./test.csv --video-root {ROOT}/Vript/vript_short_videos_clips
+    app()

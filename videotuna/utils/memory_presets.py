@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import argparse
-from typing import Literal
+from typing import Any, Literal
 
 MemoryPreset = Literal["low_vram", "balanced", "max_speed"]
 
 
-def apply_memory_preset(args: argparse.Namespace) -> None:
+def apply_memory_preset(args: Any) -> None:
     """Mutate *args* in place to apply a named memory preset."""
     preset = getattr(args, "memory_preset", None)
     if not preset:

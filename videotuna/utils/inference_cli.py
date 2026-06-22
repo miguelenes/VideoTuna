@@ -1,8 +1,7 @@
-"""Shared CLI flags for VideoTuna inference entrypoints."""
+"""Shared CLI helpers for VideoTuna inference entrypoints."""
 
 from __future__ import annotations
 
-import argparse
 import os
 from typing import Any, Optional
 
@@ -19,118 +18,6 @@ from videotuna.settings import (
 )
 
 
-def add_standard_inference_flags(
-    parser: argparse.ArgumentParser,
-    *,
-    include_fp8: bool = True,
-    include_parallel: bool = True,
-    include_compile: bool = True,
-    dtype_default: Optional[str] = None,
-) -> argparse.ArgumentParser:
-    """Register standardized memory/performance flags on *parser*."""
-    parser.add_argument(
-        "--cpu-smoke",
-        action="store_true",
-        help=(
-            "CPU smoke mode: tiny resolution/steps, eager attention, device=cpu. "
-            "For dev/CI only — not for production video generation."
-        ),
-    )
-    parser.add_argument(
-        "--device",
-        "--gpu-id",
-        dest="device",
-        type=str,
-        default=None,
-        help=(
-            "Inference device: cpu, cuda, cuda:1, or integer GPU index. "
-            "Respects CUDA_VISIBLE_DEVICES remapping."
-        ),
-    )
-    parser.add_argument(
-        "--min-vram-gb",
-        type=float,
-        default=None,
-        help="Fail before model load if selected GPU total VRAM is below this.",
-    )
-    parser.add_argument(
-        "--memory-preset",
-        choices=["low_vram", "balanced", "max_speed"],
-        default=None,
-        help="Named VRAM/performance preset (overrides offload flags when set).",
-    )
-    parser.add_argument(
-        "--enable_vae_tiling",
-        action="store_true",
-        help="Enable VAE tiling to reduce decode VRAM.",
-    )
-    parser.add_argument(
-        "--enable_vae_slicing",
-        action="store_true",
-        help="Enable VAE slicing to reduce decode VRAM.",
-    )
-    parser.add_argument(
-        "--enable_model_cpu_offload",
-        action="store_true",
-        help="Offload model components to CPU between stages (Diffusers-style).",
-    )
-    parser.add_argument(
-        "--enable_sequential_cpu_offload",
-        action="store_true",
-        help="Sequential CPU offload (lowest VRAM; slower than model offload).",
-    )
-    parser.add_argument(
-        "--dtype",
-        type=str,
-        default=dtype_default,
-        choices=["bf16", "fp16", "fp32"],
-        help="Inference compute dtype (bf16, fp16, or fp32 for CPU smoke).",
-    )
-    parser.add_argument(
-        "--device-map",
-        type=str,
-        default=None,
-        choices=["auto"],
-        help="Multi-GPU device_map for large Diffusers models (experimental).",
-    )
-    if include_parallel:
-        parser.add_argument(
-            "--ulysses_degree",
-            type=int,
-            default=None,
-            help="Ulysses sequence-parallel degree (xfuser).",
-        )
-        parser.add_argument(
-            "--ring_degree",
-            type=int,
-            default=None,
-            help="Ring attention parallel degree (xfuser).",
-        )
-    if include_compile:
-        parser.add_argument(
-            "--compile",
-            action="store_true",
-            help="torch.compile the denoiser (sets VIDEOTUNA_TORCH_COMPILE=1).",
-        )
-    parser.add_argument(
-        "--fuse_qkv",
-        action="store_true",
-        help="Fuse QKV projections on the Diffusers pipeline when supported.",
-    )
-    parser.add_argument(
-        "--enable_attention_cache",
-        action="store_true",
-        help="Enable transformer attention cache when supported by the pipeline.",
-    )
-    if include_fp8:
-        parser.add_argument(
-            "--enable_fp8",
-            action="store_true",
-            help="Use Hunyuan pre-quantized FP8 DiT weights (requires *_map.pt).",
-        )
-    return parser
-
-
 def apply_compile_env(compile_flag: bool) -> None:
     """Set VIDEOTUNA_TORCH_COMPILE before model load when --compile is passed."""
     if get_settings().cpu_mode == "smoke":
@@ -139,7 +26,7 @@ def apply_compile_env(compile_flag: bool) -> None:
     os.environ[ENV_TORCH_COMPILE] = "1" if compile_flag else "0"
 
 
-def apply_cpu_smoke_env(args: argparse.Namespace) -> None:
+def apply_cpu_smoke_env(args: Any) -> None:
     """Set environment for CPU smoke mode from --cpu-smoke."""
     if not getattr(args, "cpu_smoke", False):
         return
@@ -219,7 +106,7 @@ def resolve_offload_mode(args) -> str:
     return "none"
 
 
-def prepare_cli_inference_args(args: argparse.Namespace) -> argparse.Namespace:
+def prepare_cli_inference_args(args: Any) -> Any:
     """Apply memory presets and validate parallel degrees before config merge."""
     apply_cpu_smoke_env(args)
     apply_memory_preset(args)

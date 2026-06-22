@@ -14,8 +14,11 @@ from videotuna.utils.fp8_utils import (
     precision_from_dtype_flag,
     validate_fp8_inference,
 )
+from videotuna.cli.inference_options import (
+    StandardInferenceOptions,
+    inference_options_to_namespace,
+)
 from videotuna.utils.inference_cli import (
-    add_standard_inference_flags,
     apply_compile_env,
     prepare_cli_inference_args,
     resolve_offload_mode,
@@ -23,29 +26,20 @@ from videotuna.utils.inference_cli import (
 from videotuna.utils.memory_presets import apply_memory_preset
 
 
-def test_add_standard_inference_flags():
-    parser = argparse.ArgumentParser()
-    add_standard_inference_flags(parser)
-    args = parser.parse_args(
-        [
-            "--device",
-            "cuda:1",
-            "--min-vram-gb",
-            "24",
-            "--memory-preset",
-            "low_vram",
-            "--enable_vae_tiling",
-            "--enable_sequential_cpu_offload",
-            "--dtype",
-            "bf16",
-            "--ulysses_degree",
-            "2",
-            "--ring_degree",
-            "2",
-            "--compile",
-            "--enable_fp8",
-        ]
+def test_standard_inference_options_to_namespace():
+    standard = StandardInferenceOptions(
+        device="cuda:1",
+        min_vram_gb=24.0,
+        memory_preset="low_vram",
+        enable_vae_tiling=True,
+        enable_sequential_cpu_offload=True,
+        dtype="bf16",
+        ulysses_degree=2,
+        ring_degree=2,
+        compile=True,
+        enable_fp8=True,
     )
+    args = inference_options_to_namespace(standard=standard)
     assert args.device == "cuda:1"
     assert args.min_vram_gb == 24.0
     assert args.memory_preset == "low_vram"
@@ -349,4 +343,5 @@ def test_require_accelerator_for_flow_raises_without_gpu():
     source = (
         Path(__file__).resolve().parents[1] / "scripts" / "inference_new.py"
     ).read_text(encoding="utf-8")
-    assert "import argparse" in source
+    assert "generic_inference_entry" in source
+    assert "import argparse" not in source
