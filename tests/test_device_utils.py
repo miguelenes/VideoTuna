@@ -199,6 +199,83 @@ def test_get_flow_tier_wan_720p_gpu_required():
     assert tier == "gpu_required"
 
 
+def test_get_flow_tier_cogvideox_1_5_gpu_required():
+    tier = device_utils.get_flow_tier(
+        device_utils._DIFFUSERS_FLOW,
+        model_family="cogvideox",
+        model_variant="1.5",
+        height=768,
+        width=1360,
+    )
+    assert tier == "gpu_required"
+
+
+def test_get_flow_tier_mochi_production_gpu_required():
+    tier = device_utils.get_flow_tier(
+        device_utils._DIFFUSERS_FLOW,
+        model_family="mochi",
+        height=480,
+        width=848,
+    )
+    assert tier == "gpu_required"
+
+
+def test_get_flow_tier_ltx_production_gpu_required():
+    tier = device_utils.get_flow_tier(
+        device_utils._DIFFUSERS_FLOW,
+        model_family="ltx",
+        height=512,
+        width=768,
+    )
+    assert tier == "gpu_required"
+
+
+def test_get_flow_tier_flux_schnell_cpu_smoke():
+    tier = device_utils.get_flow_tier(
+        device_utils._DIFFUSERS_FLOW,
+        model_family="flux",
+        model_variant="schnell",
+        height=768,
+        width=1360,
+    )
+    assert tier == "cpu_smoke"
+
+
+def test_require_accelerator_native_hunyuan_init_smoke():
+    with mock.patch.object(device_utils, "gpu_is_available", return_value=False):
+        device_utils.require_accelerator_for_flow(
+            device_utils._HUNYUAN_FLOW,
+            cpu_mode="smoke",
+            height=256,
+            width=256,
+            frames=1,
+        )
+
+
+def test_require_accelerator_native_hunyuan_720p_blocks_cpu_smoke():
+    with mock.patch.object(device_utils, "gpu_is_available", return_value=False):
+        with pytest.raises(RuntimeError, match="requires a GPU"):
+            device_utils.require_accelerator_for_flow(
+                device_utils._HUNYUAN_FLOW,
+                cpu_mode="smoke",
+                height=720,
+                width=1280,
+                frames=121,
+            )
+
+
+def test_require_accelerator_wan_native_720p_blocks_cpu_smoke():
+    with mock.patch.object(device_utils, "gpu_is_available", return_value=False):
+        with pytest.raises(RuntimeError, match="requires a GPU"):
+            device_utils.require_accelerator_for_flow(
+                device_utils._WAN_FLOW,
+                cpu_mode="smoke",
+                height=720,
+                width=1280,
+                frames=81,
+            )
+
+
 def test_resolve_cpu_mode_smoke_cli():
     with mock.patch.dict("os.environ", {}, clear=True):
         assert device_utils.resolve_cpu_mode(cli_smoke=True) == "smoke"

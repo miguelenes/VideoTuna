@@ -27,6 +27,12 @@ jobs:
       - name: Verify CPU torch
         run: poetry run verify-cpu-torch
 
+      - name: Lint
+        run: poetry run lint
+
+      - name: Format check
+        run: poetry run format-check
+
       - name: Run CPU-safe tests
         run: |
           poetry run pytest tests/ \

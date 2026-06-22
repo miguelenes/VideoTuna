@@ -58,15 +58,32 @@ poetry run inference-cogvideo-t2v-diffusers \
   --cpu-smoke
 ```
 
+Full Tier-A preset list and commands: [capability-matrix.md](capability-matrix.md).
+
+### CPU smoke presets (`configs/inference/presets/`)
+
+| Preset | Command |
+|--------|---------|
+| `cogvideox_2b_cpu_smoke.yaml` | `poetry run inference-cogvideo-t2v-diffusers --config … --cpu-smoke` |
+| `cogvideox_1_5_cpu_smoke.yaml` | `poetry run inference-cogvideox1.5-t2v --config … --cpu-smoke` |
+| `flux_schnell_cpu_smoke.yaml` | `poetry run inference-flux-schnell --config … --cpu-smoke` |
+| `mochi_cpu_smoke.yaml` | `poetry run inference-mochi --config … --cpu-smoke` |
+| `ltx_cpu_smoke.yaml` | `poetry run inference-ltx-t2v --config … --cpu-smoke` |
+| `hunyuan1_5_cpu_smoke.yaml` | `poetry run inference-hunyuan1.5-t2v --config … --cpu-smoke` |
+| `wan2_2_cpu_smoke.yaml` | `poetry run inference-wan2.2-t2v-720p --config … --cpu-smoke` |
+| `hunyuan_init_cpu_smoke.yaml` | Native Hunyuan init-only (≤256px); `poetry run inference-hunyuan-t2v --config … --cpu-smoke` |
+
+CogVideo SAT was removed — use Diffusers `inference-cogvideox1.5-*` for CogVideoX 1.5.
+
 ## Model tiers on CPU
 
 | Tier | Models | Status |
 |------|--------|--------|
 | **cpu_ok** | Import smoke, config parse, attention/device unit tests | Always |
-| **cpu_smoke** | CogVideoX 2B diffusers, Flux Schnell (tiny image) | Tiny resolution, few steps |
-| **gpu_required** | Wan 720p, Hunyuan native 720p, StepVideo, CogVideoX 5B/1.5 at full res | Clear error unless `--cpu-smoke` for init-only debug |
+| **cpu_smoke** | CogVideoX 2B, Flux Schnell, Tier-A presets above (tiny H×W, few steps) | `--cpu-smoke` required |
+| **gpu_required** | Production 720p+ Diffusers (Wan, Hunyuan 1.5, CogVideoX 1.5, Mochi, LTX), native Wan/Hunyuan 720p, StepVideo | Clear error; use matching `*_cpu_smoke.yaml` or native init preset |
 
-Preset YAMLs: [`configs/inference/presets/`](../configs/inference/presets/) (`*_cpu_smoke.yaml`).
+Preset YAMLs: [`configs/inference/presets/`](../configs/inference/presets/) (`*_cpu_smoke.yaml`). See [capability-matrix.md](capability-matrix.md).
 
 ## NVIDIA install (default)
 
@@ -97,6 +114,6 @@ Expected — these are CUDA-only optional deps. Use `VIDEOTUNA_ATTN_BACKEND=eage
 
 `--enable_model_cpu_offload` and `--memory-preset low_vram` need a GPU. Remove them for CPU smoke runs.
 
-**Wan / Hunyuan / StepVideo blocked**
+**Wan / Hunyuan / StepVideo blocked at production resolution**
 
-These flows are `gpu_required` at production settings. Use `--cpu-smoke` only to debug checkpoint loading, not full 720p denoising.
+Production 720p configs are `gpu_required` on CPU. Use the matching `*_cpu_smoke.yaml` preset with `--cpu-smoke`, or `hunyuan_init_cpu_smoke.yaml` for native Hunyuan init-only (not full denoise). See [capability-matrix.md](capability-matrix.md).

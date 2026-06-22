@@ -1,0 +1,25 @@
+# CPU smoke preset for Mochi T2V (dev/CI only — not for production)
+# Usage:
+#   poetry run inference-mochi \
+#     --config configs/inference/presets/mochi_cpu_smoke.yaml --cpu-smoke
+flow:
+  target: videotuna.flow.diffusers_video.DiffusersVideoFlow
+  params:
+    model_family: mochi
+    mode: t2v
+    pipeline_only: true
+    pretrained_model_name_or_path: genmo/mochi-1-preview
+inference:
+  mode: t2v
+  device: cpu
+  ckpt_path: genmo/mochi-1-preview
+  savedir: results/t2v/mochi-cpu-smoke
+  prompt_file: inputs/t2v/prompts.txt
+  frames: 2
+  height: 256
+  width: 256
+  num_inference_steps: 4
+  unconditional_guidance_scale: 4.5
+  seed: 42
+  savefps: 8
+  dtype: fp32

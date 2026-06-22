@@ -369,3 +369,25 @@ def test_benchmark_resolve_pipeline_kind_invalid():
 
     with pytest.raises(ValueError, match="Unknown pipeline"):
         _resolve_pipeline_kind("invalid")
+
+
+def test_hunyuan_attention_context_uses_get_attn_backend():
+    from pathlib import Path
+
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "videotuna"
+        / "flow"
+        / "diffusers_video.py"
+    ).read_text(encoding="utf-8")
+    assert "get_attn_backend()" in source
+    assert 'os.environ.get("VIDEOTUNA_ATTN_BACKEND"' not in source
+
+
+def test_inference_new_imports_argparse():
+    from pathlib import Path
+
+    source = (
+        Path(__file__).resolve().parents[1] / "scripts" / "inference_new.py"
+    ).read_text(encoding="utf-8")
+    assert "import argparse" in source

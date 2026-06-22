@@ -1,7 +1,8 @@
-from typing import cast
+import argparse
 import os
 import sys
 from pathlib import Path
+from typing import cast
 
 from loguru import logger
 from omegaconf import DictConfig, OmegaConf
@@ -283,6 +284,7 @@ def _run_inference_impl(args, gpu_num=1, rank=0, **kwargs):
         model_variant=OmegaConf.select(flow_params, "model_variant"),
         height=getattr(inference_config, "height", None),
         width=getattr(inference_config, "width", None),
+        frames=getattr(inference_config, "frames", None),
     )
 
     min_vram = getattr(inference_config, "min_vram_gb", None)

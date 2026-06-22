@@ -47,7 +47,14 @@ poetry run python -c "from videotuna.utils.device_utils import describe_compute_
 export VIDEOTUNA_ATTN_BACKEND=sdpa
 poetry run benchmark-attn-backends --num-inference-steps 2
 poetry run inference-cogvideo-t2v-diffusers --num_inference_steps 2
+poetry run inference-flux-schnell \
+  --config configs/inference/presets/flux_schnell_cpu_smoke.yaml --cpu-smoke
+poetry run inference-wan2.2-t2v-720p \
+  --config configs/inference/presets/wan2_2_cpu_smoke.yaml \
+  --num_inference_steps 2 --enable_model_cpu_offload
 ```
+
+Per-model presets and attention defaults: [capability-matrix.md](capability-matrix.md).
 
 ## Model tiers on ROCm
 

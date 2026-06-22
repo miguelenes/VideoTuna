@@ -28,10 +28,10 @@ from loguru import logger
 from omegaconf import DictConfig
 
 from videotuna.base.generation_base import GenerationBase
+from videotuna.utils.attention import get_attn_backend
 from videotuna.utils.common_utils import monitor_resources
 from videotuna.utils.device_utils import (
     accelerator_device_string,
-    detect_compute_backend,
     resolve_inference_device,
 )
 from videotuna.utils.diffusers_optimizations import (
@@ -181,7 +181,9 @@ def resolve_torch_dtype(dtype_flag: Optional[str]) -> torch.dtype:
     return torch.bfloat16
 
 
-def _resolve_flux_pipeline_cls(entry: Dict[str, Any], model_variant: Optional[str]) -> Any:
+def _resolve_flux_pipeline_cls(
+    entry: Dict[str, Any], model_variant: Optional[str]
+) -> Any:
     flux1_variants = entry.get("flux1_variants", set())
     if model_variant in flux1_variants:
         return entry.get("legacy_pipeline_cls", entry["pipeline_cls"])
@@ -198,13 +200,8 @@ def _hunyuan_attention_context(model_family: str) -> AbstractContextManager[None
         from diffusers import attention_backend
     except ImportError:
         return nullcontext()
-    backend = os.environ.get("VIDEOTUNA_ATTN_BACKEND", "auto")
-    if backend == "flash" and detect_compute_backend() != "rocm":
+    if get_attn_backend() == "flash":
         return cast(AbstractContextManager[None], attention_backend("flash_hub"))
-    if backend == "flash" and detect_compute_backend() == "rocm":
-        logger.warning(
-            "VIDEOTUNA_ATTN_BACKEND=flash ignored on ROCm; using default diffusers attention"
-        )
     return nullcontext()
 
 

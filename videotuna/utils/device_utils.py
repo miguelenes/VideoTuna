@@ -170,6 +170,66 @@ def resolve_cpu_mode(*, cli_smoke: bool = False) -> CpuMode:
     return mode
 
 
+def _is_production_video_resolution(
+    height: int | None,
+    width: int | None,
+) -> bool:
+    """True when H×W matches Tier-A production video presets (720p-class)."""
+    if height is None or width is None:
+        return False
+    return (height >= 720 or width >= 1280) or (height >= 480 and width >= 720)
+
+
+def _is_init_smoke_resolution(
+    height: int | None,
+    width: int | None,
+    *,
+    frames: int | None = None,
+) -> bool:
+    """Tiny resolution for native-flow init-only CPU smoke (not full denoise)."""
+    if height is None or width is None:
+        return False
+    if height > 256 or width > 256:
+        return False
+    if frames is not None and frames > 2:
+        return False
+    return True
+
+
+def _diffusers_flow_tier(
+    family: str,
+    variant: str,
+    height: int | None,
+    width: int | None,
+    base: FlowCapabilityTier,
+) -> FlowCapabilityTier:
+    """CPU tier for DiffusersVideoFlow from model family and resolution."""
+    if family == "cogvideox" and variant in ("2b", "2"):
+        return "cpu_smoke"
+    if family == "flux" and variant in ("schnell", "1-schnell"):
+        return "cpu_smoke"
+    if family == "flux" and variant in (
+        "2-dev",
+        "2-klein-9b",
+        "1-dev",
+        "dev",
+    ):
+        if height is not None and height >= 512:
+            return "gpu_required"
+        return "cpu_smoke"
+    if family == "cogvideox" and variant in ("1.5", "5b", "5b-i2v", "1.5-i2v"):
+        if _is_production_video_resolution(height, width):
+            return "gpu_required"
+        return "cpu_smoke"
+    if family in ("mochi", "ltx", "wan", "hunyuan"):
+        if _is_production_video_resolution(height, width):
+            return "gpu_required"
+        return "cpu_smoke"
+    if _is_production_video_resolution(height, width):
+        return "gpu_required"
+    return base
+
+
 def get_flow_tier(
     flow_target: str,
     *,
@@ -185,16 +245,7 @@ def get_flow_tier(
 
     family = (model_family or "").lower()
     variant = (model_variant or "").lower()
-
-    if family == "cogvideox" and variant in ("2b", "2"):
-        return "cpu_smoke"
-    if family == "flux" and variant in ("schnell", "1-schnell"):
-        return "cpu_smoke"
-    if family in ("wan", "hunyuan"):
-        if (height is not None and height >= 720) or (width is not None and width >= 1280):
-            return "gpu_required"
-        return "cpu_smoke"
-    return base
+    return _diffusers_flow_tier(family, variant, height, width, base)
 
 
 def _validate_cuda_device_index(index: int) -> None:
@@ -446,19 +497,19 @@ def _tiered_cpu_error_message(
         "  - AMD ROCm: poetry install --extras rocm (see docs/install-rocm.md)\n",
         "What you can do without a GPU:\n"
         "  - Unit tests: poetry run pytest tests/ -m 'not gpu'\n"
-        "  - CogVideoX 2B smoke: --cpu-smoke with "
-        "configs/inference/presets/cogvideox_2b_cpu_smoke.yaml\n",
+        "  - Tier-A CPU smoke presets: configs/inference/presets/*_cpu_smoke.yaml\n"
+        "  - Full matrix: docs/capability-matrix.md\n",
     ]
     if tier == "gpu_required":
         lines.append(
-            "  - Debug init only (not full 720p denoise): --cpu-smoke or "
-            f"{_CPU_MODE_ENV}=force\n"
+            "  - Debug init only (≤256px, ≤2 frames): --cpu-smoke with a tiny preset\n"
+            f"  - Full override (not recommended): {_CPU_MODE_ENV}=force\n"
         )
     elif tier == "cpu_smoke" and cpu_mode == "off":
         lines.append(
             f"  - Enable CPU smoke: --cpu-smoke or {_CPU_MODE_ENV}=smoke\n"
         )
-    lines.append("See docs/install-cpu.md for supported CPU workflows.")
+    lines.append("See docs/install-cpu.md and docs/capability-matrix.md.")
     return "".join(lines)
 
 
@@ -473,6 +524,7 @@ def require_accelerator_for_flow(
     model_variant: str | None = None,
     height: int | None = None,
     width: int | None = None,
+    frames: int | None = None,
 ) -> None:
     """
     Fail fast when a GPU-backed video flow is started without an accelerator.
@@ -539,6 +591,22 @@ def require_accelerator_for_flow(
         logger.warning(
             "CPU smoke mode: {} tier=cpu_smoke — tiny resolution/steps only",
             flow_target,
+        )
+        return
+
+    if (
+        mode == "smoke"
+        and resolved_tier == "gpu_required"
+        and flow_target in (_HUNYUAN_FLOW, _WAN_FLOW)
+        and _is_init_smoke_resolution(height, width, frames=frames)
+    ):
+        logger.warning(
+            "CPU init smoke: {} at {}x{} (frames={}) — checkpoint load only, "
+            "not production 720p denoise",
+            flow_target,
+            height,
+            width,
+            frames,
         )
         return
 

@@ -41,9 +41,11 @@ This document contains commands for preparing model checkpoints and the final ch
 |------|--------|------|------|-----|
 | A | CogVideoX, Flux, Mochi, LTX, Hunyuan 1.5 Diffusers, Wan 2.2 Diffusers | Yes | Yes (`sdpa`) | Smoke only |
 | B | Native Hunyuan/Wan, Open-Sora, VideoCrafter | Yes | Experimental | Init smoke |
-| C | StepVideo, CogVideo SAT (removed; use Diffusers 1.5) | Yes | No | No |
+| C | StepVideo, CogVideo SAT (removed — use Diffusers `inference-cogvideox1.5-*`) | Yes | No | No |
 
 Install: NVIDIA `poetry install -E cuda` · AMD [`docs/install-rocm.md`](install-rocm.md) · CPU `poetry install -E cpu`
+
+**Full matrix** (preset × backend × attention): [`docs/capability-matrix.md`](capability-matrix.md)
 
 ### 1.1 Diffusers hub vs local checkpoints
 
