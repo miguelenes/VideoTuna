@@ -248,7 +248,7 @@ class WanI2V:
         no_sync = getattr(self.model, 'no_sync', noop_no_sync)
 
         # evaluation mode
-        with amp.autocast(dtype=self.param_dtype), torch.no_grad(), no_sync():
+        with amp.autocast(dtype=self.param_dtype), torch.inference_mode(), no_sync():
 
             if sample_solver == 'unipc':
                 sample_scheduler = FlowUniPCMultistepScheduler(
@@ -386,7 +386,7 @@ class WanI2V:
         first_frame = videos[:, :, 0:1, :, :]
         
         ## compute latent and embeddings
-        with torch.no_grad():
+        with torch.inference_mode():
             if model_offload:
                 self.vae.model.to(device)
                 latents = torch.stack(self.vae.encode(videos)).to(dtype=dtype, device=device).detach()

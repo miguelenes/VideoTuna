@@ -5,17 +5,20 @@ import torch
 from diffusers import FluxPipeline
 
 from videotuna.utils.common_utils import monitor_resources, save_metrics
+from videotuna.utils.inference_cli import add_standard_inference_flags, apply_compile_env
 from videotuna.utils.inference_utils import load_prompts_from_txt
 
 
 def inference(args):
+    apply_compile_env(bool(getattr(args, "compile", False)))
+    flux_dtype = torch.float16 if getattr(args, "dtype", None) == "fp16" else torch.bfloat16
     if args.model_type == "dev":
         pipe = FluxPipeline.from_pretrained(
-            "black-forest-labs/FLUX.1-dev", dtype=torch.bfloat16
+            "black-forest-labs/FLUX.1-dev", dtype=flux_dtype
         )
     elif args.model_type == "schnell":
         pipe = FluxPipeline.from_pretrained(
-            "black-forest-labs/FLUX.1-schnell", dtype=torch.bfloat16
+            "black-forest-labs/FLUX.1-schnell", dtype=flux_dtype
         )
     else:
         raise ValueError("model_type must be either 'dev' or 'schnell'")
@@ -31,7 +34,8 @@ def inference(args):
         pipe.vae.enable_slicing()
     if args.enable_vae_tiling:
         pipe.vae.enable_tiling()
-    pipe.to(torch.float16)
+    if not args.enable_sequential_cpu_offload and not args.enable_model_cpu_offload:
+        pipe.to(flux_dtype)
     if args.prompt.endswith(".txt"):
         # model_input is a file for t2i
         prompts = load_prompts_from_txt(prompt_file=args.prompt)
@@ -43,15 +47,17 @@ def inference(args):
     else:
         prompts = [prompt]
         out_paths = [args.out_path]
-    gpu_metrics = []
-    time_metrics = []
+    per_sample = []
     for prompt, out_path in zip(prompts, out_paths):
         result_with_metrics = generate(args, pipe, prompt)
         out = result_with_metrics["result"]
-        gpu_metrics.append(result_with_metrics.get("gpu", -1.0))
-        time_metrics.append(result_with_metrics.get("time", -1.0))
+        per_sample.append(result_with_metrics)
         out.save(out_path)
-    save_metrics(gpu=gpu_metrics, time=time_metrics, config=args, savedir=args.out_path)
+    save_metrics(
+        metrics={"per_sample": per_sample, "frames": 1},
+        savedir=args.out_path,
+        config=args,
+    )
 
 
 @monitor_resources(return_metrics=True)
@@ -80,21 +86,6 @@ if __name__ == "__main__":
     parser.add_argument("--height", type=int, default=768)
     parser.add_argument("--num_inference_steps", type=int, default=4)
     parser.add_argument("--guidance_scale", type=float, default=0.0)
-    parser.add_argument(
-        "--enable_vae_tiling", action="store_true", help="enable vae tiling"
-    )
-    parser.add_argument(
-        "--enable_vae_slicing", action="store_true", help="enable vae slicing"
-    )
-    parser.add_argument(
-        "--enable_sequential_cpu_offload",
-        action="store_true",
-        help="enable sequential cpu offload",
-    )
-    parser.add_argument(
-        "--enable_model_cpu_offload",
-        action="store_true",
-        help="enable model cpu offload",
-    )
+    add_standard_inference_flags(parser, include_fp8=False)
     args = parser.parse_args()
     inference(args)

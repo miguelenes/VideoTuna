@@ -118,14 +118,16 @@ class InferenceBase:
                      gpu: List[float],
                     time: List[float],
                     config: DictConfig,
-                    savedir: str):
-        metrics = {
-            "gpu" : gpu,
-            "time": time,
-            "config" : OmegaConf.to_container(config, resolve=True)
-        }
-        with open(f"{savedir}/metric.json", "w") as f:
-            json.dump(metrics, f, indent=4)
+                    savedir: str,
+                    frames: int = 1):
+        from videotuna.utils.common_utils import save_metrics as write_metrics
+        write_metrics(
+            savedir=savedir,
+            config=config,
+            gpu=gpu,
+            time=time,
+            frames=frames,
+        )
 
     
     def save_videos_vbench(

@@ -37,6 +37,7 @@ sys.path.insert(0, os.getcwd())
 from diffusers.utils import export_to_video, load_image, load_video
 
 from videotuna.utils.common_utils import monitor_resources, save_metrics
+from videotuna.utils.inference_cli import add_standard_inference_flags
 from videotuna.utils.inference_utils import get_target_filelist, load_prompts_from_txt
 
 
@@ -157,6 +158,8 @@ def generate_video(
     # This is the default value for 6 seconds video and 8 fps and will plus 1 frame for the first frame and 49 frames.
     gpu_metrics = []
     time_metrics = []
+    per_sample = []
+    num_frames = 49
     for i, (prompt, image_or_video_path) in enumerate(
         zip(prompts, image_or_video_paths)
     ):
@@ -178,9 +181,13 @@ def generate_video(
         video_generate = result_with_metrics["result"]
         gpu_metrics.append(result_with_metrics.get("gpu", -1.0))
         time_metrics.append(result_with_metrics.get("time", -1.0))
+        per_sample.append(result_with_metrics)
         # 5. Export the generated frames to a video file. fps must be 8 for original video.
         export_to_video(video_generate, output_path_, fps=8)
-    save_metrics(gpu=gpu_metrics, time=time_metrics, config=None, savedir=output_path)
+    save_metrics(
+        savedir=output_path if os.path.isdir(output_path) else os.path.dirname(output_path) or ".",
+        metrics={"per_sample": per_sample, "frames": num_frames},
+    )
 
     print(f"Total time taken: {time.time() - start_time:.2f}s")
     avg_time = (time.time() - start_time) / len(prompts) / num_videos_per_prompt
@@ -306,31 +313,23 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dtype",
         type=str,
-        default="bfloat16",
-        help="The data type for computation (e.g., 'float16' or 'bfloat16')",
+        default="bf16",
+        choices=["bf16", "fp16", "bfloat16", "float16"],
+        help="The data type for computation (bf16 or fp16).",
     )
     parser.add_argument(
         "--seed", type=int, default=42, help="The seed for reproducibility"
     )
-    parser.add_argument(
-        "--enable_vae_tiling", action="store_true", help="enable vae tiling"
-    )
-    parser.add_argument(
-        "--enable_vae_slicing", action="store_true", help="enable vae slicing"
-    )
-    parser.add_argument(
-        "--enable_sequential_cpu_offload",
-        action="store_true",
-        help="enable sequential cpu offload",
-    )
-    parser.add_argument(
-        "--enable_model_cpu_offload",
-        action="store_true",
-        help="enable model cpu offload",
-    )
+    add_standard_inference_flags(parser, include_fp8=False, dtype_default=None)
 
     args = parser.parse_args()
-    dtype = torch.float16 if args.dtype == "float16" else torch.bfloat16
+    dtype_map = {
+        "float16": torch.float16,
+        "fp16": torch.float16,
+        "bfloat16": torch.bfloat16,
+        "bf16": torch.bfloat16,
+    }
+    dtype = dtype_map[args.dtype]
     generate_video(
         model_input=args.model_input,
         model_path=args.model_path,

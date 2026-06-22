@@ -60,6 +60,7 @@ class StepVideoModelFlow(GenerationBase):
         scale_factor: float = 1.0,
         num_persistent_param_in_dit: int = None,
         torch_dtype: torch.dtype = torch.bfloat16,
+        precision: str = "bf16",
         device: str = torch.cuda.current_device(),
         enable_model_cpu_offload: bool = True,
         enable_sequential_cpu_offload: bool = False,
@@ -82,7 +83,9 @@ class StepVideoModelFlow(GenerationBase):
         self.ring_degree = ring_degree
         self.ulysses_degree = ulysses_degree
         self.tensor_parallel_degree = tensor_parallel_degree
-        self.torch_dtype = torch_dtype
+        dtype_map = {"bf16": torch.bfloat16, "fp16": torch.float16}
+        self.precision = precision
+        self.torch_dtype = dtype_map.get(precision, torch_dtype)
         self.device_type = device
         self.vae_scale_factor_temporal = self.vae.temporal_compression_ratio if getattr(self, "vae", None) else 8
         self.vae_scale_factor_spatial = self.vae.spatial_compression_ratio if getattr(self, "vae", None) else 16
@@ -279,18 +282,20 @@ class StepVideoModelFlow(GenerationBase):
         # load input
         prompt_list = self.load_inference_inputs(config.prompt_file, config.mode)
         if len(prompt_list) > 1:
-            logger.warning("Stepvideo currently does not support batch inference, we will sample at a time")
+            logger.info("Processing prompts sequentially (batch size 1 per prompt).")
         
         videos = []
         gpu = []
-        time = []
+        time_metrics = []
         for prompt in prompt_list:
             if rank == 0:
                 result_with_metrics = self.single_inference(prompt, config)
-                video  = result_with_metrics['result']
+                video = result_with_metrics['result']
                 videos.append(video)
                 gpu.append(result_with_metrics.get('gpu', -1.0))
-                time.append(result_with_metrics.get('time', -1.0))
+                time_metrics.append(result_with_metrics.get('time', -1.0))
+            elif dist.is_initialized():
+                self.single_inference(prompt, config)
         
         if rank == 0:
             logger.info("Saving videos")
@@ -298,7 +303,13 @@ class StepVideoModelFlow(GenerationBase):
             processor = VideoProcessor(config.savedir)
             for video, filename in zip(videos, filenames):
                 processor.postprocess_video(video, filename)
-            self.save_metrics(gpu=gpu, time=time, config=config, savedir=config.savedir)
+            self.save_metrics(
+                gpu=gpu,
+                time=time_metrics,
+                config=config,
+                savedir=config.savedir,
+                frames=config.frames,
+            )
         
     
     @monitor_resources(return_metrics=True)

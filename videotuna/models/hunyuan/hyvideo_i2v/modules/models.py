@@ -910,7 +910,8 @@ class HYVideoDiffusionTransformerWrapper(nn.Module):
         else:
             in_channels = latent_channels
         out_channels = latent_channels
-        if embedded_cfg_scale:
+        model_cfg = dict(HUNYUAN_VIDEO_CONFIG[model])
+        if embedded_cfg_scale and "guidance_embed" not in model_cfg:
             factor_kwargs["guidance_embed"] = True
 
         assert model in HUNYUAN_VIDEO_CONFIG.keys(), f"invalid model: {model}"
@@ -921,7 +922,7 @@ class HYVideoDiffusionTransformerWrapper(nn.Module):
             out_channels=out_channels,
             text_states_dim=text_states_dim,
             text_states_dim_2=text_states_dim_2,
-            **HUNYUAN_VIDEO_CONFIG[model],
+            **model_cfg,
             **factor_kwargs,
         )
         self.dit_weight = dit_weight

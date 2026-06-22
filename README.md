@@ -209,6 +209,21 @@ Task|Model|Command|Length (#Frames)|Resolution|Inference Time|GPU Memory (GB)|
 |T2V|VideoCrafter-V2-320x512|`poetry run inference-vc2-t2v-320x512`|16|320x512|26s|11G|
 |T2V|VideoCrafter-V1-576x1024|`poetry run inference-vc1-t2v-576x1024`|16|576x1024|2min|15G|
 
+**Low-VRAM presets (≤24GB GPUs)** — metrics written to `metrics.json` beside outputs.
+
+|Model|Command|Length|Resolution|Notes|
+|:---------|:---------|:---------|:---------|:---------|
+|T2V|HunyuanVideo (H800 baseline)|`poetry run inference-hunyuan-t2v`|129|720×1280|~32min, ~60GB peak VRAM on H800|
+|T2V|HunyuanVideo (24GB preset)|`poetry run inference-hunyuan-t2v --enable_sequential_cpu_offload --enable_vae_tiling --enable_vae_slicing --dtype bf16`|129|720×1280|Use `--enable_fp8` when `*_map.pt` is available; smoke test with `--num_inference_steps 4`|
+|T2V|WanVideo (H800 baseline)|`poetry run inference-wanvideo-t2v-720p`|81|720×1280|~32min, ~70GB; `--enable_model_cpu_offload` on by default|
+|T2V|WanVideo (24GB)|`poetry run inference-wanvideo-t2v-720p --dtype bf16`|81|720×1280|Offload enabled in wrapper; smoke test with `--num_inference_steps 4`|
+
+Shared inference flags (all `inference_new.py` models): `--enable_vae_tiling`, `--enable_vae_slicing`, `--enable_model_cpu_offload`, `--enable_sequential_cpu_offload`, `--dtype bf16|fp16`, `--ulysses_degree`, `--ring_degree`, `--compile`, `--enable_fp8` (Hunyuan).
+
+**Hardware:** Hunyuan/Wan/StepVideo 720p inference requires an **NVIDIA GPU** with CUDA. The default Poetry install uses PyTorch+cu126; **AMD GPUs are not supported** without rebuilding the stack for ROCm. On a CPU-only or AMD-only dev machine, run `poetry run pytest tests/test_inference_optimization.py` for smoke tests.
+
+Legacy diffusers Hunyuan T2V (256×256 training workflow): `poetry run inference-hunyuan-t2v-diffusers`.
+
 ---
 
 

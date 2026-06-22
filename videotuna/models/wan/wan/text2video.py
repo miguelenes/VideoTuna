@@ -188,7 +188,7 @@ class WanT2V:
         no_sync = getattr(self.model, 'no_sync', noop_no_sync)
 
         # evaluation mode
-        with amp.autocast(dtype=self.param_dtype), torch.no_grad(), no_sync():
+        with amp.autocast(dtype=self.param_dtype), torch.inference_mode(), no_sync():
 
             if sample_solver == 'unipc':
                 sample_scheduler = FlowUniPCMultistepScheduler(

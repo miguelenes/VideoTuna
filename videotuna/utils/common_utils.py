@@ -14,8 +14,11 @@ import numpy as np
 import torch
 import torch.distributed as dist
 import json
-from typing import List, Union
+from typing import Any, Dict, List, Optional, Union
 from argparse import Namespace
+
+from videotuna.utils.attention import get_attn_backend
+from videotuna.utils.inference_cli import resolve_offload_mode
 
 
 precision_to_dtype = {
@@ -154,13 +157,34 @@ def print_yellow(text):
     print(Fore.YELLOW + text + Style.RESET_ALL)
 
 
-def monitor_resources(return_metrics=True):
+def _build_sample_metrics(
+    time_used: float,
+    gpu_mem_used: Optional[float],
+    frames: int,
+) -> Dict[str, Any]:
+    peak = round(gpu_mem_used, 2) if gpu_mem_used is not None else None
+    wall = round(time_used, 2)
+    spf = round(wall / frames, 4) if frames > 0 else None
+    return {
+        "time": wall,
+        "wall_time_s": wall,
+        "gpu": peak,
+        "peak_vram_gb": peak,
+        "seconds_per_frame": spf,
+    }
+
+
+def monitor_resources(
+    return_metrics: bool = True,
+    frames: int = 1,
+    inference_config: Optional[Any] = None,
+):
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
             process = psutil.Process()
             start_time = time.time()
-            start_cpu_mem = process.memory_info().rss / 1024 / 1024 / 1024 # GB
+            start_cpu_mem = process.memory_info().rss / 1024 / 1024 / 1024  # GB
 
             if torch.cuda.is_available():
                 torch.cuda.reset_peak_memory_stats()
@@ -169,7 +193,7 @@ def monitor_resources(return_metrics=True):
             result = func(*args, **kwargs)
 
             end_time = time.time()
-            end_cpu_mem = process.memory_info().rss / 1024 / 1024 / 1024 # GB
+            end_cpu_mem = process.memory_info().rss / 1024 / 1024 / 1024  # GB
 
             time_used = end_time - start_time
             cpu_mem_used = end_cpu_mem - start_cpu_mem
@@ -179,40 +203,96 @@ def monitor_resources(return_metrics=True):
             gpu_mem_used = None
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
-                gpu_mem_used = torch.cuda.max_memory_allocated() / 1024 / 1024 / 1024 # GB
+                gpu_mem_used = torch.cuda.max_memory_allocated() / 1024 / 1024 / 1024  # GB
                 logger.info(f"Peak GPU memory used: {gpu_mem_used:.2f} GB")
 
             if return_metrics:
-                return {
-                    "time": round(time_used, 2),
-                    "cpu": round(cpu_mem_used, 2),
-                    "gpu": round(gpu_mem_used, 2) if gpu_mem_used is not None else None,
-                    "result": result,
-                }
-            else:
-                return result
+                sample = _build_sample_metrics(time_used, gpu_mem_used, frames)
+                sample["cpu"] = round(cpu_mem_used, 2)
+                sample["attention_backend"] = get_attn_backend()
+                sample["torch_compile"] = os.environ.get("VIDEOTUNA_TORCH_COMPILE", "0") == "1"
+                sample["result"] = result
+                if inference_config is not None:
+                    sample["offload_mode"] = _offload_mode_from_config(inference_config)
+                    sample["dtype"] = getattr(inference_config, "dtype", None)
+                return sample
+            return result
 
         return wrapper
+
     return decorator
 
 
+def _offload_mode_from_config(config: Any) -> str:
+    if getattr(config, "enable_sequential_cpu_offload", False):
+        return "sequential"
+    if getattr(config, "enable_model_cpu_offload", False):
+        return "model"
+    return "none"
 
-def save_metrics(gpu: List[float],
-                time: List[float],
-                config: Union[DictConfig, Namespace],
-                savedir: str):
+
+def save_metrics(
+    savedir: str,
+    config: Optional[Union[DictConfig, Namespace, Any]] = None,
+    *,
+    metrics: Optional[Dict[str, Any]] = None,
+    gpu: Optional[List[float]] = None,
+    time: Optional[List[float]] = None,
+    frames: int = 1,
+):
+    """Write metrics.json (and legacy metric.json) beside inference outputs."""
     config_dict = None
     if config is not None:
         if isinstance(config, DictConfig):
             config_dict = OmegaConf.to_container(config, resolve=True)
-        else:
+        elif isinstance(config, Namespace):
             config_dict = vars(config)
-    metrics = {
-        "gpu" : gpu,
-        "time": time,
-        "config" : config_dict
-    }
-    with open(f"{savedir}/metric.json", "w") as f:
+        elif hasattr(config, "items"):
+            config_dict = dict(config)
+
+    if metrics is None:
+        per_sample = []
+        gpu_list = gpu or []
+        time_list = time or []
+        for g, t in zip(gpu_list, time_list):
+            per_sample.append(
+                {
+                    "peak_vram_gb": g,
+                    "wall_time_s": t,
+                    "seconds_per_frame": round(t / frames, 4) if frames > 0 and t else None,
+                }
+            )
+        metrics = {
+            "per_sample": per_sample,
+            "gpu": gpu_list,
+            "time": time_list,
+            "attention_backend": get_attn_backend(),
+            "torch_compile": os.environ.get("VIDEOTUNA_TORCH_COMPILE", "0") == "1",
+        }
+        if config is not None:
+            metrics["offload_mode"] = resolve_offload_mode(config)
+            metrics["dtype"] = getattr(config, "dtype", None)
+
+    if config_dict is not None:
+        metrics["config"] = config_dict
+
+    if metrics.get("per_sample"):
+        peaks = [s.get("peak_vram_gb") for s in metrics["per_sample"] if s.get("peak_vram_gb") is not None]
+        times = [s.get("wall_time_s") for s in metrics["per_sample"] if s.get("wall_time_s") is not None]
+        if peaks:
+            metrics["peak_vram_gb"] = max(peaks)
+        if times:
+            metrics["wall_time_s"] = sum(times)
+            metrics["seconds_per_frame"] = (
+                round(metrics["wall_time_s"] / frames, 4) if frames > 0 else None
+            )
+
+    os.makedirs(savedir, exist_ok=True)
+    metrics_path = os.path.join(savedir, "metrics.json")
+    with open(metrics_path, "w") as f:
+        json.dump(metrics, f, indent=4)
+    legacy_path = os.path.join(savedir, "metric.json")
+    with open(legacy_path, "w") as f:
         json.dump(metrics, f, indent=4)
     
 def get_dist_info():

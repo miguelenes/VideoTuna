@@ -497,6 +497,47 @@ def inference_flux_lora():
 
 
 def inference_hunyuan_t2v():
+    ckpt = "checkpoints/hunyuanvideo/HunyuanVideo"
+    dit_weight = (
+        "checkpoints/hunyuanvideo/HunyuanVideo/"
+        "hunyuan-video-t2v-720p/transformers/mp_rank_00_model_states.pt"
+    )
+    config = "configs/007_hunyuanvideo/hunyuanvideo_t2v.yaml"
+    prompt_file = "inputs/t2v/prompts.txt"
+    savedir = "results/t2v/hunyuanvideo/720P"
+    result = subprocess.run(
+        [
+            "python3",
+            "scripts/inference_new.py",
+            "--ckpt_path",
+            ckpt,
+            "--dit_weight",
+            dit_weight,
+            "--config",
+            config,
+            "--prompt_file",
+            prompt_file,
+            "--savedir",
+            savedir,
+            "--height",
+            "720",
+            "--width",
+            "1280",
+            "--frames",
+            "129",
+            "--seed",
+            "44",
+            "--num_inference_steps",
+            "50",
+            "--enable_vae_tiling",
+        ]
+        + sys.argv[1:],
+        check=False,
+    )
+    exit(result.returncode)
+
+
+def inference_hunyuan_t2v_diffusers():
     result = subprocess.run(
         [
             "python",

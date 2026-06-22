@@ -9,8 +9,9 @@ flow:
     cond_stage_2_ckpt_path: ${flow.params.ckpt_path}/hunyuan_clip
     enable_model_cpu_offload: True
     enable_sequential_cpu_offload: False
+    precision: bf16
 
-    scheduler_config: 
+    scheduler_config:
       target: videotuna.models.stepvideo.stepvideo.diffusion.scheduler.FlowMatchDiscreteScheduler
       use_from_pretrained: True
       params:
@@ -50,13 +51,13 @@ inference:
   seed: 42
   height: 544
   width: 992
-  frames: 51 
+  frames: 51
   num_inference_steps: 50
   time_shift: 13.0
   unconditional_guidance_scale: 12.0
-  prompt_file: '一名宇航员在月球上发现一块石碑，上面印有“stepfun”字样，闪闪发光'
-  uncond_prompt: ''
-  pos_prompt: ''
+  prompt_file: "一名宇航员在月球上发现一块石碑，上面印有“stepfun”字样，闪闪发光"
+  uncond_prompt: ""
+  pos_prompt: ""
   n_samples_prompt: 1
   bs: 1
   savefps: 28
@@ -64,6 +65,9 @@ inference:
   enable_sequential_cpu_offload: False
 
   mapping:
-    inference.ckpt_path : flow.params.ckpt_path
+    inference.ckpt_path: flow.params.ckpt_path
     inference.enable_model_cpu_offload: flow.params.enable_model_cpu_offload
     inference.enable_sequential_cpu_offload: flow.params.enable_sequential_cpu_offload
+    inference.ulysses_degree: flow.params.ulysses_degree
+    inference.ring_degree: flow.params.ring_degree
+    inference.dtype: flow.params.precision

@@ -216,7 +216,7 @@ class WanVideoModelFlow(GenerationBase):
         # load input
         prompt_list = self.load_inference_inputs(args.prompt_file, args.mode)
         if len(prompt_list) > 1:
-            logger.warning("WanVideo currently does not support batch inference, we will run sample at a time")
+            logger.info("Processing prompts sequentially (batch size 1 per prompt).")
         
         videos = []
         gpu = []
@@ -267,7 +267,7 @@ class WanVideoModelFlow(GenerationBase):
             logger.info("Saving videos")
             filenames = self.process_savename(prompt_list, args.n_samples_prompt)
             self.save_videos(torch.stack(videos).unsqueeze(dim=1), args.savedir, filenames, fps=args.savefps)
-            self.save_metrics(gpu=gpu, time=time, config=args, savedir=args.savedir)
+            self.save_metrics(gpu=gpu, time=time, config=args, savedir=args.savedir, frames=frames)
 
     def inference_i2v(self, args: DictConfig):
         # init vars
@@ -286,8 +286,8 @@ class WanVideoModelFlow(GenerationBase):
         prompt_list, image_list = self.load_inference_inputs(args.prompt_dir, args.mode)
         assert len(prompt_list) == len(image_list), "prompt and image number should match"
         
-        if len(prompt_list) > 0:
-            logger.warning("WanVideo currently does not support batch inference, we will run sample at a time")
+        if len(prompt_list) > 1:
+            logger.info("Processing prompts sequentially (batch size 1 per prompt).")
             
         videos = []
         gpu = []
@@ -345,10 +345,10 @@ class WanVideoModelFlow(GenerationBase):
             logger.info("Saving videos")
             filenames = self.process_savename(prompt_list, args.n_samples_prompt)
             self.save_videos(torch.stack(videos).unsqueeze(dim=1), args.savedir, filenames, fps=args.savefps)
-            self.save_metrics(gpu=gpu, time=time, config=args, savedir=args.savedir)
+            self.save_metrics(gpu=gpu, time=time, config=args, savedir=args.savedir, frames=frames)
 
-    @torch.no_grad()
-    def inference(self, args: DictConfig): 
+    @torch.inference_mode()
+    def inference(self, args: DictConfig):
         # check input  
         self._validate_args(args) 
 

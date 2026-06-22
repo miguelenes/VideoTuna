@@ -2,7 +2,10 @@
 name = "videotuna"
 version = "0.1.0"
 description = "Videotuna is a useful codebase for text-to-video applications"
-authors = ["Yingqing He <yhebm@connect.ust.hk>", "Yazhou Xing <yxingag@connect.ust.hk>"]
+authors = [
+    "Yingqing He <yhebm@connect.ust.hk>",
+    "Yazhou Xing <yxingag@connect.ust.hk>",
+]
 readme = "README.md"
 
 [build-system]
@@ -73,9 +76,9 @@ torch-optimi = "^0.2.1"
 accelerate = "^1.2.0"
 torchao = "^0.9.0"
 toml = "0.10.2"
-hpsv2 = {git = "https://github.com/tgxs002/HPSv2.git"}
+hpsv2 = { git = "https://github.com/tgxs002/HPSv2.git" }
 backports-tarfile = "^1.2.0"
-swissarmytransformer = {git = "https://github.com/JingyeChen/SwissArmyTransformer"}
+swissarmytransformer = { git = "https://github.com/JingyeChen/SwissArmyTransformer" }
 pydantic-settings = "^2.8.0"
 xfuser = "^0.4.4"
 dashscope = "^1.23.0"
@@ -127,6 +130,7 @@ inference-flux-schnell = 'scripts:inference_flux_schnell'
 inference-flux-dev = 'scripts:inference_flux_dev'
 inference-flux-lora = 'scripts:inference_flux_lora'
 inference-hunyuan-t2v = 'scripts:inference_hunyuan_t2v'
+inference-hunyuan-t2v-diffusers = 'scripts:inference_hunyuan_t2v_diffusers'
 inference-mochi = 'scripts:inference_mochi'
 inference-opensora-v10-16x256x256 = 'scripts:inference_opensora_v10_16x256x256'
 inference-v2v-ms = 'scripts:inference_v2v_ms'
@@ -158,8 +162,7 @@ include = '\.pyi?$'
 profile = "black"
 
 [[tool.mypy.overrides]]
-module = [
-]
+module = []
 ignore_missing_imports = true
 
 [tool.ruff]

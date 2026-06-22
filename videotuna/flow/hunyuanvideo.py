@@ -24,6 +24,8 @@ from videotuna.models.hunyuan.hyvideo_i2v.utils.file_utils import save_videos_gr
 from videotuna.base.generation_base import GenerationBase
 from videotuna.utils.common_utils import monitor_resources
 from videotuna.utils.attention import maybe_compile_denoiser
+from videotuna.utils.fp8_utils import validate_fp8_inference
+from videotuna.utils.args_utils import VideoMode
 import torchvision.transforms as transforms
 from PIL import Image
 import numpy as np
@@ -188,7 +190,9 @@ class HunyuanVideoFlow(GenerationBase):
         scheduler_config: Optional[Dict[str, Any]] = None,
         cond_stage_2_config: Optional[Dict[str, Any]] = None,
         lora_config: Optional[Dict[str, Any]] = None,
+        model_variant: str = "i2v",
         use_cpu_offload=False,
+        use_model_cpu_offload: bool = False,
         device=0,
         logger=None,
         #parallel
@@ -206,6 +210,7 @@ class HunyuanVideoFlow(GenerationBase):
         #vae
         vae_type: str = '884-16c-hy',
         vae_tiling: bool = True,
+        vae_slicing: bool = False,
         vae_precision: str = 'fp16',
         #i2v settings
         i2v_mode: bool = True,
@@ -226,6 +231,8 @@ class HunyuanVideoFlow(GenerationBase):
             trainable_components=[]
         )
         self.use_cpu_offload = use_cpu_offload
+        self.use_model_cpu_offload = use_model_cpu_offload
+        self.model_variant = model_variant
         self.device_type = (
             device
             if device is not None
@@ -235,6 +242,7 @@ class HunyuanVideoFlow(GenerationBase):
         )
         self.vae_type = vae_type
         self.vae_tiling = vae_tiling
+        self.vae_slicing = vae_slicing
         self.vae_precision = vae_precision
         self.precision = precision
         self.disable_autocast = disable_autocast
@@ -306,7 +314,9 @@ class HunyuanVideoFlow(GenerationBase):
         # 20250316 pftq: Modified to extract rank and world_size early for sequential loading
         if self.ulysses_degree > 1 or self.ring_degree > 1:
             assert xfuser is not None, "Ulysses Attention and Ring Attention requires xfuser package."
-            assert self.use_cpu_offload is False, "Cannot enable use_cpu_offload in the distributed environment."
+            assert not (self.use_cpu_offload or self.use_model_cpu_offload), (
+                "Cannot enable CPU offload in the distributed environment."
+            )
             # 20250316 pftq: Set local rank and device explicitly for NCCL
             local_rank = int(os.environ['LOCAL_RANK'])
             device = torch.device(f"cuda:{local_rank}")
@@ -339,6 +349,7 @@ class HunyuanVideoFlow(GenerationBase):
             model: HYVideoDiffusionTransformerWrapper = self.denoiser
             self.denoiser.load_weight()
             if self.use_fp8:
+                validate_fp8_inference(self.dit_weight)
                 convert_fp8_linear(model, self.dit_weight, original_dtype=PRECISION_TO_TYPE[self.precision])
             self.denoiser.eval()
     
@@ -406,15 +417,25 @@ class HunyuanVideoFlow(GenerationBase):
                 for param in text_encoder_2.parameters():
                     dist.broadcast(param.data, src=0)
 
-        if self.use_cpu_offload:
-            self.pipeline.enable_sequential_cpu_offload()
-        else:
-            self.pipeline = self.pipeline.to(device)
+        self._apply_pipeline_offload(device)
     
         if self.ulysses_degree > 1 or self.ring_degree > 1:
             parallelize_transformer(self.pipeline)
 
         self.pipeline.transformer = maybe_compile_denoiser(self.pipeline.transformer)
+
+    def _apply_pipeline_offload(self, device):
+        if self.use_cpu_offload:
+            # Allow DiT offload for lowest-VRAM sequential mode.
+            self.pipeline._exclude_from_cpu_offload = []
+            self.pipeline.enable_sequential_cpu_offload()
+        elif self.use_model_cpu_offload:
+            self.pipeline.enable_model_cpu_offload()
+        else:
+            self.pipeline = self.pipeline.to(device)
+
+        if self.vae_slicing and hasattr(self.pipeline.vae, "enable_slicing"):
+            self.pipeline.vae.enable_slicing()
 
     @staticmethod
     def parse_size(size):
@@ -523,7 +544,7 @@ class HunyuanVideoFlow(GenerationBase):
         return freqs_cos, freqs_sin
 
 
-    @monitor_resources(return_metrics=True)
+    @monitor_resources(return_metrics=True, frames=1)
     def single_inference(self, 
                          prompt, 
                          i2v_image_path, 
@@ -542,9 +563,9 @@ class HunyuanVideoFlow(GenerationBase):
         batch_size=config.bs
         num_videos_per_prompt=config.n_samples_prompt
         i2v_mode=config.i2v_mode
-        i2v_resolution=config.i2v_resolution
+        i2v_resolution=getattr(config, "i2v_resolution", "720p")
         i2v_condition_type=config.i2v_condition_type
-        i2v_stability=config.i2v_stability
+        i2v_stability=getattr(config, "i2v_stability", False)
         ulysses_degree=config.ulysses_degree
         ring_degree=config.ring_degree
         xdit_adaptive_size=config.xdit_adaptive_size
@@ -617,6 +638,9 @@ class HunyuanVideoFlow(GenerationBase):
                 img_latents.mul_(self.pipeline.vae.config.scaling_factor)
 
             target_height, target_width = closest_size
+        else:
+            target_height = align_to(height, 16)
+            target_width = align_to(width, 16)
 
         freqs_cos, freqs_sin = self.get_rotary_pos_embed(
             target_video_length, target_height, target_width
@@ -670,7 +694,7 @@ class HunyuanVideoFlow(GenerationBase):
         )[0]
         return samples
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def inference(
         self,
         config : DictConfig,
@@ -684,9 +708,13 @@ class HunyuanVideoFlow(GenerationBase):
         num_videos_per_prompt=config.n_samples_prompt
         out_dict = dict()
 
-        prompt_list, image_path_list = self.load_inference_inputs(config.prompt_dir, config.mode)
+        if config.mode == VideoMode.T2V.value:
+            prompt_list = self.load_inference_inputs(config.prompt_file, config.mode)
+            image_path_list = [None] * len(prompt_list)
+        else:
+            prompt_list, image_path_list = self.load_inference_inputs(config.prompt_dir, config.mode)
         if len(prompt_list) > 1:
-            logger.warning("HunyuanVideo currently does not support batch inference, we will sample at a time")
+            logger.info("Processing prompts sequentially (batch size 1 per prompt).")
     
         # seeds
         seeds = self.set_seed(seed, batch_size, num_videos_per_prompt)
@@ -715,7 +743,9 @@ class HunyuanVideoFlow(GenerationBase):
             if 'LOCAL_RANK' not in os.environ or int(os.environ['LOCAL_RANK']) == 0:
                 save_videos_grid(sample, f"{config.savedir}/{filenames[i]}.mp4", fps=24)
         
-        self.save_metrics(gpu=gpu, time=time, config=config, savedir=config.savedir)
+        self.save_metrics(
+            gpu=gpu, time=time, config=config, savedir=config.savedir, frames=video_length
+        )
         out_dict['samples'] = samples
         out_dict['prompts'] = prompt_list
         return out_dict
@@ -771,4 +801,8 @@ class HunyuanVideoFlow(GenerationBase):
     
 
     def enable_vram_management(self):
-        pass
+        vae = getattr(self.first_stage_model, "vae", self.first_stage_model)
+        if self.vae_tiling and hasattr(vae, "enable_tiling"):
+            vae.enable_tiling()
+        if self.vae_slicing and hasattr(vae, "enable_slicing"):
+            vae.enable_slicing()

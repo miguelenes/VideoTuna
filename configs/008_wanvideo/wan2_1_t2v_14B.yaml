@@ -1,20 +1,19 @@
 flow:
   target: videotuna.flow.wanvideo.WanVideoModelFlow
   params:
-    task: "t2v-14B"                   # The task to run (choices from WAN_CONFIGS.keys())
-    ckpt_path: "checkpoints/wan/Wan2.1-T2V-14B"                    # The path to the checkpoint directory.
-    offload_model: true               # Whether to offload the model to CPU after each model forward.
-    ulysses_size: 1                   # The size of the ulysses parallelism in DiT.
-    ring_size: 1                      # The size of the ring attention parallelism in DiT.
-    t5_fsdp: false                    # Whether to use FSDP for T5.
-    t5_cpu: false                     # Whether to place T5 model on CPU.
-    dit_fsdp: false                   # Whether to use FSDP for DiT.
-    use_prompt_extend: false          # Whether to use prompt extend.
+    task: "t2v-14B" # The task to run (choices from WAN_CONFIGS.keys())
+    ckpt_path: "checkpoints/wan/Wan2.1-T2V-14B" # The path to the checkpoint directory.
+    offload_model: true # Whether to offload the model to CPU after each model forward.
+    ulysses_size: 1 # The size of the ulysses parallelism in DiT.
+    ring_size: 1 # The size of the ring attention parallelism in DiT.
+    t5_fsdp: false # Whether to use FSDP for T5.
+    t5_cpu: false # Whether to place T5 model on CPU.
+    dit_fsdp: false # Whether to use FSDP for DiT.
+    use_prompt_extend: false # Whether to use prompt extend.
     prompt_extend_method: "local_qwen" # The prompt extend method to use (choices: dashscope, local_qwen)
-    prompt_extend_model: null         # The prompt extend model to use.
-    prompt_extend_target_lang: "zh"   # The target language of prompt extend (choices: zh, en)
-    seed: 42                    
-
+    prompt_extend_model: null # The prompt extend model to use.
+    prompt_extend_target_lang: "zh" # The target language of prompt extend (choices: zh, en)
+    seed: 42
 
     scheduler_config: __is_first_stage__
 
@@ -55,12 +54,12 @@ inference:
   seed: 42
   height: 480
   width: 832
-  image: null                       
-  prompt_file: 'Two anthropomorphic cats in comfy boxing gear and bright gloves fight intensely on a spotlighted stage.'                     
-  solver: "unipc"           
-  num_inference_steps: 50                
-  time_shift: 3.0                
-  unconditional_guidance_scale: 5.0                        
+  image: null
+  prompt_file: "Two anthropomorphic cats in comfy boxing gear and bright gloves fight intensely on a spotlighted stage."
+  solver: "unipc"
+  num_inference_steps: 50
+  time_shift: 3.0
+  unconditional_guidance_scale: 5.0
   frames: 81
   n_samples_prompt: 1
   bs: 1
@@ -68,7 +67,8 @@ inference:
   enable_model_cpu_offload: true
 
   mapping:
-    inference.ckpt_path : flow.params.ckpt_path
-    inference.seed : flow.params.seed
-    inference.enable_model_cpu_offload : flow.params.offload_model
-    
+    inference.ckpt_path: flow.params.ckpt_path
+    inference.seed: flow.params.seed
+    inference.enable_model_cpu_offload: flow.params.offload_model
+    inference.ulysses_degree: flow.params.ulysses_size
+    inference.ring_degree: flow.params.ring_size

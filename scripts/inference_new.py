@@ -17,9 +17,12 @@ sys.path.insert(0, os.getcwd())
 sys.path.insert(1, f"{os.getcwd()}/src")
 
 from videotuna.utils.args_utils import prepare_inference_args
-from videotuna.utils.common_utils import instantiate_from_config
+from videotuna.utils.common_utils import instantiate_from_config, monitor_resources, save_metrics
 from videotuna.base.generation_base import GenerationBase
-from videotuna.utils.common_utils import monitor_resources
+from videotuna.utils.inference_cli import add_standard_inference_flags, apply_compile_env
+from videotuna.utils.fp8_utils import validate_fp8_inference
+from videotuna.utils.attention import apply_diffusers_attention_backend
+from videotuna.utils.device_utils import checkpoints_exist, require_nvidia_cuda_for_flow
 
 def get_parser():
     parser = argparse.ArgumentParser()
@@ -178,26 +181,7 @@ def get_parser():
         default=None, 
         help="target resolution",
     )
-    parser.add_argument(
-        "--enable_model_cpu_offload", 
-        action="store_true",
-        help="model cpu offload",
-    )
-    parser.add_argument(
-        "--enable_sequential_cpu_offload", 
-        action="store_true",
-        help="seqeuential cpu offload",
-    )
-    parser.add_argument(
-        "--enable_vae_tiling", 
-        action="store_true",
-        help="vae tiling",
-    )
-    parser.add_argument(
-        "--enable_vae_slicing", 
-        action="store_true",
-        help="vae slicing",
-    )
+    add_standard_inference_flags(parser)
     return parser
 
 
@@ -213,19 +197,48 @@ def run_inference(args, gpu_num=1, rank=0, **kwargs):
     inference_config = config.pop("inference", OmegaConf.create(flags={"allow_objects": True}))
     seed_everything(inference_config.seed)
 
-    # 1. create flow
-    # 1.1 init class on meta
-    # 1.2 load weight to cpu
-    # 1.3 vram management (default to cuda)
+    apply_compile_env(bool(getattr(args, "compile", False)))
+    if getattr(args, "enable_fp8", False):
+        dit_weight = getattr(inference_config, "dit_weight", None) or getattr(
+            inference_config, "trained_ckpt", None
+        )
+        validate_fp8_inference(str(dit_weight) if dit_weight else "")
+
     flow_config = config.pop("flow", OmegaConf.create(flags={"allow_objects": True}))
+    flow_target = flow_config.get("target", "")
+    allow_cpu = os.environ.get("VIDEOTUNA_ALLOW_CPU_INFERENCE", "0") == "1"
+    require_nvidia_cuda_for_flow(flow_target, allow_cpu=allow_cpu)
+
+    ckpt_path = getattr(inference_config, "ckpt_path", None)
+    if ckpt_path and not checkpoints_exist(ckpt_path):
+        raise FileNotFoundError(
+            f"Checkpoint path not found: {ckpt_path}\n"
+            "Download model weights into checkpoints/ before running inference. "
+            "See README.md for checkpoint setup."
+        )
+
+    # 1. create flow
     flow : GenerationBase = instantiate_from_config(flow_config, resolve=True)
     flow.from_pretrained(inference_config.ckpt_path, inference_config.trained_ckpt, inference_config.lorackpt)
+    if hasattr(flow, "pipeline"):
+        apply_diffusers_attention_backend(flow.pipeline)
     flow.enable_vram_management()
     flow.eval()
 
     # 2. flow inference
-    decorated_inference = monitor_resources(return_metrics=True)(flow.inference)
-    metrics = decorated_inference(inference_config) 
+    num_frames = int(getattr(inference_config, "frames", 1) or 1)
+    decorated_inference = monitor_resources(
+        frames=num_frames,
+        return_metrics=True,
+        inference_config=inference_config,
+    )(flow.inference)
+    metrics = decorated_inference(inference_config)
+    if metrics and inference_config.savedir:
+        save_metrics(
+            metrics=metrics,
+            savedir=inference_config.savedir,
+            config=inference_config,
+        )
 
 
 if __name__ == "__main__":
