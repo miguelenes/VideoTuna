@@ -12,7 +12,11 @@ sys.path.insert(1, f"{os.getcwd()}/src")
 
 from videotuna.base.generation_base import GenerationBase
 from videotuna.utils.args_utils import prepare_inference_args
-from videotuna.utils.attention import apply_diffusers_attention_backend
+from videotuna.utils.attention import (
+    get_attn_backend_requested,
+    get_resolved_attn_backend,
+    get_torch_compile_mode,
+)
 from videotuna.utils.common_utils import (
     instantiate_from_config,
     monitor_resources,
@@ -21,12 +25,18 @@ from videotuna.utils.common_utils import (
 from videotuna.utils.device_utils import (
     checkpoint_available,
     describe_compute_environment,
+    log_startup_device_summary,
     require_accelerator_for_flow,
+    require_min_vram,
+    resolve_inference_device,
+    snapshot_nvidia_smi,
 )
+from videotuna.utils.diffusers_optimizations import apply_flow_memory_config
 from videotuna.utils.fp8_utils import validate_fp8_inference
 from videotuna.utils.inference_cli import (
     add_standard_inference_flags,
     apply_compile_env,
+    resolve_offload_mode,
 )
 
 
@@ -218,6 +228,16 @@ def run_inference(args, gpu_num=1, rank=0, **kwargs):
     """
     Inference t2v/i2v models
     """
+    try:
+        _run_inference_impl(args, gpu_num=gpu_num, rank=rank, **kwargs)
+    except RuntimeError as exc:
+        smi = snapshot_nvidia_smi()
+        if smi:
+            logger.error("nvidia-smi snapshot:\n{}", smi)
+        raise exc
+
+
+def _run_inference_impl(args, gpu_num=1, rank=0, **kwargs):
     # load and replace inference args with user agrgument
     assert Path(args.config).exists(), f"Error: config file {args.config} NOT Found!"
     config = OmegaConf.load(args.config)
@@ -229,6 +249,9 @@ def run_inference(args, gpu_num=1, rank=0, **kwargs):
         "inference", OmegaConf.create(flags={"allow_objects": True})
     )
     seed_everything(inference_config.seed)
+
+    device = resolve_inference_device(getattr(inference_config, "device", None))
+    inference_config.device = str(device)
 
     logger.info("Compute environment: {}", describe_compute_environment())
 
@@ -242,7 +265,30 @@ def run_inference(args, gpu_num=1, rank=0, **kwargs):
     flow_config = config.pop("flow", OmegaConf.create(flags={"allow_objects": True}))
     flow_target = flow_config.get("target", "")
     allow_cpu = os.environ.get("VIDEOTUNA_ALLOW_CPU_INFERENCE", "0") == "1"
-    require_accelerator_for_flow(flow_target, allow_cpu=allow_cpu)
+    require_accelerator_for_flow(
+        flow_target,
+        allow_cpu=allow_cpu,
+        min_vram_gb=getattr(inference_config, "min_vram_gb", None),
+    )
+
+    min_vram = getattr(inference_config, "min_vram_gb", None)
+    if min_vram is not None:
+        require_min_vram(
+            float(min_vram),
+            device=device,
+            context=f"Flow: {flow_target}",
+        )
+
+    log_startup_device_summary(
+        device,
+        getattr(inference_config, "dtype", None),
+        get_resolved_attn_backend(),
+        resolve_offload_mode(inference_config),
+        attn_backend_requested=get_attn_backend_requested(),
+        memory_preset=getattr(inference_config, "memory_preset", None),
+        compile_enabled=os.environ.get("VIDEOTUNA_TORCH_COMPILE", "0") == "1",
+        compile_mode=get_torch_compile_mode(),
+    )
 
     ckpt_path = getattr(inference_config, "ckpt_path", None)
     if ckpt_path and not checkpoint_available(ckpt_path, flow_target=flow_target):
@@ -258,26 +304,29 @@ def run_inference(args, gpu_num=1, rank=0, **kwargs):
         inference_config.ckpt_path,
         inference_config.trained_ckpt,
         inference_config.lorackpt,
+        device=str(device),
     )
-    if hasattr(flow, "pipeline"):
-        apply_diffusers_attention_backend(flow.pipeline)
+    apply_flow_memory_config(flow, inference_config)
     flow.enable_vram_management()
     flow.eval()
 
     # 2. flow inference
     num_frames = int(getattr(inference_config, "frames", 1) or 1)
+    device_index = device.index if device.type == "cuda" and device.index is not None else 0
     decorated_inference = monitor_resources(
         frames=num_frames,
         return_metrics=True,
         inference_config=inference_config,
+        device_index=device_index,
     )(flow.inference)
     metrics = decorated_inference(inference_config)
     if metrics and inference_config.savedir:
-        save_metrics(
-            metrics=metrics,
-            savedir=inference_config.savedir,
-            config=inference_config,
-        )
+        if os.environ.get("VIDEOTUNA_METRICS_OWNER", "script") == "script":
+            save_metrics(
+                metrics=metrics,
+                savedir=inference_config.savedir,
+                config=inference_config,
+            )
 
 
 if __name__ == "__main__":

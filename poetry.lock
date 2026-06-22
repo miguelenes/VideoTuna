@@ -7276,9 +7276,11 @@ testing = ["coverage[toml]", "zope.event", "zope.testing"]
 [extras]
 cpu = []
 cuda = ["bitsandbytes", "nvidia-cublas-cu12", "nvidia-cuda-cupti-cu12", "nvidia-cuda-nvrtc-cu12", "nvidia-cuda-runtime-cu12", "nvidia-cudnn-cu12", "nvidia-cufft-cu12", "nvidia-curand-cu12", "nvidia-cusolver-cu12", "nvidia-cusparse-cu12", "nvidia-cusparselt-cu12", "nvidia-nccl-cu12", "nvidia-nvjitlink-cu12", "nvidia-nvtx-cu12", "triton", "xformers", "xfuser"]
+cuda124 = []
+cuda126 = []
 rocm = []
 
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.11"
-content-hash = "ad4a9f1bd56b35b60ff97438b8acd3f75cf010b2cde6991f4786e637dd6123bb"
+content-hash = "49ef60b0789ead63876871b928b0bc01ef3be7da5a03fef38cf8b277da09afdd"

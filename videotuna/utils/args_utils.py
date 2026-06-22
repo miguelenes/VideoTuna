@@ -115,6 +115,9 @@ def prepare_inference_args(
     :param config: The config object.
     :return: The updated config object.
     """
+    from videotuna.utils.inference_cli import prepare_cli_inference_args
+
+    prepare_cli_inference_args(args)
 
     # update the config with the command line arguments
     inference_config = config.pop("inference", OmegaConf.create())

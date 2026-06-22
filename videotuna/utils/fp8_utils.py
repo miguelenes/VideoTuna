@@ -9,7 +9,21 @@ from typing import Optional
 import torch
 from loguru import logger
 
-from videotuna.utils.device_utils import detect_compute_backend
+from videotuna.utils.device_utils import detect_compute_backend, gpu_is_available
+
+
+def require_nvidia_cuda() -> None:
+    """Fail when the active backend is not NVIDIA CUDA."""
+    backend = detect_compute_backend()
+    if backend != "cuda":
+        raise RuntimeError(
+            f"NVIDIA CUDA is required but detected backend is {backend!r}."
+        )
+
+
+def _fp8_min_compute_capability() -> tuple[int, int]:
+    """Ada Lovelace (sm 8.9) minimum for FP8 tensor cores in practice."""
+    return (8, 9)
 
 
 def fp8_dtype_available() -> bool:
@@ -36,6 +50,16 @@ def validate_fp8_inference(
             "FP8 inference (--enable_fp8) is not supported on AMD ROCm. "
             "Use --dtype bf16 with CPU offload instead."
         )
+
+    require_nvidia_cuda()
+    if gpu_is_available():
+        major, minor = torch.cuda.get_device_capability(0)
+        min_major, min_minor = _fp8_min_compute_capability()
+        if (major, minor) < (min_major, min_minor):
+            raise RuntimeError(
+                f"FP8 inference requires NVIDIA GPU compute capability >= "
+                f"{min_major}.{min_minor} (Ada/Hopper); detected {major}.{minor}."
+            )
 
     if not fp8_dtype_available():
         raise RuntimeError(

@@ -443,6 +443,8 @@ class GenerationBase(TrainBase, InferenceBase):
         denoiser_ckpt_path: Optional[Union[str, Path]] = None,
         lora_ckpt_path: Optional[Union[str, Path]] = None,
         ignore_missing_ckpts: bool = False,
+        device: Optional[str] = None,
+        **kwargs,
     ) -> None:
         assert ckpt_path is not None, "Please provide a valid checkpoint path."
 

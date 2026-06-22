@@ -135,3 +135,5 @@ inference:
     inference.enable_vae_slicing: flow.params.vae_slicing
     inference.enable_fp8: flow.params.use_fp8
     inference.dtype: flow.params.precision
+    inference.device: flow.params.device
+    inference.min_vram_gb: flow.params.min_vram_gb

@@ -93,6 +93,39 @@ def _python_wheel_tag() -> str:
     return f"cp{major}{minor}"
 
 
+def _torch_cuda_wheel_tag() -> str:
+    """Map torch.version.cuda to flash-attn wheel tag (e.g. cu126)."""
+    try:
+        import torch
+
+        cuda = getattr(torch.version, "cuda", None)
+        if cuda is None:
+            return "cu12"
+        parts = str(cuda).split(".")
+        if len(parts) >= 2:
+            return f"cu{parts[0]}{parts[1]}"
+    except ImportError:
+        pass
+    return "cu126"
+
+
+def _torch_minor_for_flash() -> str:
+    import torch
+
+    return ".".join(torch.__version__.split(".")[:2])
+
+
+def _flash_attn_wheel_url() -> str:
+    wheel_tag = _python_wheel_tag()
+    cuda_tag = _torch_cuda_wheel_tag()
+    torch_minor = _torch_minor_for_flash()
+    return (
+        "https://github.com/Dao-AILab/flash-attention/releases/download/"
+        f"v2.7.4.post1/flash_attn-2.7.4.post1+{cuda_tag}torch{torch_minor}cxx11abiTRUE-"
+        f"{wheel_tag}-{wheel_tag}-linux_x86_64.whl"
+    )
+
+
 def install_flash_attn():
     """
     Install flash-attn for PyTorch 2.6 + CUDA 12.6 (cxx11 ABI wheels).
@@ -101,14 +134,29 @@ def install_flash_attn():
     source build only when the wheel is unavailable.
     """
     _require_cuda_backend("install-flash-attn")
+    try:
+        import torch
+
+        if getattr(torch.version, "hip", None) is not None:
+            print(
+                "install-flash-attn requires an NVIDIA CUDA PyTorch build. "
+                "Detected ROCm/HIP. See docs/install-rocm.md.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if getattr(torch.version, "cuda", None) is None:
+            print(
+                "install-flash-attn requires a CUDA PyTorch build. "
+                "Run: poetry run install-cpu-torch is not compatible.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+    except ImportError:
+        pass
+
     subprocess.run([sys.executable, "-m", "pip", "install", "ninja"], check=False)
 
-    wheel_tag = _python_wheel_tag()
-    flash_attn_wheel = (
-        "https://github.com/Dao-AILab/flash-attention/releases/download/"
-        f"v2.7.4.post1/flash_attn-2.7.4.post1+cu12torch2.6cxx11abiTRUE-"
-        f"{wheel_tag}-{wheel_tag}-linux_x86_64.whl"
-    )
+    flash_attn_wheel = _flash_attn_wheel_url()
     result_wheel = subprocess.run(
         [
             sys.executable,
@@ -163,6 +211,8 @@ def install_flash_attn():
 
 _ROCM_TORCH_INDEX = "https://download.pytorch.org/whl/rocm6.2.4"
 _CPU_TORCH_INDEX = "https://download.pytorch.org/whl/cpu"
+# Re-pin after pip torch installs (ROCm/CPU indexes may upgrade these transitively).
+_POETRY_PINNED_DEPS = ("pillow==10.4.0", "numpy>=1.26,<2.3")
 _CUDA_ONLY_PACKAGES = (
     "xformers",
     "bitsandbytes",
@@ -182,6 +232,11 @@ _CUDA_ONLY_PACKAGES = (
     "nvidia-nvjitlink-cu12",
     "nvidia-nvtx-cu12",
 )
+
+
+def _reconcile_poetry_pinned_deps(pip: list[str]) -> None:
+    """Restore numpy/pillow versions required by videotuna and scipy."""
+    subprocess.run([*pip, "install", *_POETRY_PINNED_DEPS], check=False)
 
 
 def install_rocm():
@@ -206,12 +261,26 @@ def install_rocm():
             "--index-url",
             _ROCM_TORCH_INDEX,
             "--force-reinstall",
+            "--no-deps",
             "--no-cache-dir",
         ],
         check=False,
     )
     if result.returncode != 0:
         exit(result.returncode)
+    subprocess.run(
+        [
+            *pip,
+            "install",
+            "pytorch-triton-rocm==3.2.0",
+            "--index-url",
+            _ROCM_TORCH_INDEX,
+            "--no-deps",
+            "--no-cache-dir",
+        ],
+        check=False,
+    )
+    _reconcile_poetry_pinned_deps(pip)
 
     import torch
     import torchvision
@@ -260,10 +329,14 @@ def install_cpu_torch():
             "--index-url",
             _CPU_TORCH_INDEX,
             "--force-reinstall",
+            "--no-deps",
             "--no-cache-dir",
         ],
         check=False,
     )
+    if result.returncode != 0:
+        exit(result.returncode)
+    _reconcile_poetry_pinned_deps(pip)
     exit(result.returncode)
 
 

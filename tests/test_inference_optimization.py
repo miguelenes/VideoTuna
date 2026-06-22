@@ -17,8 +17,10 @@ from videotuna.utils.fp8_utils import (
 from videotuna.utils.inference_cli import (
     add_standard_inference_flags,
     apply_compile_env,
+    prepare_cli_inference_args,
     resolve_offload_mode,
 )
+from videotuna.utils.memory_presets import apply_memory_preset
 
 
 def test_add_standard_inference_flags():
@@ -26,6 +28,12 @@ def test_add_standard_inference_flags():
     add_standard_inference_flags(parser)
     args = parser.parse_args(
         [
+            "--device",
+            "cuda:1",
+            "--min-vram-gb",
+            "24",
+            "--memory-preset",
+            "low_vram",
             "--enable_vae_tiling",
             "--enable_sequential_cpu_offload",
             "--dtype",
@@ -33,17 +41,86 @@ def test_add_standard_inference_flags():
             "--ulysses_degree",
             "2",
             "--ring_degree",
-            "1",
+            "2",
             "--compile",
             "--enable_fp8",
         ]
     )
+    assert args.device == "cuda:1"
+    assert args.min_vram_gb == 24.0
+    assert args.memory_preset == "low_vram"
     assert args.enable_vae_tiling is True
     assert args.enable_sequential_cpu_offload is True
     assert args.dtype == "bf16"
     assert args.ulysses_degree == 2
     assert args.compile is True
     assert args.enable_fp8 is True
+
+
+def test_apply_memory_preset_low_vram():
+    args = argparse.Namespace(
+        memory_preset="low_vram",
+        enable_model_cpu_offload=False,
+        enable_sequential_cpu_offload=False,
+        enable_vae_tiling=False,
+        dtype=None,
+    )
+    apply_memory_preset(args)
+    assert args.enable_sequential_cpu_offload is True
+    assert args.enable_vae_tiling is True
+    assert args.dtype == "fp16"
+
+
+def test_apply_memory_preset_max_speed():
+    args = argparse.Namespace(
+        memory_preset="max_speed",
+        enable_model_cpu_offload=True,
+        enable_sequential_cpu_offload=True,
+        dtype=None,
+    )
+    apply_memory_preset(args)
+    assert args.enable_model_cpu_offload is False
+    assert args.enable_sequential_cpu_offload is False
+    assert args.dtype == "bf16"
+
+
+def test_prepare_cli_inference_args_validates_parallel():
+    args = argparse.Namespace(
+        memory_preset=None,
+        ulysses_degree=2,
+        ring_degree=2,
+    )
+    with mock.patch.dict(os.environ, {"WORLD_SIZE": "3"}):
+        with pytest.raises(ValueError, match="ulysses_degree"):
+            prepare_cli_inference_args(args)
+
+
+@mock.patch.dict(os.environ, {"VIDEOTUNA_ATTN_BACKEND": "flash", "VIDEOTUNA_ATTN_BACKEND_STRICT": "0"})
+def test_attn_flash_fallback_to_sdpa():
+    from videotuna.utils import attention
+
+    with mock.patch.object(attention, "_FLASH_ATTN_AVAILABLE", False):
+        with mock.patch.object(attention, "detect_compute_backend", return_value="cuda"):
+            with mock.patch.object(attention, "gpu_is_available", return_value=True):
+                assert attention.get_attn_backend() == "sdpa"
+
+
+@mock.patch.dict(os.environ, {"VIDEOTUNA_ATTN_BACKEND": "flash", "VIDEOTUNA_ATTN_BACKEND_STRICT": "1"})
+def test_attn_flash_strict_raises():
+    from videotuna.utils import attention
+
+    with mock.patch.object(attention, "_FLASH_ATTN_AVAILABLE", False):
+        with mock.patch.object(attention, "detect_compute_backend", return_value="cuda"):
+            with pytest.raises(RuntimeError, match="flash-attn"):
+                attention.get_attn_backend()
+
+
+@pytest.mark.gpu
+def test_attn_auto_resolves_on_cuda():
+    from videotuna.utils.attention import get_attn_backend
+
+    backend = get_attn_backend()
+    assert backend in ("flash", "sdpa", "eager")
 
 
 def test_resolve_offload_mode():
@@ -77,8 +154,14 @@ def test_precision_from_dtype_flag():
 
 def test_validate_fp8_inference_missing_map():
     with tempfile.NamedTemporaryFile(suffix=".pt") as tmp:
-        with pytest.raises(FileNotFoundError):
-            validate_fp8_inference(tmp.name)
+        with mock.patch(
+            "videotuna.utils.fp8_utils.detect_compute_backend", return_value="cuda"
+        ):
+            with mock.patch(
+                "videotuna.utils.fp8_utils.gpu_is_available", return_value=False
+            ):
+                with pytest.raises(FileNotFoundError):
+                    validate_fp8_inference(tmp.name)
 
 
 @mock.patch.dict(os.environ, {"VIDEOTUNA_ATTN_BACKEND": "eager"})

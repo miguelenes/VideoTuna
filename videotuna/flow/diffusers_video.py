@@ -31,6 +31,7 @@ from videotuna.utils.common_utils import monitor_resources
 from videotuna.utils.device_utils import (
     accelerator_device_string,
     detect_compute_backend,
+    resolve_inference_device,
 )
 from videotuna.utils.diffusers_optimizations import (
     apply_diffusers_optimizations,
@@ -241,6 +242,8 @@ class DiffusersVideoFlow(GenerationBase):
         denoiser_ckpt_path: Optional[str] = None,
         lora_ckpt_path: Optional[str] = None,
         ignore_missing_ckpts: bool = False,
+        device: Optional[str] = None,
+        **kwargs,
     ):
         self._model_id = resolve_model_id(
             self.model_family,
@@ -249,6 +252,7 @@ class DiffusersVideoFlow(GenerationBase):
             self.model_variant,
         )
         self._lora_path = lora_ckpt_path
+        self._inference_device = device
         logger.info(
             "DiffusersVideoFlow: model_id={} family={} mode={}",
             self._model_id,
@@ -356,6 +360,9 @@ class DiffusersVideoFlow(GenerationBase):
             args,
             model_family=self.model_family,
             disable_progress_bar=False,
+            device=resolve_inference_device(
+                getattr(args, "device", None) or self._inference_device
+            ),
         )
 
         prompts, media_paths = self._resolve_inputs(args)
@@ -404,13 +411,14 @@ class DiffusersVideoFlow(GenerationBase):
                     sample_idx,
                 )
 
-        self.save_metrics(
-            gpu=gpu_metrics,
-            time=time_metrics,
-            config=args,
-            savedir=args.savedir,
-            frames=frames if self.mode != "t2i" else 1,
-        )
+        if os.environ.get("VIDEOTUNA_METRICS_OWNER", "script") == "flow":
+            self.save_metrics(
+                gpu=gpu_metrics,
+                time=time_metrics,
+                config=args,
+                savedir=args.savedir,
+                frames=frames if self.mode != "t2i" else 1,
+            )
         return {"per_sample": per_sample, "gpu": gpu_metrics, "time": time_metrics}
 
     @monitor_resources(return_metrics=True)

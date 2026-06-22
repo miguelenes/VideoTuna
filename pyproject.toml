@@ -68,7 +68,7 @@ scipy = "1.14.1"
 beartype = "0.18.5"
 moviepy = "1.0.3"
 open-clip-torch = "2.12.0"
-numpy = ">=1.26,<3"
+numpy = ">=1.26,<2.3"
 diffusers = "^0.36.0"
 torchsde = "0.2.6"
 colorama = "0.4.6"
@@ -102,6 +102,8 @@ cuda = [
 ]
 rocm = []
 cpu = []
+cuda124 = []
+cuda126 = ["cuda"]
 
 [tool.poetry.group.training]
 optional = true
@@ -174,6 +176,11 @@ dev = [
 ]
 
 [[tool.poetry.source]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+priority = "explicit"
+
+[[tool.poetry.source]]
 name = "pytorch-cu126"
 url = "https://download.pytorch.org/whl/cu126"
 priority = "explicit"
@@ -204,6 +211,7 @@ format = 'scripts:code_format'
 format-check = 'scripts:code_format_check'
 lint = 'scripts:lint'
 benchmark-attn-backends = 'scripts:benchmark_attn_backends'
+verify-cuda-extras = 'scripts.verify_cuda_extras:main'
 test = 'scripts:test'
 type-check = 'scripts:type_check'
 inference-stepvideo-t2v-544x992 = 'scripts:inference_stepvideo_t2v_544x992'
@@ -251,6 +259,11 @@ train-wan2-1-i2v-lora = 'scripts:train_wan2_1_i2v_lora'
 train-wan2-1-i2v-fullft = 'scripts:train_wan2_1_i2v_fullft'
 train-wan2-1-t2v-lora = 'scripts:train_wan2_1_t2v_lora'
 train-wan2-1-t2v-fullft = 'scripts:train_wan2_1_t2v_fullft'
+
+[tool.pytest.ini_options]
+markers = [
+    "gpu: tests that require an NVIDIA/ROCm GPU (skipped when torch.cuda.is_available() is False)",
+]
 
 [tool.black]
 line-length = 88

@@ -349,7 +349,8 @@ class HunyuanVideoFlow(GenerationBase):
         denoiser_ckpt_path: Optional[Union[str, Path]] = None,
         lora_ckpt_path: Optional[Union[str, Path]] = None,
         ignore_missing_ckpts: bool = False,
-        device: str = "cuda",
+        device: str | None = None,
+        **kwargs,
     ):
         """
         Initialize the Inference pipeline.

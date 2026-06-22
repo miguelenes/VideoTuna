@@ -14,6 +14,7 @@ from PIL import Image
 
 import videotuna.models.wan.wan as wan
 from videotuna.base.generation_base import GenerationBase
+from videotuna.utils.common_utils import monitor_resources
 from videotuna.utils.device_utils import require_xfuser_sequence_parallel
 from videotuna.models.wan.wan.configs import (
     MAX_AREA_CONFIGS,
@@ -120,14 +121,15 @@ class WanVideoModelFlow(GenerationBase):
             offload_model = False if world_size > 1 else True
             logger.info(f"offload_model is not specified, set to {offload_model}.")
         if world_size > 1:
-            pass
-            # torch.cuda.set_device(local_rank)
-            # dist.init_process_group(
-            #     backend="nccl",
-            #     init_method="env://",
-            #     rank=rank,
-            #     world_size=world_size)
-            # logger.info("WanVideo flow: Init Process Group")
+            torch.cuda.set_device(local_rank)
+            if not dist.is_initialized():
+                dist.init_process_group(
+                    backend="nccl",
+                    init_method="env://",
+                    rank=rank,
+                    world_size=world_size,
+                )
+            logger.info("WanVideo flow: Init Process Group")
         else:
             assert not (
                 t5_fsdp or dit_fsdp
@@ -274,22 +276,33 @@ class WanVideoModelFlow(GenerationBase):
                 logger.info(f"Extended prompt: {prompt}")
 
             logger.info(f"Generating {'image' if 't2i' in self.task else 'video'} ...")
-            result_with_metrics = self.wan_t2v.generate(
-                prompt,
-                size=SIZE_CONFIGS[size],
-                frame_num=frames,
-                shift=sample_shift,
-                sample_solver=sample_solver,
-                sampling_steps=sampling_steps,
-                guide_scale=guide_scale,
-                seed=self.seed,
-                offload_model=self.offload_model,
-            )
+
+            @monitor_resources(return_metrics=True, frames=frames)
+            def _run_generate():
+                return self.wan_t2v.generate(
+                    prompt,
+                    size=SIZE_CONFIGS[size],
+                    frame_num=frames,
+                    shift=sample_shift,
+                    sample_solver=sample_solver,
+                    sampling_steps=sampling_steps,
+                    guide_scale=guide_scale,
+                    seed=self.seed,
+                    offload_model=self.offload_model,
+                )
+
+            result_with_metrics = _run_generate()
             video = result_with_metrics["result"]
             videos.append(video)
 
-            gpu.append(result_with_metrics.get("gpu", -1.0))
-            time.append(result_with_metrics.get("time", -1.0))
+            gpu.append(
+                result_with_metrics.get("peak_vram_gb")
+                or result_with_metrics.get("gpu", -1.0)
+            )
+            time.append(
+                result_with_metrics.get("wall_time_s")
+                or result_with_metrics.get("time", -1.0)
+            )
 
         if rank == 0:
             logger.info("Saving videos")
@@ -358,24 +371,34 @@ class WanVideoModelFlow(GenerationBase):
                 logger.info(f"Extended prompt: {prompt}")
 
             logger.info("Generating video ...")
-            result_with_metrics = self.wan_i2v.generate(
-                prompt,
-                img,
-                max_area=MAX_AREA_CONFIGS[size],
-                frame_num=frames,
-                shift=sample_shift,
-                sample_solver=sample_solver,
-                sampling_steps=sampling_steps,
-                guide_scale=guide_scale,
-                seed=self.seed,
-                offload_model=self.offload_model,
-            )
 
+            @monitor_resources(return_metrics=True, frames=frames)
+            def _run_generate():
+                return self.wan_i2v.generate(
+                    prompt,
+                    img,
+                    max_area=MAX_AREA_CONFIGS[size],
+                    frame_num=frames,
+                    shift=sample_shift,
+                    sample_solver=sample_solver,
+                    sampling_steps=sampling_steps,
+                    guide_scale=guide_scale,
+                    seed=self.seed,
+                    offload_model=self.offload_model,
+                )
+
+            result_with_metrics = _run_generate()
             video = result_with_metrics["result"]
             video = video.cpu()
             videos.append(video)
-            gpu.append(result_with_metrics.get("gpu", -1.0))
-            time.append(result_with_metrics.get("time", -1.0))
+            gpu.append(
+                result_with_metrics.get("peak_vram_gb")
+                or result_with_metrics.get("gpu", -1.0)
+            )
+            time.append(
+                result_with_metrics.get("wall_time_s")
+                or result_with_metrics.get("time", -1.0)
+            )
             del result_with_metrics
 
         if rank == 0:
@@ -413,6 +436,8 @@ class WanVideoModelFlow(GenerationBase):
         denoiser_ckpt_path: Optional[Union[str, Path]] = None,
         lora_ckpt_path: Optional[Union[str, Path]] = None,
         ignore_missing_ckpts: bool = False,
+        device: Optional[str] = None,
+        **kwargs,
     ):
         if "t2v" in self.task or "t2i" in self.task:
             self.wan_t2v.load_weight()

@@ -17,7 +17,12 @@ from colorama import Fore, Style
 from loguru import logger
 from omegaconf import DictConfig, OmegaConf
 
-from videotuna.utils.attention import get_attn_backend
+from videotuna.utils.attention import (
+    get_attn_backend,
+    get_attn_backend_requested,
+    get_resolved_attn_backend,
+    get_torch_compile_mode,
+)
 from videotuna.utils.device_utils import (
     detect_compute_backend,
     gpu_is_available,
@@ -197,10 +202,35 @@ def _build_sample_metrics(
     }
 
 
+def _current_cuda_device_index() -> int:
+    if not gpu_is_available():
+        return 0
+    return torch.cuda.current_device()
+
+
+def _peak_vram_stats(device_index: int) -> tuple[float | None, float | None]:
+    if not gpu_is_available():
+        return None, None
+    allocated = torch.cuda.max_memory_allocated(device_index) / (1024**3)
+    reserved = torch.cuda.max_memory_reserved(device_index) / (1024**3)
+    return round(allocated, 2), round(reserved, 2)
+
+
+def _strip_non_serializable_metrics(sample: Dict[str, Any]) -> Dict[str, Any]:
+    cleaned = dict(sample)
+    result = cleaned.pop("result", None)
+    if result is not None and not isinstance(
+        result, (str, int, float, bool, list, dict, type(None))
+    ):
+        cleaned["result_type"] = type(result).__name__
+    return cleaned
+
+
 def monitor_resources(
     return_metrics: bool = True,
     frames: int = 1,
     inference_config: Optional[Any] = None,
+    device_index: Optional[int] = None,
 ):
     def decorator(func):
         @wraps(func)
@@ -209,8 +239,12 @@ def monitor_resources(
             start_time = time.time()
             start_cpu_mem = process.memory_info().rss / 1024 / 1024 / 1024  # GB
 
+            dev_idx = device_index
+            if dev_idx is None and gpu_is_available():
+                dev_idx = _current_cuda_device_index()
+
             if gpu_is_available():
-                torch.cuda.reset_peak_memory_stats()
+                torch.cuda.reset_peak_memory_stats(dev_idx)
                 synchronize_accelerator()
 
             result = func(*args, **kwargs)
@@ -223,26 +257,36 @@ def monitor_resources(
 
             logger.info(f"Time used: {time_used:.2f} seconds")
             logger.info(f"CPU memory change: {cpu_mem_used:.2f} GB")
-            gpu_mem_used = None
-            if gpu_is_available():
-                synchronize_accelerator()
-                gpu_mem_used = (
-                    torch.cuda.max_memory_allocated() / 1024 / 1024 / 1024
-                )  # GB
-                logger.info(f"Peak GPU memory used: {gpu_mem_used:.2f} GB")
+            peak_alloc, peak_reserved = _peak_vram_stats(dev_idx or 0)
+            if peak_alloc is not None:
+                logger.info(f"Peak GPU memory allocated: {peak_alloc:.2f} GB")
+            if peak_reserved is not None:
+                logger.info(f"Peak GPU memory reserved: {peak_reserved:.2f} GB")
 
             if return_metrics:
-                sample = _build_sample_metrics(time_used, gpu_mem_used, frames)
+                sample = _build_sample_metrics(time_used, peak_alloc, frames)
                 sample["cpu"] = round(cpu_mem_used, 2)
-                sample["attention_backend"] = get_attn_backend()
+                sample["peak_vram_reserved_gb"] = peak_reserved
+                sample["attention_backend"] = get_resolved_attn_backend()
+                sample["attention_backend_requested"] = get_attn_backend_requested()
+                sample["attention_backend_resolved"] = get_resolved_attn_backend()
                 sample["compute_backend"] = detect_compute_backend()
-                sample["torch_compile"] = (
-                    os.environ.get("VIDEOTUNA_TORCH_COMPILE", "0") == "1"
-                )
+                compile_on = os.environ.get("VIDEOTUNA_TORCH_COMPILE", "0") == "1"
+                sample["torch_compile"] = compile_on
+                sample["compile_mode"] = get_torch_compile_mode() if compile_on else None
                 sample["result"] = result
+                if dev_idx is not None and gpu_is_available():
+                    sample["gpu_index"] = dev_idx
+                    sample["gpu_name"] = torch.cuda.get_device_name(dev_idx)
                 if inference_config is not None:
                     sample["offload_mode"] = _offload_mode_from_config(inference_config)
                     sample["dtype"] = getattr(inference_config, "dtype", None)
+                    sample["memory_preset"] = getattr(
+                        inference_config, "memory_preset", None
+                    )
+                    sample["requested_device"] = getattr(
+                        inference_config, "device", None
+                    )
                 return sample
             return result
 
@@ -296,12 +340,24 @@ def save_metrics(
             "per_sample": per_sample,
             "gpu": gpu_list,
             "time": time_list,
-            "attention_backend": get_attn_backend(),
+            "attention_backend": get_resolved_attn_backend(),
+            "attention_backend_requested": get_attn_backend_requested(),
+            "attention_backend_resolved": get_resolved_attn_backend(),
             "torch_compile": os.environ.get("VIDEOTUNA_TORCH_COMPILE", "0") == "1",
         }
         if config is not None:
             metrics["offload_mode"] = resolve_offload_mode(config)
             metrics["dtype"] = getattr(config, "dtype", None)
+            metrics["memory_preset"] = getattr(config, "memory_preset", None)
+            compile_on = metrics["torch_compile"]
+            metrics["compile_mode"] = get_torch_compile_mode() if compile_on else None
+
+    if metrics.get("per_sample"):
+        metrics["per_sample"] = [
+            _strip_non_serializable_metrics(s) if isinstance(s, dict) else s
+            for s in metrics["per_sample"]
+        ]
+    metrics = _strip_non_serializable_metrics(metrics)
 
     if config_dict is not None:
         metrics["config"] = config_dict

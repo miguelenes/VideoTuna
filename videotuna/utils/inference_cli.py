@@ -6,6 +6,8 @@ import argparse
 import os
 from typing import Optional
 
+from videotuna.utils.memory_presets import apply_memory_preset
+
 
 def add_standard_inference_flags(
     parser: argparse.ArgumentParser,
@@ -16,6 +18,29 @@ def add_standard_inference_flags(
     dtype_default: Optional[str] = None,
 ) -> argparse.ArgumentParser:
     """Register standardized memory/performance flags on *parser*."""
+    parser.add_argument(
+        "--device",
+        "--gpu-id",
+        dest="device",
+        type=str,
+        default=None,
+        help=(
+            "CUDA device: cuda, cuda:1, or integer id. "
+            "Respects CUDA_VISIBLE_DEVICES remapping."
+        ),
+    )
+    parser.add_argument(
+        "--min-vram-gb",
+        type=float,
+        default=None,
+        help="Fail before model load if selected GPU total VRAM is below this.",
+    )
+    parser.add_argument(
+        "--memory-preset",
+        choices=["low_vram", "balanced", "max_speed"],
+        default=None,
+        help="Named VRAM/performance preset (overrides offload flags when set).",
+    )
     parser.add_argument(
         "--enable_vae_tiling",
         action="store_true",
@@ -42,6 +67,13 @@ def add_standard_inference_flags(
         default=dtype_default,
         choices=["bf16", "fp16"],
         help="Inference compute dtype (bf16 or fp16).",
+    )
+    parser.add_argument(
+        "--device-map",
+        type=str,
+        default=None,
+        choices=["auto"],
+        help="Multi-GPU device_map for large Diffusers models (experimental).",
     )
     if include_parallel:
         parser.add_argument(
@@ -93,3 +125,15 @@ def resolve_offload_mode(args) -> str:
     if getattr(args, "enable_model_cpu_offload", False):
         return "model"
     return "none"
+
+
+def prepare_cli_inference_args(args: argparse.Namespace) -> argparse.Namespace:
+    """Apply memory presets and validate parallel degrees before config merge."""
+    apply_memory_preset(args)
+    ulysses = getattr(args, "ulysses_degree", None)
+    ring = getattr(args, "ring_degree", None)
+    if ulysses is not None or ring is not None:
+        from videotuna.utils.device_utils import validate_sequence_parallel_degrees
+
+        validate_sequence_parallel_degrees(ulysses, ring)
+    return args

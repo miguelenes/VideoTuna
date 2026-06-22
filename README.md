@@ -89,7 +89,10 @@ VideoTuna routes attention through a unified backend selector in `videotuna/util
 |----------|--------|---------|-------------|
 | `VIDEOTUNA_COMPUTE_BACKEND` | `auto`, `cuda`, `rocm`, `cpu` | `auto` | Override GPU backend detection (CUDA vs ROCm) |
 | `VIDEOTUNA_ATTN_BACKEND` | `auto`, `flash`, `sdpa`, `eager` | `auto` | Attention implementation for Hunyuan, OpenSora, Flux, StepVideo, Wan, and diffusers pipelines |
+| `VIDEOTUNA_ATTN_BACKEND_STRICT` | `0`, `1` | `0` | When `1`, fail if `flash` requested but flash-attn is missing (default: fall back to sdpa) |
 | `VIDEOTUNA_TORCH_COMPILE` | `0`, `1` | `0` | Compile denoiser/transformer forward with `torch.compile` (not VAE or text encoders) |
+| `VIDEOTUNA_TORCH_COMPILE_MODE` | `reduce-overhead`, `max-autotune` | `reduce-overhead` | `torch.compile` mode when compile is enabled |
+| `VIDEOTUNA_METRICS_OWNER` | `script`, `flow` | `script` | Who writes `metrics.json` (`inference_new` vs per-flow) |
 
 **`auto` resolution:** NVIDIA — `flash` (when `flash-attn` is installed) → `sdpa` → `eager` on CPU. AMD ROCm — `sdpa` → `eager` (flash is never auto-selected).
 
@@ -109,7 +112,26 @@ Compare backends on a short CogVideoX diffusers smoke run (`steps=4`):
 
 ```shell
 poetry run benchmark-attn-backends
+poetry run benchmark-attn-backends --json-out results/bench_attn.json
+poetry run verify-cuda-extras
 ```
+
+**Device and VRAM CLI flags** (all `inference_new.py` entrypoints):
+
+```shell
+# Select GPU (respects CUDA_VISIBLE_DEVICES remapping)
+CUDA_VISIBLE_DEVICES=1 poetry run inference-hunyuan-t2v --device cuda:0
+
+# Named memory presets
+poetry run inference-wan2.2-t2v-720p --memory-preset low_vram
+poetry run inference-hunyuan1.5-t2v --memory-preset balanced
+poetry run inference-cogvideox1.5-t2v --memory-preset max_speed --compile
+
+# Fail before model load when VRAM is insufficient
+poetry run inference-hunyuan-t2v --min-vram-gb 48
+```
+
+Preset YAMLs live under [`configs/inference/presets/`](configs/inference/presets/). Multi-GPU: see [`docs/multi-gpu.md`](docs/multi-gpu.md).
 
 Sequence parallel (`--ulysses-degree`, `--ring-degree` on Hunyuan/Wan) uses xfuser and is independent of `VIDEOTUNA_ATTN_BACKEND`. The first `torch.compile` iteration is slow; exclude it when timing inference.
 
@@ -276,14 +298,22 @@ Task|Model|Command|Length (#Frames)|Resolution|Inference Time|GPU Memory (GB)|
 
 **Low-VRAM presets (≤24GB GPUs)** — metrics written to `metrics.json` beside outputs.
 
+| Tier | Preset | Wan 2.2 720p (approx.) | Hunyuan 720p (approx.) |
+|------|--------|------------------------|-------------------------|
+| Full GPU | `max_speed` | ~40–48 GB | ~45 GB |
+| Balanced | `balanced` | ~24 GB | ~24 GB |
+| Low VRAM | `low_vram` | ~12–16 GB | ~16 GB |
+
+*Approximate peaks; use `poetry run benchmark-attn-backends` or `--min-vram-gb` on your hardware.*
+
 |Model|Command|Length|Resolution|Notes|
 |:---------|:---------|:---------|:---------|:---------|
 |T2V|HunyuanVideo (H800 baseline)|`poetry run inference-hunyuan-t2v`|129|720×1280|~32min, ~60GB peak VRAM on H800|
-|T2V|HunyuanVideo (24GB preset)|`poetry run inference-hunyuan-t2v --enable_sequential_cpu_offload --enable_vae_tiling --enable_vae_slicing --dtype bf16`|129|720×1280|Use `--enable_fp8` when `*_map.pt` is available; smoke test with `--num_inference_steps 4`|
-|T2V|WanVideo (H800 baseline)|`poetry run inference-wanvideo-t2v-720p`|81|720×1280|~32min, ~70GB; `--enable_model_cpu_offload` on by default|
-|T2V|WanVideo (24GB)|`poetry run inference-wanvideo-t2v-720p --dtype bf16`|81|720×1280|Offload enabled in wrapper; smoke test with `--num_inference_steps 4`|
+|T2V|HunyuanVideo (24GB preset)|`poetry run inference-hunyuan-t2v --memory-preset balanced`|129|720×1280|Or `--enable_sequential_cpu_offload --enable_vae_tiling --dtype bf16`|
+|T2V|WanVideo (H800 baseline)|`poetry run inference-wanvideo-t2v-720p`|81|720×1280|~32min, ~70GB full GPU|
+|T2V|WanVideo (24GB)|`poetry run inference-wanvideo-t2v-720p --memory-preset low_vram`|81|720×1280|~12–16 GB with sequential offload + fp16|
 
-Shared inference flags (all `inference_new.py` models): `--enable_vae_tiling`, `--enable_vae_slicing`, `--enable_model_cpu_offload`, `--enable_sequential_cpu_offload`, `--dtype bf16|fp16`, `--fuse_qkv`, `--enable_attention_cache`, `--ulysses_degree`, `--ring_degree`, `--compile`, `--enable_fp8` (Hunyuan).
+Shared inference flags (all `inference_new.py` models): `--device` / `--gpu-id`, `--min-vram-gb`, `--memory-preset low_vram|balanced|max_speed`, `--enable_vae_tiling`, `--enable_vae_slicing`, `--enable_model_cpu_offload`, `--enable_sequential_cpu_offload`, `--dtype bf16|fp16`, `--device-map auto` (Diffusers multi-GPU), `--fuse_qkv`, `--enable_attention_cache`, `--ulysses_degree`, `--ring_degree`, `--compile`, `--enable_fp8` (Hunyuan).
 
 **Hardware:** Native Hunyuan/Wan/StepVideo 720p flows need a **GPU accelerator** (NVIDIA CUDA or AMD ROCm). Default install uses PyTorch+cu126 (`poetry install -E cuda`); AMD users: `poetry install -E rocm` + `poetry run install-rocm` — see [docs/install-rocm.md](docs/install-rocm.md). **Tier A** diffusers models (CogVideoX, Flux, Wan 2.2 Diffusers, Hunyuan 1.5) are the recommended ROCm path. StepVideo is **CUDA-only** (proprietary liboptimus). CPU-only dev: `poetry run pytest tests/test_inference_optimization.py`.
 
@@ -440,6 +470,23 @@ VideoTuna v0.1.0+ targets **Python 3.11**, **PyTorch 2.6 (CUDA 12.6)**, and **di
 | flash-attn (optional) | 2.7.3 + CUDA 12.1 | **2.7.4.post1 + CUDA 12.6** (`cxx11abiTRUE` wheel) |
 
 **CUDA driver:** PyTorch `cu126` wheels require an NVIDIA driver compatible with CUDA 12.6+.
+
+| Driver (min) | CUDA | PyTorch wheel | Notes |
+|--------------|------|---------------|-------|
+| ≥ 550.54 | 12.6 | `cu126` (default) | `poetry install -E cuda` |
+| ≥ 545.x | 12.4 | `cu124` (optional) | Swap torch source to `pytorch-cu124`; see extras `cuda124` |
+| ≥ 525.x | 12.1 | legacy | Not supported in v0.1.0 default lockfile |
+
+**GPU architecture (`TORCH_CUDA_ARCH_LIST`) when building CUDA extensions:**
+
+| Family | Example GPUs | `TORCH_CUDA_ARCH_LIST` |
+|--------|--------------|------------------------|
+| Turing | T4, RTX 20xx | `7.5` |
+| Ampere | A100, RTX 30xx | `8.0;8.6` |
+| Ada | RTX 4090, L40 | `8.9` |
+| Hopper | H100, H800 | `9.0` |
+
+Verify optional NVIDIA packages: `poetry run verify-cuda-extras` (add `--expect-flash` on GPU CI).
 
 **Poetry install on Linux:** `torch`, `torchvision`, and `xformers` resolve from the explicit `pytorch-cu126` index; NVIDIA CUDA runtime packages and `triton` are listed in `pyproject.toml` so `poetry install` is self-contained on Linux x86_64.
 

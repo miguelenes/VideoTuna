@@ -318,7 +318,12 @@ class StepVideoModelFlow(GenerationBase):
         rank = int(os.getenv("RANK", 0))
         world_size = int(os.getenv("WORLD_SIZE", 1))
         local_rank = int(os.getenv("LOCAL_RANK", 0))
-        device = local_rank
+        resolved = resolve_inference_device(
+            getattr(config, "device", None) or getattr(self, "_inference_device", None)
+        )
+        device = resolved.index if resolved.type == "cuda" else local_rank
+        if resolved.type == "cuda":
+            torch.cuda.set_device(device)
 
         # load input
         prompt_list = self.load_inference_inputs(config.prompt_file, config.mode)
@@ -357,7 +362,12 @@ class StepVideoModelFlow(GenerationBase):
         rank = int(os.getenv("RANK", 0))
         world_size = int(os.getenv("WORLD_SIZE", 1))
         local_rank = int(os.getenv("LOCAL_RANK", 0))
-        device = local_rank
+        resolved = resolve_inference_device(
+            getattr(config, "device", None) or getattr(self, "_inference_device", None)
+        )
+        device = resolved.index if resolved.type == "cuda" else local_rank
+        if resolved.type == "cuda":
+            torch.cuda.set_device(device)
 
         neg_magic = config.uncond_prompt
         pos_magic = config.pos_prompt
@@ -456,7 +466,10 @@ class StepVideoModelFlow(GenerationBase):
         denoiser_ckpt_path: Optional[Union[str, Path]] = None,
         lora_ckpt_path: Optional[Union[str, Path]] = None,
         ignore_missing_ckpts: bool = False,
+        device: Optional[str] = None,
+        **kwargs,
     ):
+        self._inference_device = device
         logger.info("StepVideoModelFlow: start load weight")
         self.load_lib(ckpt_path)
         self.first_stage_model.load_weight()
@@ -476,9 +489,11 @@ class StepVideoModelFlow(GenerationBase):
             tp_applicator.apply_to_model(self.denoiser)
 
     def training_step(self, batch, batch_idx):
+        from videotuna.utils.device_utils import resolve_inference_device
+
         model_offload: bool = True
         dtype: torch.dtype = torch.bfloat16
-        device: str = "cuda"
+        device = str(resolve_inference_device())
         first_stage_key = self.first_stage_key
         cond_stage_key = self.cond_stage_key
 
