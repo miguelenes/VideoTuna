@@ -13,9 +13,9 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from videotuna.utils.wan_lora_bridge import (  # noqa: E402
-    _remap_native_to_diffusers_keys,
     analyze_native_wan_lora_ckpt,
     apply_native_wan_lora_to_pipeline,
+    compute_remap_coverage,
     is_native_wan_lora_ckpt,
     load_native_wan_lora_state_dict,
 )
@@ -47,13 +47,9 @@ def _build_synthetic_ckpt(path: Path, *, num_blocks: int = 2, rank: int = 16) ->
 def _inventory_only(ckpt: Path) -> int:
     info = analyze_native_wan_lora_ckpt(ckpt)
     native = load_native_wan_lora_state_dict(ckpt)
-    remapped = _remap_native_to_diffusers_keys(native)
-    unchanged = sum(1 for k in native if native[k] is remapped.get(k))
+    transformed, total, coverage = compute_remap_coverage(native)
     print(json.dumps(info, indent=2))
-    print(
-        f"Remap coverage: {len(remapped) - unchanged}/{len(native)} keys transformed "
-        f"({(len(remapped) - unchanged) / max(len(native), 1):.1%})"
-    )
+    print(f"Remap coverage: {transformed}/{total} keys transformed ({coverage:.1%})")
     return 0
 
 

@@ -154,6 +154,18 @@ def _remap_native_to_diffusers_keys(
     return remapped
 
 
+def compute_remap_coverage(
+    native_state: Dict[str, torch.Tensor],
+) -> Tuple[int, int, float]:
+    """Return transformed key count, total keys, and coverage ratio."""
+    if not native_state:
+        return 0, 0, 0.0
+    remapped = _remap_native_to_diffusers_keys(native_state)
+    transformed = sum(1 for key in native_state if key != remapped.get(key))
+    total = len(native_state)
+    return transformed, total, transformed / total
+
+
 def analyze_native_wan_lora_ckpt(ckpt_path: str | Path) -> Dict[str, Any]:
     """Inventory native checkpoint keys and remapped Diffusers targets."""
     native_state = load_native_wan_lora_state_dict(ckpt_path)
@@ -188,6 +200,8 @@ def _apply_lora_to_transformer(
     rank: int,
     adapter_name: str,
     expert_label: str,
+    source_keys: int,
+    remapped_keys: int,
 ) -> Tuple[Any, WanLoraLoadReport]:
     """Inject PEFT LoRA adapters and load remapped weights onto one transformer."""
     if not hasattr(transformer, "peft_config") or not transformer.peft_config:
@@ -217,8 +231,8 @@ def _apply_lora_to_transformer(
     report = WanLoraLoadReport(
         expert=expert_label,
         rank=rank,
-        source_keys=len(remapped_state),
-        remapped_keys=len(remapped_state),
+        source_keys=source_keys,
+        remapped_keys=remapped_keys,
         loaded_lora_params=loaded,
         missing_keys=missing,
         unexpected_keys=unexpected,
@@ -257,6 +271,7 @@ def apply_native_wan_lora_to_pipeline(
     native_state = load_native_wan_lora_state_dict(ckpt_path)
     rank = _infer_lora_rank(native_state)
     remapped = _remap_native_to_diffusers_keys(native_state)
+    remapped_keys, source_keys, _ = compute_remap_coverage(native_state)
     scale_2 = lora_scale if lora_scale_2 is None else lora_scale_2
 
     reports: List[WanLoraLoadReport] = []
@@ -269,6 +284,8 @@ def apply_native_wan_lora_to_pipeline(
         rank=rank,
         adapter_name=HIGH_NOISE_ADAPTER,
         expert_label="transformer",
+        source_keys=source_keys,
+        remapped_keys=remapped_keys,
     )
     reports.append(report_high)
     adapters.append(HIGH_NOISE_ADAPTER)
@@ -282,6 +299,8 @@ def apply_native_wan_lora_to_pipeline(
             rank=rank,
             adapter_name=LOW_NOISE_ADAPTER,
             expert_label="transformer_2",
+            source_keys=source_keys,
+            remapped_keys=remapped_keys,
         )
         reports.append(report_low)
         adapters.append(LOW_NOISE_ADAPTER)
@@ -295,7 +314,7 @@ def apply_native_wan_lora_to_pipeline(
         )
 
     if hasattr(pipeline, "set_adapters"):
-        pipeline.set_adapters(adapters, scales)
+        pipeline.set_adapters(adapters, adapter_weights=scales)
     elif hasattr(pipeline, "fuse_lora"):
         pipeline.fuse_lora(lora_scale=lora_scale)
 

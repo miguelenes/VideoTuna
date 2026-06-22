@@ -16,6 +16,7 @@ from videotuna.utils.wan_lora_bridge import (
     _remap_single_native_key,
     analyze_native_wan_lora_ckpt,
     apply_native_wan_lora_to_pipeline,
+    compute_remap_coverage,
     export_diffusers_lora_state_dicts,
     is_native_wan_lora_ckpt,
     load_native_wan_lora_state_dict,
@@ -123,6 +124,14 @@ def test_export_diffusers_lora_state_dicts(tmp_path):
     assert "blocks.0.attn1.to_q.lora_A.weight" in exports["high_noise"]
 
 
+def test_remap_coverage_on_production_fixture():
+    native = _production_native_keys()
+    transformed, total, coverage = compute_remap_coverage(native)
+    assert total == 12
+    assert transformed == 12
+    assert coverage >= 0.9
+
+
 def test_apply_native_wan_lora_to_single_transformer():
     ckpt_state = _production_native_keys()
     ckpt_path = MagicMock()
@@ -137,8 +146,10 @@ def test_apply_native_wan_lora_to_single_transformer():
 
     assert len(reports) == 1
     assert reports[0].expert == "transformer"
-    assert reports[0].loaded_lora_params > 0
-    assert _count_lora(pipeline.transformer) > 0
+    assert reports[0].remap_ratio >= 0.9
+    assert reports[0].missing_keys == []
+    assert reports[0].loaded_lora_params == 12
+    assert _count_lora(pipeline.transformer) == 12
 
 
 def test_apply_native_wan_lora_to_dual_transformer():
@@ -159,9 +170,13 @@ def test_apply_native_wan_lora_to_dual_transformer():
     assert len(reports) == 2
     assert {r.expert for r in reports} == {"transformer", "transformer_2"}
     pipeline.set_adapters.assert_called_once()
-    adapters, scales = pipeline.set_adapters.call_args[0]
+    call = pipeline.set_adapters.call_args
+    adapters = call.args[0] if call.args else call.kwargs["adapter_names"]
+    weights = call.kwargs.get("adapter_weights")
+    if weights is None and len(call.args) > 1:
+        weights = call.args[1]
     assert len(adapters) == 2
-    assert scales == [1.0, 1.0]
+    assert weights == [1.0, 1.0]
 
 
 def _count_lora(module: WanTransformer3DModel) -> int:

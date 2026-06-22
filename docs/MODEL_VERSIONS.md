@@ -37,6 +37,29 @@ LoRA bridge (Wan 2.1 native → 2.2 Diffusers): `videotuna/utils/wan_lora_bridge
 
 Offline export: `tools/convert_wan_lora_21_to_22.py`
 
+## ML stack pins (Wan 2.2 LoRA bridge audit)
+
+Validated against `tests/test_wan_lora_bridge.py` (remap coverage ≥ 90% on production-style fixture keys):
+
+| Package | Constraint | Locked | Notes |
+|---------|------------|--------|-------|
+| diffusers | `^0.38.0` | 0.38.0 | Wan `WanTransformer3DModel` + `set_adapters(adapter_weights=…)` |
+| peft | `^0.17.0` | 0.17.1 | Stays on 0.17.x — 0.18+ requires newer `transformers` than pinned |
+| accelerate | `^1.14.0` | 1.14.0 | Transitive via peft / training |
+| safetensors | `^0.8.0` | 0.8.0 | Required by diffusers 0.38 |
+
+Matrix results (ephemeral `pip install --no-deps` where noted):
+
+| Row | diffusers | peft | Result |
+|-----|-----------|------|--------|
+| A (baseline) | 0.36.0 | 0.17.1 | pass |
+| B | 0.37.1 | 0.17.1 | pass |
+| C | 0.38.0 | 0.17.1 | pass — **chosen combo** |
+| D | 0.38.0 | 0.19.1 | fail — `peft` 0.19 needs `transformers` APIs not in `^4.48.0` |
+| E | 0.36.0 | 0.19.1 | fail — same `transformers` / `peft` mismatch |
+
+Debug inventory: `poetry run python tools/spike_wan_lora_bridge.py --synthetic /tmp/synthetic.ckpt`
+
 ## CI smoke (CPU config validation)
 
 ```bash

@@ -54,9 +54,9 @@ def test_core_ml_stack_versions():
     assert (
         Version(torch.__version__).major == 2 and Version(torch.__version__).minor >= 6
     )
-    assert Version(diffusers.__version__) >= Version("0.36.0")
+    assert Version(diffusers.__version__) >= Version("0.38.0")
     assert Version(transformers.__version__) >= Version("4.48.0")
-    assert Version(accelerate.__version__) >= Version("1.2.0")
+    assert Version(accelerate.__version__) >= Version("1.14.0")
     assert Version(peft.__version__) >= Version("0.17.0")
 
 
