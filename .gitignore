@@ -19,6 +19,8 @@ Dataset/
 output/
 outputs/
 /data
+data/t2i/domain/
+data/t2v/domain/
 
 HPSv2/
 SwissArmyTransformer/

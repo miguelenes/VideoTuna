@@ -1,5 +1,7 @@
-# Low VRAM preset for Wan 2.2 Diffusers 720p
-# Usage: poetry run inference-wan2.2-t2v-720p --config configs/inference/presets/low_vram_wan2_2_720p.yaml
+# Max speed preset for Wan 2.2 Diffusers 720p (full GPU, ~40–48 GB VRAM)
+# Usage:
+#   poetry run inference-wan2.2-t2v-720p --config configs/inference/presets/max_speed_wan2_2_720p.yaml
+# Optional after warm-up: add --compile (sets VIDEOTUNA_TORCH_COMPILE=1)
 flow:
   target: videotuna.flow.diffusers_video.DiffusersVideoFlow
   params:
@@ -11,7 +13,7 @@ flow:
 inference:
   mode: t2v
   ckpt_path: Wan-AI/Wan2.2-T2V-A14B-Diffusers
-  savedir: results/t2v/wan2.2-t2v-a14b-low-vram
+  savedir: results/t2v/wan2.2-t2v-a14b-max-speed
   prompt_file: inputs/t2v/prompts.txt
   frames: 81
   height: 720
@@ -20,8 +22,6 @@ inference:
   unconditional_guidance_scale: 5.0
   seed: 42
   savefps: 16
-  memory_preset: low_vram
-  enable_sequential_cpu_offload: true
-  enable_vae_tiling: true
-  dtype: fp16
-  min_vram_gb: 10
+  memory_preset: max_speed
+  dtype: bf16
+  min_vram_gb: 38

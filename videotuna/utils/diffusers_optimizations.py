@@ -8,7 +8,10 @@ from typing import Any, Optional, cast
 import torch
 from loguru import logger
 
-from videotuna.utils.attention import apply_diffusers_attention_backend
+from videotuna.utils.attention import (
+    apply_diffusers_attention_backend,
+    maybe_compile_denoiser,
+)
 from videotuna.utils.device_utils import gpu_is_available, resolve_inference_device
 from videotuna.utils.inference_cli import resolve_offload_mode
 
@@ -55,6 +58,11 @@ def apply_diffusers_optimizations(
         pipe.set_progress_bar_config(disable=disable_progress_bar)
 
     transformer = getattr(pipe, "transformer", None)
+    if transformer is not None and offload == "none":
+        compiled = maybe_compile_denoiser(transformer)
+        if compiled is not transformer:
+            pipe.transformer = compiled
+            transformer = compiled
     if transformer is not None and getattr(args, "enable_attention_cache", False):
         if hasattr(transformer, "enable_cache"):
             transformer.enable_cache()

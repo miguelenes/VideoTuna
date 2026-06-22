@@ -285,3 +285,87 @@ def test_save_metrics_writes_metrics_json():
             data = json.load(f)
         assert "per_sample" in data
         assert os.path.exists(os.path.join(tmp, "metric.json"))
+
+
+def test_apply_diffusers_optimizations_compiles_when_no_offload():
+    from unittest.mock import MagicMock
+
+    from videotuna.utils import diffusers_optimizations
+
+    transformer = MagicMock(name="transformer")
+    compiled = MagicMock(name="compiled_transformer")
+    pipe = MagicMock()
+    pipe.transformer = transformer
+    args = argparse.Namespace(
+        enable_sequential_cpu_offload=False,
+        enable_model_cpu_offload=False,
+        enable_vae_slicing=False,
+        enable_vae_tiling=False,
+        fuse_qkv=False,
+        enable_attention_cache=False,
+        device=None,
+        device_map=None,
+    )
+    with mock.patch.object(
+        diffusers_optimizations, "maybe_compile_denoiser", return_value=compiled
+    ) as compile_mock:
+        with mock.patch.object(
+            diffusers_optimizations, "apply_diffusers_attention_backend"
+        ):
+            with mock.patch.object(
+                diffusers_optimizations, "resolve_inference_device"
+            ):
+                with mock.patch.object(pipe, "to"):
+                    diffusers_optimizations.apply_diffusers_optimizations(pipe, args)
+    compile_mock.assert_called_once_with(transformer)
+    assert pipe.transformer is compiled
+
+
+def test_apply_diffusers_optimizations_skips_compile_with_offload():
+    from unittest.mock import MagicMock
+
+    from videotuna.utils import diffusers_optimizations
+
+    pipe = MagicMock()
+    pipe.transformer = MagicMock(name="transformer")
+    args = argparse.Namespace(
+        enable_sequential_cpu_offload=False,
+        enable_model_cpu_offload=True,
+        enable_vae_slicing=False,
+        enable_vae_tiling=False,
+        fuse_qkv=False,
+        enable_attention_cache=False,
+        device=None,
+        device_map=None,
+    )
+    with mock.patch.object(
+        diffusers_optimizations, "maybe_compile_denoiser"
+    ) as compile_mock:
+        with mock.patch.object(
+            diffusers_optimizations, "apply_diffusers_attention_backend"
+        ):
+            diffusers_optimizations.apply_diffusers_optimizations(pipe, args)
+    compile_mock.assert_not_called()
+
+
+def test_benchmark_resolve_pipeline_kind():
+    from scripts.benchmark_attn_backends import (
+        _PIPELINE_DEFAULTS,
+        _resolve_pipeline_kind,
+    )
+
+    assert _resolve_pipeline_kind("wan") == "wan"
+    assert _resolve_pipeline_kind("cogvideox") == "cogvideox"
+    assert (
+        _PIPELINE_DEFAULTS["wan"]["model_path"]
+        == "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
+    )
+    assert _PIPELINE_DEFAULTS["wan"]["default_heights"] == [480]
+    assert _PIPELINE_DEFAULTS["wan"]["default_num_frames"] == 17
+
+
+def test_benchmark_resolve_pipeline_kind_invalid():
+    from scripts.benchmark_attn_backends import _resolve_pipeline_kind
+
+    with pytest.raises(ValueError, match="Unknown pipeline"):
+        _resolve_pipeline_kind("invalid")
