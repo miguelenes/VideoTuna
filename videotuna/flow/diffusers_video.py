@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import os
-from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union, cast
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
 from diffusers import FluxPipeline, WanPipeline
@@ -114,6 +113,7 @@ class DiffusersVideoFlow(GenerationBase):
         self._model_id: Optional[str] = None
         self._lora_path: Optional[str] = None
         self._dtype = torch.bfloat16
+        self._inference_device: Optional[str] = None
 
     def from_pretrained(
         self,

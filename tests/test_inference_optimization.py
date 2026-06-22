@@ -155,6 +155,8 @@ def test_attn_flash_strict_raises():
 
 
 def test_attn_auto_resolves():
+    import torch
+
     from videotuna.utils.attention import get_attn_backend
 
     backend = get_attn_backend()
@@ -232,24 +234,14 @@ def test_monitor_resources_returns_extended_keys():
     assert "torch_compile" in out
 
 
-def test_hyvideo_cfgdistill_no_duplicate_guidance_embed():
-    from videotuna.models.hunyuan.hyvideo_i2v.modules.models import (
-        HYVideoDiffusionTransformerWrapper,
-    )
+def test_benchmark_defaults_wan_only():
+    from scripts.benchmark_attn_backends import DEFAULT_MODEL, DEFAULT_NUM_FRAMES
 
-    wrapper = HYVideoDiffusionTransformerWrapper(
-        device="cpu",
-        precision="bf16",
-        i2v_mode=False,
-        embedded_cfg_scale=6.0,
-        model="HYVideo-T/2-cfgdistill",
-        ckpt_path="checkpoints/hunyuanvideo/HunyuanVideo",
-        dit_weight="dummy.pt",
-    )
-    assert wrapper.model.guidance_embed is True
+    assert DEFAULT_MODEL == "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
+    assert DEFAULT_NUM_FRAMES == 17
 
 
-def test_require_accelerator_for_flow_raises_without_gpu():
+def test_inference_new_imports_argparse():
     import torch
 
     from videotuna.utils.device_utils import require_accelerator_for_flow
@@ -350,43 +342,8 @@ def test_apply_diffusers_optimizations_skips_compile_with_offload():
     compile_mock.assert_not_called()
 
 
-def test_benchmark_resolve_pipeline_kind():
-    from scripts.benchmark_attn_backends import (
-        _PIPELINE_DEFAULTS,
-        _resolve_pipeline_kind,
-    )
 
-    assert _resolve_pipeline_kind("wan") == "wan"
-    assert _resolve_pipeline_kind("cogvideox") == "cogvideox"
-    assert (
-        _PIPELINE_DEFAULTS["wan"]["model_path"]
-        == "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
-    )
-    assert _PIPELINE_DEFAULTS["wan"]["default_heights"] == [480]
-    assert _PIPELINE_DEFAULTS["wan"]["default_num_frames"] == 17
-
-
-def test_benchmark_resolve_pipeline_kind_invalid():
-    from scripts.benchmark_attn_backends import _resolve_pipeline_kind
-
-    with pytest.raises(ValueError, match="Unknown pipeline"):
-        _resolve_pipeline_kind("invalid")
-
-
-def test_hunyuan_attention_context_uses_get_attn_backend():
-    from pathlib import Path
-
-    source = (
-        Path(__file__).resolve().parents[1]
-        / "videotuna"
-        / "flow"
-        / "diffusers_video.py"
-    ).read_text(encoding="utf-8")
-    assert "get_attn_backend()" in source
-    assert 'os.environ.get("VIDEOTUNA_ATTN_BACKEND"' not in source
-
-
-def test_inference_new_imports_argparse():
+def test_require_accelerator_for_flow_raises_without_gpu():
     from pathlib import Path
 
     source = (

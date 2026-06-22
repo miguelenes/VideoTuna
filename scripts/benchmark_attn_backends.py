@@ -159,7 +159,7 @@ def _run_backend(
     return result
 
 
-def main(argv: List[str] | None = None) -> int:
+def main(argv: List[str] | None = None) -> int:  # noqa: C901
     parser = argparse.ArgumentParser(
         description="Benchmark PrivTune attention backends on Wan 2.2 Diffusers."
     )
@@ -238,7 +238,10 @@ def main(argv: List[str] | None = None) -> int:
         width = int(height * 16 / 9) if height else None
         for backend in backends:
             label = backend if height is None else f"{backend}@{height}p"
-            print(f"Running wan backend={label} ({compute_backend}) ...", file=sys.stderr)
+            print(
+                f"Running wan backend={label} ({compute_backend}) ...",
+                file=sys.stderr,
+            )
             try:
                 results.append(
                     _run_backend(
