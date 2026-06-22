@@ -1,5 +1,5 @@
 # Copyright 2025 StepFun Inc. All Rights Reserved.
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
@@ -12,14 +12,15 @@
 # ==============================================================================
 import torch
 from einops import rearrange
+from loguru import logger
 from torch import nn
 from torch.nn import functional as F
-from loguru import logger
+
 from ..utils import with_empty_init
 
 
 def base_group_norm(x, norm_layer, act_silu=False, channel_last=False):
-    if hasattr(base_group_norm, 'spatial') and base_group_norm.spatial:
+    if hasattr(base_group_norm, "spatial") and base_group_norm.spatial:
         assert channel_last == True
         x_shape = x.shape
         x = x.flatten(0, 1)
@@ -27,10 +28,16 @@ def base_group_norm(x, norm_layer, act_silu=False, channel_last=False):
             # Permute to NCHW format
             x = x.permute(0, 3, 1, 2)
 
-        out = F.group_norm(x.contiguous(), norm_layer.num_groups, norm_layer.weight.to(device=x.device, dtype=x.dtype), norm_layer.bias.to(device=x.device, dtype=x.dtype), norm_layer.eps)
+        out = F.group_norm(
+            x.contiguous(),
+            norm_layer.num_groups,
+            norm_layer.weight.to(device=x.device, dtype=x.dtype),
+            norm_layer.bias.to(device=x.device, dtype=x.dtype),
+            norm_layer.eps,
+        )
         if act_silu:
             out = F.silu(out)
-        
+
         if channel_last:
             # Permute back to NHWC format
             out = out.permute(0, 2, 3, 1)
@@ -40,7 +47,13 @@ def base_group_norm(x, norm_layer, act_silu=False, channel_last=False):
         if channel_last:
             # Permute to NCHW format
             x = x.permute(0, 4, 1, 2, 3)
-        out = F.group_norm(x.contiguous(), norm_layer.num_groups, norm_layer.weight, norm_layer.bias, norm_layer.eps)
+        out = F.group_norm(
+            x.contiguous(),
+            norm_layer.num_groups,
+            norm_layer.weight,
+            norm_layer.bias,
+            norm_layer.eps,
+        )
         if act_silu:
             out = F.silu(out)
         if channel_last:
@@ -48,10 +61,17 @@ def base_group_norm(x, norm_layer, act_silu=False, channel_last=False):
             out = out.permute(0, 2, 3, 4, 1)
     return out
 
+
 def base_conv2d(x, conv_layer, channel_last=False, residual=None):
     if channel_last:
         x = x.permute(0, 3, 1, 2)  # NHWC to NCHW
-    out = F.conv2d(x, conv_layer.weight, conv_layer.bias, stride=conv_layer.stride, padding=conv_layer.padding)
+    out = F.conv2d(
+        x,
+        conv_layer.weight,
+        conv_layer.bias,
+        stride=conv_layer.stride,
+        padding=conv_layer.padding,
+    )
     if residual is not None:
         if channel_last:
             residual = residual.permute(0, 3, 1, 2)  # NHWC to NCHW
@@ -60,13 +80,24 @@ def base_conv2d(x, conv_layer, channel_last=False, residual=None):
         out = out.permute(0, 2, 3, 1)  # NCHW to NHWC
     return out
 
-def base_conv3d(x, conv_layer, channel_last=False, residual=None, only_return_output=False):
+
+def base_conv3d(
+    x, conv_layer, channel_last=False, residual=None, only_return_output=False
+):
     if only_return_output:
-        size = cal_outsize(x.shape, conv_layer.weight.shape, conv_layer.stride, conv_layer.padding)
+        size = cal_outsize(
+            x.shape, conv_layer.weight.shape, conv_layer.stride, conv_layer.padding
+        )
         return torch.empty(size, device=x.device, dtype=x.dtype)
     if channel_last:
         x = x.permute(0, 4, 1, 2, 3)  # NDHWC to NCDHW
-    out = F.conv3d(x, conv_layer.weight, conv_layer.bias, stride=conv_layer.stride, padding=conv_layer.padding)
+    out = F.conv3d(
+        x,
+        conv_layer.weight,
+        conv_layer.bias,
+        stride=conv_layer.stride,
+        padding=conv_layer.padding,
+    )
     if residual is not None:
         if channel_last:
             residual = residual.permute(0, 4, 1, 2, 3)  # NDHWC to NCDHW
@@ -78,14 +109,13 @@ def base_conv3d(x, conv_layer, channel_last=False, residual=None, only_return_ou
 
 def cal_outsize(input_sizes, kernel_sizes, stride, padding):
     stride_d, stride_h, stride_w = stride
-    padding_d, padding_h, padding_w = padding 
+    padding_d, padding_h, padding_w = padding
     dilation_d, dilation_h, dilation_w = 1, 1, 1
 
     in_d = input_sizes[1]
     in_h = input_sizes[2]
     in_w = input_sizes[3]
     in_channel = input_sizes[4]
-
 
     kernel_d = kernel_sizes[2]
     kernel_h = kernel_sizes[3]
@@ -99,11 +129,8 @@ def cal_outsize(input_sizes, kernel_sizes, stride, padding):
     return size
 
 
-
-
 def calc_out_(in_size, padding, dilation, kernel, stride):
     return (in_size + 2 * padding - dilation * (kernel - 1) - 1) // stride + 1
-
 
 
 def base_conv3d_channel_last(x, conv_layer, residual=None):
@@ -112,31 +139,37 @@ def base_conv3d_channel_last(x, conv_layer, residual=None):
     if (in_numel >= 2**30) or (out_numel >= 2**30):
         assert conv_layer.stride[0] == 1, "time split asks time stride = 1"
 
-        B,T,H,W,C = x.shape
+        B, T, H, W, C = x.shape
         K = conv_layer.kernel_size[0]
 
         chunks = 4
         chunk_size = T // chunks
 
         if residual is None:
-            out_nhwc = base_conv3d(x, conv_layer, channel_last=True, residual=residual, only_return_output=True)
+            out_nhwc = base_conv3d(
+                x,
+                conv_layer,
+                channel_last=True,
+                residual=residual,
+                only_return_output=True,
+            )
         else:
             out_nhwc = residual
 
         assert B == 1
         outs = []
         for i in range(chunks):
-            if i == chunks-1:
-                xi = x[:1,chunk_size*i:]
-                out_nhwci = out_nhwc[:1,chunk_size*i:]
+            if i == chunks - 1:
+                xi = x[:1, chunk_size * i :]
+                out_nhwci = out_nhwc[:1, chunk_size * i :]
             else:
-                xi = x[:1,chunk_size*i:chunk_size*(i+1)+K-1]
-                out_nhwci = out_nhwc[:1,chunk_size*i:chunk_size*(i+1)]
+                xi = x[:1, chunk_size * i : chunk_size * (i + 1) + K - 1]
+                out_nhwci = out_nhwc[:1, chunk_size * i : chunk_size * (i + 1)]
             if residual is not None:
-                if i == chunks-1:
-                    ri = residual[:1,chunk_size*i:]
+                if i == chunks - 1:
+                    ri = residual[:1, chunk_size * i :]
                 else:
-                    ri = residual[:1,chunk_size*i:chunk_size*(i+1)]
+                    ri = residual[:1, chunk_size * i : chunk_size * (i + 1)]
             else:
                 ri = None
             out_nhwci.copy_(base_conv3d(xi, conv_layer, channel_last=True, residual=ri))
@@ -145,13 +178,10 @@ def base_conv3d_channel_last(x, conv_layer, residual=None):
     return out_nhwc
 
 
-
 class Upsample2D(nn.Module):
-    def __init__(self,
-                 channels,
-                 use_conv=False,
-                 use_conv_transpose=False,
-                 out_channels=None):
+    def __init__(
+        self, channels, use_conv=False, use_conv_transpose=False, out_channels=None
+    ):
         super().__init__()
         self.channels = channels
         self.out_channels = out_channels or channels
@@ -171,13 +201,25 @@ class Upsample2D(nn.Module):
             return self.conv(x)
 
         if output_size is None:
-            x = F.interpolate(
-                x.permute(0,3,1,2).to(memory_format=torch.channels_last),
-                scale_factor=2.0, mode='nearest').permute(0,2,3,1).contiguous()
+            x = (
+                F.interpolate(
+                    x.permute(0, 3, 1, 2).to(memory_format=torch.channels_last),
+                    scale_factor=2.0,
+                    mode="nearest",
+                )
+                .permute(0, 2, 3, 1)
+                .contiguous()
+            )
         else:
-            x = F.interpolate(
-                x.permute(0,3,1,2).to(memory_format=torch.channels_last),
-                size=output_size, mode='nearest').permute(0,2,3,1).contiguous()
+            x = (
+                F.interpolate(
+                    x.permute(0, 3, 1, 2).to(memory_format=torch.channels_last),
+                    size=output_size,
+                    mode="nearest",
+                )
+                .permute(0, 2, 3, 1)
+                .contiguous()
+            )
 
         # x = self.conv(x)
         x = base_conv2d(x, self.conv, channel_last=True)
@@ -194,7 +236,9 @@ class Downsample2D(nn.Module):
         stride = 2
 
         if use_conv:
-            self.conv = nn.Conv2d(self.channels, self.out_channels, 3, stride=stride, padding=padding)
+            self.conv = nn.Conv2d(
+                self.channels, self.out_channels, 3, stride=stride, padding=padding
+            )
         else:
             assert self.channels == self.out_channels
             self.conv = nn.AvgPool2d(kernel_size=stride, stride=stride)
@@ -211,36 +255,54 @@ class Downsample2D(nn.Module):
         return x
 
 
-
 class CausalConv(nn.Module):
-    def __init__(self,
-        chan_in,
-        chan_out,
-        kernel_size,
-        **kwargs
-    ):
+    def __init__(self, chan_in, chan_out, kernel_size, **kwargs):
         super().__init__()
 
         if isinstance(kernel_size, int):
-            kernel_size = kernel_size if isinstance(kernel_size, tuple) else ((kernel_size,) * 3)
+            kernel_size = (
+                kernel_size if isinstance(kernel_size, tuple) else ((kernel_size,) * 3)
+            )
         time_kernel_size, height_kernel_size, width_kernel_size = kernel_size
 
-        self.dilation = kwargs.pop('dilation', 1)
-        self.stride = kwargs.pop('stride', 1)
+        self.dilation = kwargs.pop("dilation", 1)
+        self.stride = kwargs.pop("stride", 1)
         if isinstance(self.stride, int):
             self.stride = (self.stride, 1, 1)
         time_pad = self.dilation * (time_kernel_size - 1) + max((1 - self.stride[0]), 0)
         height_pad = height_kernel_size // 2
         width_pad = width_kernel_size // 2
-        self.time_causal_padding = (width_pad, width_pad, height_pad, height_pad, time_pad, 0)
-        self.time_uncausal_padding = (width_pad, width_pad, height_pad, height_pad, 0, 0)
+        self.time_causal_padding = (
+            width_pad,
+            width_pad,
+            height_pad,
+            height_pad,
+            time_pad,
+            0,
+        )
+        self.time_uncausal_padding = (
+            width_pad,
+            width_pad,
+            height_pad,
+            height_pad,
+            0,
+            0,
+        )
 
-        self.conv = nn.Conv3d(chan_in, chan_out, kernel_size, stride=self.stride, dilation=self.dilation, **kwargs)
+        self.conv = nn.Conv3d(
+            chan_in,
+            chan_out,
+            kernel_size,
+            stride=self.stride,
+            dilation=self.dilation,
+            **kwargs,
+        )
         self.is_first_run = True
 
     def forward(self, x, is_init=True, residual=None):
-        x = nn.functional.pad(x,
-            self.time_causal_padding if is_init else self.time_uncausal_padding)
+        x = nn.functional.pad(
+            x, self.time_causal_padding if is_init else self.time_uncausal_padding
+        )
 
         x = self.conv(x)
         if residual is not None:
@@ -264,11 +326,27 @@ class ChannelDuplicatingPixelUnshuffleUpSampleLayer3D(nn.Module):
 
     def forward(self, x: torch.Tensor, is_init=True) -> torch.Tensor:
         x = x.repeat_interleave(self.repeats, dim=1)
-        x = x.view(x.size(0), self.out_channels, self.factor, self.factor, self.factor, x.size(2), x.size(3), x.size(4))
+        x = x.view(
+            x.size(0),
+            self.out_channels,
+            self.factor,
+            self.factor,
+            self.factor,
+            x.size(2),
+            x.size(3),
+            x.size(4),
+        )
         x = x.permute(0, 1, 5, 2, 6, 3, 7, 4).contiguous()
-        x = x.view(x.size(0), self.out_channels, x.size(2)*self.factor, x.size(4)*self.factor, x.size(6)*self.factor)
-        x = x[:, :, self.factor - 1:, :, :]
+        x = x.view(
+            x.size(0),
+            self.out_channels,
+            x.size(2) * self.factor,
+            x.size(4) * self.factor,
+            x.size(6) * self.factor,
+        )
+        x = x[:, :, self.factor - 1 :, :, :]
         return x
+
 
 class ConvPixelShuffleUpSampleLayer3D(nn.Module):
     def __init__(
@@ -282,9 +360,7 @@ class ConvPixelShuffleUpSampleLayer3D(nn.Module):
         self.factor = factor
         out_ratio = factor**3
         self.conv = CausalConv(
-            in_channels,
-            out_channels * out_ratio,
-            kernel_size=kernel_size
+            in_channels, out_channels * out_ratio, kernel_size=kernel_size
         )
 
     def forward(self, x: torch.Tensor, is_init=True) -> torch.Tensor:
@@ -295,16 +371,19 @@ class ConvPixelShuffleUpSampleLayer3D(nn.Module):
     @staticmethod
     def pixel_shuffle_3d(x: torch.Tensor, factor: int) -> torch.Tensor:
         batch_size, channels, depth, height, width = x.size()
-        new_channels = channels // (factor ** 3)
+        new_channels = channels // (factor**3)
         new_depth = depth * factor
         new_height = height * factor
         new_width = width * factor
 
-        x = x.view(batch_size, new_channels, factor, factor, factor, depth, height, width)
+        x = x.view(
+            batch_size, new_channels, factor, factor, factor, depth, height, width
+        )
         x = x.permute(0, 1, 5, 2, 6, 3, 7, 4).contiguous()
         x = x.view(batch_size, new_channels, new_depth, new_height, new_width)
-        x = x[:, :, factor - 1:, :, :]
+        x = x[:, :, factor - 1 :, :, :]
         return x
+
 
 class ConvPixelUnshuffleDownSampleLayer3D(nn.Module):
     def __init__(
@@ -319,9 +398,7 @@ class ConvPixelUnshuffleDownSampleLayer3D(nn.Module):
         out_ratio = factor**3
         assert out_channels % out_ratio == 0
         self.conv = CausalConv(
-            in_channels,
-            out_channels // out_ratio,
-            kernel_size=kernel_size
+            in_channels, out_channels // out_ratio, kernel_size=kernel_size
         )
 
     def forward(self, x: torch.Tensor, is_init=True) -> torch.Tensor:
@@ -331,13 +408,14 @@ class ConvPixelUnshuffleDownSampleLayer3D(nn.Module):
 
     @staticmethod
     def pixel_unshuffle_3d(x: torch.Tensor, factor: int) -> torch.Tensor:
-        pad = (0, 0, 0, 0, factor-1, 0)  # (left, right, top, bottom, front, back)
+        pad = (0, 0, 0, 0, factor - 1, 0)  # (left, right, top, bottom, front, back)
         x = F.pad(x, pad)
         B, C, D, H, W = x.shape
         x = x.view(B, C, D // factor, factor, H // factor, factor, W // factor, factor)
         x = x.permute(0, 1, 3, 5, 7, 2, 4, 6).contiguous()
         x = x.view(B, C * factor**3, D // factor, H // factor, W // factor)
         return x
+
 
 class PixelUnshuffleChannelAveragingDownSampleLayer3D(nn.Module):
     def __init__(
@@ -354,13 +432,38 @@ class PixelUnshuffleChannelAveragingDownSampleLayer3D(nn.Module):
         self.group_size = in_channels * factor**3 // out_channels
 
     def forward(self, x: torch.Tensor, is_init=True) -> torch.Tensor:
-        pad = (0, 0, 0, 0, self.factor-1, 0)  # (left, right, top, bottom, front, back)
+        pad = (
+            0,
+            0,
+            0,
+            0,
+            self.factor - 1,
+            0,
+        )  # (left, right, top, bottom, front, back)
         x = F.pad(x, pad)
         B, C, D, H, W = x.shape
-        x = x.view(B, C, D // self.factor, self.factor, H // self.factor, self.factor, W // self.factor, self.factor)
+        x = x.view(
+            B,
+            C,
+            D // self.factor,
+            self.factor,
+            H // self.factor,
+            self.factor,
+            W // self.factor,
+            self.factor,
+        )
         x = x.permute(0, 1, 3, 5, 7, 2, 4, 6).contiguous()
-        x = x.view(B, C * self.factor**3, D // self.factor, H // self.factor, W // self.factor)
-        x = x.view(B, self.out_channels, self.group_size, D // self.factor, H // self.factor, W // self.factor)
+        x = x.view(
+            B, C * self.factor**3, D // self.factor, H // self.factor, W // self.factor
+        )
+        x = x.view(
+            B,
+            self.out_channels,
+            self.group_size,
+            D // self.factor,
+            H // self.factor,
+            W // self.factor,
+        )
         x = x.mean(dim=2)
         return x
 
@@ -378,37 +481,56 @@ class PixelUnshuffleChannelAveragingDownSampleLayer3D(nn.Module):
         self.group_size = in_channels * factor**3 // out_channels
 
     def forward(self, x: torch.Tensor, is_init=True) -> torch.Tensor:
-        pad = (0, 0, 0, 0, self.factor-1, 0)  # (left, right, top, bottom, front, back)
+        pad = (
+            0,
+            0,
+            0,
+            0,
+            self.factor - 1,
+            0,
+        )  # (left, right, top, bottom, front, back)
         x = F.pad(x, pad)
         B, C, D, H, W = x.shape
-        x = x.view(B, C, D // self.factor, self.factor, H // self.factor, self.factor, W // self.factor, self.factor)
+        x = x.view(
+            B,
+            C,
+            D // self.factor,
+            self.factor,
+            H // self.factor,
+            self.factor,
+            W // self.factor,
+            self.factor,
+        )
         x = x.permute(0, 1, 3, 5, 7, 2, 4, 6).contiguous()
-        x = x.view(B, C * self.factor**3, D // self.factor, H // self.factor, W // self.factor)
-        x = x.view(B, self.out_channels, self.group_size, D // self.factor, H // self.factor, W // self.factor)
+        x = x.view(
+            B, C * self.factor**3, D // self.factor, H // self.factor, W // self.factor
+        )
+        x = x.view(
+            B,
+            self.out_channels,
+            self.group_size,
+            D // self.factor,
+            H // self.factor,
+            W // self.factor,
+        )
         x = x.mean(dim=2)
         return x
-
-
 
 
 def base_group_norm_with_zero_pad(x, norm_layer, act_silu=True, pad_size=2):
     out_shape = list(x.shape)
     out_shape[1] += pad_size
     out = torch.empty(out_shape, dtype=x.dtype, device=x.device)
-    out[:, pad_size:] = base_group_norm(x, norm_layer, act_silu=act_silu, channel_last=True)
+    out[:, pad_size:] = base_group_norm(
+        x, norm_layer, act_silu=act_silu, channel_last=True
+    )
     out[:, :pad_size] = 0
     return out
 
 
 class CausalConvChannelLast(CausalConv):
-    def __init__(self,
-        chan_in,
-        chan_out,
-        kernel_size,
-        **kwargs
-    ):
-        super().__init__(
-            chan_in, chan_out, kernel_size, **kwargs)
+    def __init__(self, chan_in, chan_out, kernel_size, **kwargs):
+        super().__init__(chan_in, chan_out, kernel_size, **kwargs)
 
         self.time_causal_padding = (0, 0) + self.time_causal_padding
         self.time_uncausal_padding = (0, 0) + self.time_uncausal_padding
@@ -418,26 +540,37 @@ class CausalConvChannelLast(CausalConv):
             self.is_first_run = False
             # self.conv.weight = nn.Parameter(self.conv.weight.permute(0,2,3,4,1).contiguous())
 
-        x = nn.functional.pad(x,
-            self.time_causal_padding if is_init else self.time_uncausal_padding)
+        x = nn.functional.pad(
+            x, self.time_causal_padding if is_init else self.time_uncausal_padding
+        )
 
         x = base_conv3d_channel_last(x, self.conv, residual=residual)
         return x
 
+
 class CausalConvAfterNorm(CausalConv):
-    def __init__(self,
-        chan_in,
-        chan_out,
-        kernel_size,
-        **kwargs
-    ):
-        super().__init__(
-            chan_in, chan_out, kernel_size, **kwargs)
+    def __init__(self, chan_in, chan_out, kernel_size, **kwargs):
+        super().__init__(chan_in, chan_out, kernel_size, **kwargs)
 
         if self.time_causal_padding == (1, 1, 1, 1, 2, 0):
-            self.conv = nn.Conv3d(chan_in, chan_out, kernel_size, stride=self.stride, dilation=self.dilation, padding=(0, 1, 1), **kwargs)
+            self.conv = nn.Conv3d(
+                chan_in,
+                chan_out,
+                kernel_size,
+                stride=self.stride,
+                dilation=self.dilation,
+                padding=(0, 1, 1),
+                **kwargs,
+            )
         else:
-            self.conv = nn.Conv3d(chan_in, chan_out, kernel_size, stride=self.stride, dilation=self.dilation, **kwargs)
+            self.conv = nn.Conv3d(
+                chan_in,
+                chan_out,
+                kernel_size,
+                stride=self.stride,
+                dilation=self.dilation,
+                **kwargs,
+            )
         self.is_first_run = True
 
     def forward(self, x, is_init=True, residual=None):
@@ -452,16 +585,15 @@ class CausalConvAfterNorm(CausalConv):
         x = base_conv3d_channel_last(x, self.conv, residual=residual)
         return x
 
+
 class AttnBlock(nn.Module):
-    def __init__(self,
-        in_channels
-    ):
+    def __init__(self, in_channels):
         super().__init__()
 
         self.norm = nn.GroupNorm(num_groups=32, num_channels=in_channels)
-        self.q        = CausalConvChannelLast(in_channels, in_channels, kernel_size=1)
-        self.k        = CausalConvChannelLast(in_channels, in_channels, kernel_size=1)
-        self.v        = CausalConvChannelLast(in_channels, in_channels, kernel_size=1)
+        self.q = CausalConvChannelLast(in_channels, in_channels, kernel_size=1)
+        self.k = CausalConvChannelLast(in_channels, in_channels, kernel_size=1)
+        self.v = CausalConvChannelLast(in_channels, in_channels, kernel_size=1)
         self.proj_out = CausalConvChannelLast(in_channels, in_channels, kernel_size=1)
 
     def attention(self, x, is_init=True):
@@ -478,14 +610,16 @@ class AttnBlock(nn.Module):
         return x
 
     def forward(self, x):
-        x = x.permute(0,2,3,4,1).contiguous()
+        x = x.permute(0, 2, 3, 4, 1).contiguous()
         h = self.attention(x)
         x = self.proj_out(h, residual=x)
-        x = x.permute(0,4,1,2,3)
+        x = x.permute(0, 4, 1, 2, 3)
         return x
 
+
 class Resnet3DBlock(nn.Module):
-    def __init__(self,
+    def __init__(
+        self,
         in_channels,
         out_channels=None,
         temb_channels=512,
@@ -509,12 +643,16 @@ class Resnet3DBlock(nn.Module):
         self.use_conv_shortcut = conv_shortcut
         if self.in_channels != self.out_channels:
             if self.use_conv_shortcut:
-                self.conv_shortcut = CausalConvAfterNorm(in_channels, out_channels, kernel_size=3)
+                self.conv_shortcut = CausalConvAfterNorm(
+                    in_channels, out_channels, kernel_size=3
+                )
             else:
-                self.nin_shortcut = CausalConvAfterNorm(in_channels, out_channels, kernel_size=1)
+                self.nin_shortcut = CausalConvAfterNorm(
+                    in_channels, out_channels, kernel_size=1
+                )
 
     def forward(self, x, temb=None, is_init=True):
-        x = x.permute(0,2,3,4,1).contiguous()
+        x = x.permute(0, 2, 3, 4, 1).contiguous()
 
         h = base_group_norm_with_zero_pad(x, self.norm1, act_silu=True, pad_size=2)
         h = self.conv1(h)
@@ -526,21 +664,19 @@ class Resnet3DBlock(nn.Module):
         h = base_group_norm_with_zero_pad(h, self.norm2, act_silu=True, pad_size=2)
         x = self.conv2(h, residual=x)
 
-        x = x.permute(0,4,1,2,3)
+        x = x.permute(0, 4, 1, 2, 3)
         return x
 
 
 class Downsample3D(nn.Module):
-    def __init__(self,
-        in_channels,
-        with_conv,
-        stride
-    ):
+    def __init__(self, in_channels, with_conv, stride):
         super().__init__()
 
         self.with_conv = with_conv
         if with_conv:
-            self.conv = CausalConv(in_channels, in_channels, kernel_size=3, stride=stride)
+            self.conv = CausalConv(
+                in_channels, in_channels, kernel_size=3, stride=stride
+            )
 
     def forward(self, x, is_init=True):
         if self.with_conv:
@@ -549,8 +685,10 @@ class Downsample3D(nn.Module):
             x = nn.functional.avg_pool3d(x, kernel_size=2, stride=2)
         return x
 
+
 class VideoEncoder(nn.Module):
-    def __init__(self,
+    def __init__(
+        self,
         ch=32,
         ch_mult=(4, 8, 16, 16),
         num_res_blocks=2,
@@ -581,35 +719,58 @@ class VideoEncoder(nn.Module):
             block_out = ch * ch_mult[i_level]
             for i_block in range(self.num_res_blocks):
                 block.append(
-                    Resnet3DBlock(in_channels=block_in, out_channels=block_out, temb_channels=temb_ch))
+                    Resnet3DBlock(
+                        in_channels=block_in,
+                        out_channels=block_out,
+                        temb_channels=temb_ch,
+                    )
+                )
                 block_in = block_out
             down = nn.Module()
             down.block = block
             down.attn = attn
             if i_level != self.num_resolutions - 1:
                 if i_level in self.down_sampling_layer:
-                    down.downsample = Downsample3D(block_in, resamp_with_conv, stride=(2, 2, 2))
+                    down.downsample = Downsample3D(
+                        block_in, resamp_with_conv, stride=(2, 2, 2)
+                    )
                 else:
-                    down.downsample = Downsample2D(block_in, resamp_with_conv, padding=0) #DIFF
+                    down.downsample = Downsample2D(
+                        block_in, resamp_with_conv, padding=0
+                    )  # DIFF
             self.down.append(down)
 
         # middle
         self.mid = nn.Module()
-        self.mid.block_1 = Resnet3DBlock(in_channels=block_in, out_channels=block_in, temb_channels=temb_ch)
+        self.mid.block_1 = Resnet3DBlock(
+            in_channels=block_in, out_channels=block_in, temb_channels=temb_ch
+        )
         self.mid.attn_1 = AttnBlock(block_in)
-        self.mid.block_2 = Resnet3DBlock(in_channels=block_in, out_channels=block_in, temb_channels=temb_ch)
+        self.mid.block_2 = Resnet3DBlock(
+            in_channels=block_in, out_channels=block_in, temb_channels=temb_ch
+        )
 
         # end
         self.norm_out = nn.GroupNorm(num_groups=32, num_channels=block_in)
         self.version = version
         if version == 2:
-            channels = 4 * z_channels * 2 ** 3
-            self.conv_patchify = ConvPixelUnshuffleDownSampleLayer3D(block_in, channels, kernel_size=3, factor=2)
-            self.shortcut_pathify = PixelUnshuffleChannelAveragingDownSampleLayer3D(block_in, channels, 2)
-            self.shortcut_out = PixelUnshuffleChannelAveragingDownSampleLayer3D(channels, 2 * z_channels if double_z else z_channels, 1)
-            self.conv_out = CausalConvChannelLast(channels, 2 * z_channels if double_z else z_channels, kernel_size=3)
+            channels = 4 * z_channels * 2**3
+            self.conv_patchify = ConvPixelUnshuffleDownSampleLayer3D(
+                block_in, channels, kernel_size=3, factor=2
+            )
+            self.shortcut_pathify = PixelUnshuffleChannelAveragingDownSampleLayer3D(
+                block_in, channels, 2
+            )
+            self.shortcut_out = PixelUnshuffleChannelAveragingDownSampleLayer3D(
+                channels, 2 * z_channels if double_z else z_channels, 1
+            )
+            self.conv_out = CausalConvChannelLast(
+                channels, 2 * z_channels if double_z else z_channels, kernel_size=3
+            )
         else:
-            self.conv_out = CausalConvAfterNorm(block_in, 2 * z_channels if double_z else z_channels, kernel_size=3)
+            self.conv_out = CausalConvAfterNorm(
+                block_in, 2 * z_channels if double_z else z_channels, kernel_size=3
+            )
 
     @torch.inference_mode()
     def forward(self, x, video_frame_num, is_init=True):
@@ -622,7 +783,7 @@ class VideoEncoder(nn.Module):
         h = self.conv_in(x, is_init)
 
         # make it real channel last, but behave like normal layout
-        h = h.permute(0,2,3,4,1).contiguous().permute(0,4,1,2,3)
+        h = h.permute(0, 2, 3, 4, 1).contiguous().permute(0, 4, 1, 2, 3)
 
         for i_level in range(self.num_resolutions):
             for i_block in range(self.num_res_blocks):
@@ -643,31 +804,30 @@ class VideoEncoder(nn.Module):
         h = self.mid.attn_1(h)
         h = self.mid.block_2(h, temb, is_init)
 
-        h = h.permute(0,2,3,4,1).contiguous() # b c l h w -> b l h w c
+        h = h.permute(0, 2, 3, 4, 1).contiguous()  # b c l h w -> b l h w c
         if self.version == 2:
             h = base_group_norm(h, self.norm_out, act_silu=True, channel_last=True)
-            h = h.permute(0,4,1,2,3).contiguous()
+            h = h.permute(0, 4, 1, 2, 3).contiguous()
             shortcut = self.shortcut_pathify(h, is_init)
             h = self.conv_patchify(h, is_init)
             h = h.add_(shortcut)
-            shortcut = self.shortcut_out(h, is_init).permute(0,2,3,4,1)
-            h = self.conv_out(h.permute(0,2,3,4,1).contiguous(), is_init)
+            shortcut = self.shortcut_out(h, is_init).permute(0, 2, 3, 4, 1)
+            h = self.conv_out(h.permute(0, 2, 3, 4, 1).contiguous(), is_init)
             h = h.add_(shortcut)
         else:
-            h = base_group_norm_with_zero_pad(h, self.norm_out, act_silu=True, pad_size=2)
+            h = base_group_norm_with_zero_pad(
+                h, self.norm_out, act_silu=True, pad_size=2
+            )
             h = self.conv_out(h, is_init)
-        h = h.permute(0,4,1,2,3) # b l h w c -> b c l h w
+        h = h.permute(0, 4, 1, 2, 3)  # b l h w c -> b c l h w
 
         h = rearrange(h, "b c t h w -> b t c h w")
         return h
 
 
 class Res3DBlockUpsample(nn.Module):
-    def __init__(self,
-        input_filters,
-        num_filters,
-        down_sampling_stride,
-        down_sampling=False
+    def __init__(
+        self, input_filters, num_filters, down_sampling_stride, down_sampling=False
     ):
         super().__init__()
 
@@ -676,10 +836,14 @@ class Res3DBlockUpsample(nn.Module):
 
         self.act_ = nn.SiLU(inplace=True)
 
-        self.conv1 = CausalConvChannelLast(num_filters, num_filters, kernel_size=[3, 3, 3])
+        self.conv1 = CausalConvChannelLast(
+            num_filters, num_filters, kernel_size=[3, 3, 3]
+        )
         self.norm1 = nn.GroupNorm(32, num_filters)
 
-        self.conv2 = CausalConvChannelLast(num_filters, num_filters, kernel_size=[3, 3, 3])
+        self.conv2 = CausalConvChannelLast(
+            num_filters, num_filters, kernel_size=[3, 3, 3]
+        )
         self.norm2 = nn.GroupNorm(32, num_filters)
 
         self.down_sampling = down_sampling
@@ -689,11 +853,16 @@ class Res3DBlockUpsample(nn.Module):
             self.down_sampling_stride = [1, 1, 1]
 
         if num_filters != input_filters or down_sampling:
-            self.conv3 = CausalConvChannelLast(input_filters, num_filters, kernel_size=[1, 1, 1], stride=self.down_sampling_stride)
+            self.conv3 = CausalConvChannelLast(
+                input_filters,
+                num_filters,
+                kernel_size=[1, 1, 1],
+                stride=self.down_sampling_stride,
+            )
             self.norm3 = nn.GroupNorm(32, num_filters)
 
     def forward(self, x, is_init=False):
-        x = x.permute(0,2,3,4,1).contiguous()
+        x = x.permute(0, 2, 3, 4, 1).contiguous()
 
         residual = x
 
@@ -712,21 +881,21 @@ class Res3DBlockUpsample(nn.Module):
         if residual is not None:
             h.add_(residual)
 
-        h = h.permute(0,4,1,2,3)
+        h = h.permute(0, 4, 1, 2, 3)
         return h
 
+
 class Upsample3D(nn.Module):
-    def __init__(self,
-        in_channels,
-        scale_factor=2
-    ):
+    def __init__(self, in_channels, scale_factor=2):
         super().__init__()
 
         self.scale_factor = scale_factor
-        self.conv3d = Res3DBlockUpsample(input_filters=in_channels,
-                                         num_filters=in_channels,
-                                         down_sampling_stride=(1, 1, 1),
-                                         down_sampling=False)
+        self.conv3d = Res3DBlockUpsample(
+            input_filters=in_channels,
+            num_filters=in_channels,
+            down_sampling_stride=(1, 1, 1),
+            down_sampling=False,
+        )
 
     def forward(self, x, is_init=True, is_split=True):
         b, c, t, h, w = x.shape
@@ -735,7 +904,10 @@ class Upsample3D(nn.Module):
         if is_split:
             split_size = c // 8
             x_slices = torch.split(x, split_size, dim=1)
-            x = [nn.functional.interpolate(x, scale_factor=self.scale_factor) for x in x_slices]
+            x = [
+                nn.functional.interpolate(x, scale_factor=self.scale_factor)
+                for x in x_slices
+            ]
             x = torch.cat(x, dim=1)
         else:
             x = nn.functional.interpolate(x, scale_factor=self.scale_factor)
@@ -743,8 +915,10 @@ class Upsample3D(nn.Module):
         x = self.conv3d(x, is_init)
         return x
 
+
 class VideoDecoder(nn.Module):
-    def __init__(self,
+    def __init__(
+        self,
         ch=128,
         z_channels=16,
         out_channels=3,
@@ -766,24 +940,34 @@ class VideoDecoder(nn.Module):
         block_in = ch * ch_mult[self.num_resolutions - 1]
         self.version = version
         if version == 2:
-            channels = 4 * z_channels * 2 ** 3
+            channels = 4 * z_channels * 2**3
             self.conv_in = CausalConv(z_channels, channels, kernel_size=3)
-            self.shortcut_in = ChannelDuplicatingPixelUnshuffleUpSampleLayer3D(z_channels, channels, 1)
-            self.conv_unpatchify = ConvPixelShuffleUpSampleLayer3D(channels, block_in, kernel_size=3, factor=2)
-            self.shortcut_unpathify = ChannelDuplicatingPixelUnshuffleUpSampleLayer3D(channels, block_in, 2)
+            self.shortcut_in = ChannelDuplicatingPixelUnshuffleUpSampleLayer3D(
+                z_channels, channels, 1
+            )
+            self.conv_unpatchify = ConvPixelShuffleUpSampleLayer3D(
+                channels, block_in, kernel_size=3, factor=2
+            )
+            self.shortcut_unpathify = ChannelDuplicatingPixelUnshuffleUpSampleLayer3D(
+                channels, block_in, 2
+            )
         else:
             self.conv_in = CausalConv(z_channels, block_in, kernel_size=3)
 
         # middle
         self.mid = nn.Module()
-        self.mid.block_1 = Resnet3DBlock(in_channels=block_in, out_channels=block_in, temb_channels=temb_ch)
+        self.mid.block_1 = Resnet3DBlock(
+            in_channels=block_in, out_channels=block_in, temb_channels=temb_ch
+        )
         self.mid.attn_1 = AttnBlock(block_in)
-        self.mid.block_2 = Resnet3DBlock(in_channels=block_in, out_channels=block_in, temb_channels=temb_ch)
+        self.mid.block_2 = Resnet3DBlock(
+            in_channels=block_in, out_channels=block_in, temb_channels=temb_ch
+        )
 
         # upsampling
         self.up_id = len(temporal_up_layers)
         self.video_frame_num = 1
-        self.cur_video_frame_num = self.video_frame_num // 2 ** self.up_id + 1
+        self.cur_video_frame_num = self.video_frame_num // 2**self.up_id + 1
         self.up = nn.ModuleList()
         for i_level in reversed(range(self.num_resolutions)):
             block = nn.ModuleList()
@@ -791,7 +975,12 @@ class VideoDecoder(nn.Module):
             block_out = ch * ch_mult[i_level]
             for i_block in range(self.num_res_blocks + 1):
                 block.append(
-                    Resnet3DBlock(in_channels=block_in, out_channels=block_out, temb_channels=temb_ch))
+                    Resnet3DBlock(
+                        in_channels=block_in,
+                        out_channels=block_out,
+                        temb_channels=temb_ch,
+                    )
+                )
                 block_in = block_out
             up = nn.Module()
             up.block = block
@@ -822,60 +1011,72 @@ class VideoDecoder(nn.Module):
 
         temb = None
 
-        h = h.permute(0,2,3,4,1).contiguous().permute(0,4,1,2,3)
+        h = h.permute(0, 2, 3, 4, 1).contiguous().permute(0, 4, 1, 2, 3)
         h = self.mid.block_1(h, temb, is_init=is_init)
         h = self.mid.attn_1(h)
-        h = h.permute(0,2,3,4,1).contiguous().permute(0,4,1,2,3)
+        h = h.permute(0, 2, 3, 4, 1).contiguous().permute(0, 4, 1, 2, 3)
         h = self.mid.block_2(h, temb, is_init=is_init)
 
         # upsampling
         for i_level in reversed(range(self.num_resolutions)):
             for i_block in range(self.num_res_blocks + 1):
-                h = h.permute(0,2,3,4,1).contiguous().permute(0,4,1,2,3)
+                h = h.permute(0, 2, 3, 4, 1).contiguous().permute(0, 4, 1, 2, 3)
                 h = self.up[i_level].block[i_block](h, temb, is_init=is_init)
                 if len(self.up[i_level].attn) > 0:
                     h = self.up[i_level].attn[i_block](h)
             if i_level != 0:
-                if isinstance(self.up[i_level].upsample, Upsample2D) or (hasattr(self.up[i_level].upsample, "module") and isinstance(self.up[i_level].upsample.module, Upsample2D)):
+                if isinstance(self.up[i_level].upsample, Upsample2D) or (
+                    hasattr(self.up[i_level].upsample, "module")
+                    and isinstance(self.up[i_level].upsample.module, Upsample2D)
+                ):
                     B = h.size(0)
-                    h = h.permute(0,2,3,4,1).flatten(0,1)
+                    h = h.permute(0, 2, 3, 4, 1).flatten(0, 1)
                     h = self.up[i_level].upsample(h)
-                    h = h.unflatten(0, (B, -1)).permute(0,4,1,2,3)
+                    h = h.unflatten(0, (B, -1)).permute(0, 4, 1, 2, 3)
                 else:
                     h = self.up[i_level].upsample(h, is_init=is_init)
 
         # end
-        h = h.permute(0,2,3,4,1) # b c l h w -> b l h w c
+        h = h.permute(0, 2, 3, 4, 1)  # b c l h w -> b l h w c
         h = base_group_norm_with_zero_pad(h, self.norm_out, act_silu=True, pad_size=2)
         h = self.conv_out(h)
-        h = h.permute(0,4,1,2,3)
+        h = h.permute(0, 4, 1, 2, 3)
 
         if is_init:
-            h = h[:, :, (self.temporal_downsample - 1):]
+            h = h[:, :, (self.temporal_downsample - 1) :]
         return h
-
 
 
 def rms_norm(input, normalized_shape, eps=1e-6):
     dtype = input.dtype
     input = input.to(torch.float32)
-    variance = input.pow(2).flatten(-len(normalized_shape)).mean(-1)[(...,) + (None,) * len(normalized_shape)]
+    variance = (
+        input.pow(2)
+        .flatten(-len(normalized_shape))
+        .mean(-1)[(...,) + (None,) * len(normalized_shape)]
+    )
     input = input * torch.rsqrt(variance + eps)
     return input.to(dtype)
 
+
 class DiagonalGaussianDistribution(object):
-    def __init__(self, parameters, deterministic=False, rms_norm_mean=False, only_return_mean=False):
+    def __init__(
+        self,
+        parameters,
+        deterministic=False,
+        rms_norm_mean=False,
+        only_return_mean=False,
+    ):
         self.parameters = parameters
-        self.mean, self.logvar = torch.chunk(parameters, 2, dim=-3) #N,[X],C,H,W
+        self.mean, self.logvar = torch.chunk(parameters, 2, dim=-3)  # N,[X],C,H,W
         self.logvar = torch.clamp(self.logvar, -30.0, 20.0)
         self.std = torch.exp(0.5 * self.logvar)
         self.var = torch.exp(self.logvar)
         self.deterministic = deterministic
         if self.deterministic:
             self.var = self.std = torch.zeros_like(
-                self.mean,
-                device=self.parameters.device,
-                dtype=self.parameters.dtype)
+                self.mean, device=self.parameters.device, dtype=self.parameters.dtype
+            )
         if rms_norm_mean:
             self.mean = rms_norm(self.mean, self.mean.size()[1:])
         self.only_return_mean = only_return_mean
@@ -884,7 +1085,8 @@ class DiagonalGaussianDistribution(object):
         # make sure sample is on the same device
         # as the parameters and has same dtype
         sample = torch.randn(
-            self.mean.shape, generator=generator, device=self.parameters.device)
+            self.mean.shape, generator=generator, device=self.parameters.device
+        )
         sample = sample.to(dtype=self.parameters.dtype)
         x = self.mean + self.std * sample
         if self.only_return_mean:
@@ -892,8 +1094,10 @@ class DiagonalGaussianDistribution(object):
         else:
             return x
 
+
 class AutoencoderKL(nn.Module):
-    def __init__(self,
+    def __init__(
+        self,
         in_channels=3,
         out_channels=3,
         z_channels=16,
@@ -902,7 +1106,7 @@ class AutoencoderKL(nn.Module):
         weight_dict={},
         world_size=1,
         version=1,
-        torch_dtype: torch.dtype = torch.bfloat16 
+        torch_dtype: torch.dtype = torch.bfloat16,
     ):
         super().__init__()
 
@@ -927,7 +1131,7 @@ class AutoencoderKL(nn.Module):
         self.world_size = world_size
         self.model_path = model_path
         self.torch_dtype = torch_dtype
-    
+
     def load_weight(self):
         logger.info("AutoencoderKL: start load weight")
         if self.model_path is not None:
@@ -938,9 +1142,9 @@ class AutoencoderKL(nn.Module):
         self.to(self.torch_dtype)
         logger.info("AutoencoderKL: end load weight")
 
-
     def init_from_ckpt(self, model_path):
         from safetensors import safe_open
+
         p = {}
         with safe_open(model_path, framework="pt", device="cpu") as f:
             for k in f.keys():
@@ -954,13 +1158,13 @@ class AutoencoderKL(nn.Module):
         self.load_state_dict(p)
 
     def convert_channel_last(self):
-        #Conv2d NCHW->NHWC
+        # Conv2d NCHW->NHWC
         pass
 
     def naive_encode(self, x, is_init_image=True):
         b, l, c, h, w = x.size()
-        x = rearrange(x, 'b l c h w -> b c l h w').contiguous()
-        z = self.encoder(x, l, True) # 下采样[1, 4, 8, 16, 16]
+        x = rearrange(x, "b l c h w -> b c l h w").contiguous()
+        z = self.encoder(x, l, True)  # 下采样[1, 4, 8, 16, 16]
         return z
 
     @torch.inference_mode()
@@ -985,19 +1189,29 @@ class AutoencoderKL(nn.Module):
 
         if self.world_size > 1:
             chunks_total_num = len(chunks)
-            max_num_per_rank = (chunks_total_num + self.world_size - 1) // self.world_size
+            max_num_per_rank = (
+                chunks_total_num + self.world_size - 1
+            ) // self.world_size
             rank = torch.distributed.get_rank()
             chunks_ = chunks[max_num_per_rank * rank : max_num_per_rank * (rank + 1)]
             if len(chunks_) < max_num_per_rank:
-                chunks_.extend(chunks[:max_num_per_rank-len(chunks_)])
+                chunks_.extend(chunks[: max_num_per_rank - len(chunks_)])
             chunks = chunks_
 
         for i in range(len(chunks)):
-            chunks[i] = self.decode_naive(chunks[i], True).permute(0,2,1,3,4)
+            chunks[i] = self.decode_naive(chunks[i], True).permute(0, 2, 1, 3, 4)
         x = torch.cat(chunks, dim=1)
 
         if self.world_size > 1:
-            x_ = torch.empty([x.size(0), (self.world_size * max_num_per_rank) * self.frame_len, *x.shape[2:]], dtype=x.dtype, device=x.device)
+            x_ = torch.empty(
+                [
+                    x.size(0),
+                    (self.world_size * max_num_per_rank) * self.frame_len,
+                    *x.shape[2:],
+                ],
+                dtype=x.dtype,
+                device=x.device,
+            )
             torch.distributed.all_gather_into_tensor(x_, x)
             x = x_[:, : chunks_total_num * self.frame_len]
 
@@ -1006,7 +1220,7 @@ class AutoencoderKL(nn.Module):
 
     def mix(self, x):
         remain_scale = 0.6
-        mix_scale = 1. - remain_scale
+        mix_scale = 1.0 - remain_scale
         front = slice(self.frame_len - 1, x.size(1) - 1, self.frame_len)
         back = slice(self.frame_len, x.size(1), self.frame_len)
         x[:, back] = x[:, back] * remain_scale + x[:, front] * mix_scale

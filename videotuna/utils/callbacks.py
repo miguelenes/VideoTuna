@@ -2,26 +2,26 @@ import datetime
 import logging
 import os
 import time
+from collections import OrderedDict
+from typing import Any, Literal, Optional, Union
+from weakref import proxy
 
 import numpy as np
 from einops import rearrange
+from loguru import logger
 from omegaconf import OmegaConf
 from PIL import Image
-from weakref import proxy
-from collections import OrderedDict
 from typing_extensions import override
-from typing import Any, Literal, Optional, Union
-from loguru import logger
 
 mainlogger = logging.getLogger("mainlogger")
 
 import pytorch_lightning as pl
 import torch
 import torchvision
-from torch import Tensor
 from pytorch_lightning.callbacks import Callback
 from pytorch_lightning.utilities import rank_zero_info, rank_zero_only
 from pytorch_lightning.utilities.types import STEP_OUTPUT
+from torch import Tensor
 
 from .save_video import log_local, prepare_to_log
 
@@ -55,17 +55,22 @@ class LoraModelCheckpoint(pl.callbacks.ModelCheckpoint):
 
 
 class VideoTunaModelCheckpoint(pl.callbacks.ModelCheckpoint):
-    def __init__(self, 
-                 save_flow: bool = True,
-                 save_only_selected_model: bool = True,
-                 selected_model: Optional[Union[str, list]] = None,
-                 *args, **kwargs):
-        assert save_flow or save_only_selected_model, "At least one of `save_flow` and `save_only_trained_model` should be True."
+    def __init__(
+        self,
+        save_flow: bool = True,
+        save_only_selected_model: bool = True,
+        selected_model: Optional[Union[str, list]] = None,
+        *args,
+        **kwargs,
+    ):
+        assert (
+            save_flow or save_only_selected_model
+        ), "At least one of `save_flow` and `save_only_trained_model` should be True."
         super().__init__(*args, **kwargs)
         self.save_flow = save_flow
         self.save_only_selected_model = save_only_selected_model
         self.selected_model = selected_model
-    
+
     @override
     def on_train_batch_end(
         self,
@@ -78,14 +83,19 @@ class VideoTunaModelCheckpoint(pl.callbacks.ModelCheckpoint):
         """Save checkpoint on train batch end if we meet the criteria for `every_n_train_steps`"""
         if self._should_skip_saving_checkpoint(trainer):
             return
-        skip_batch = self._every_n_train_steps < 1 or (trainer.global_step % self._every_n_train_steps != 0)
+        skip_batch = self._every_n_train_steps < 1 or (
+            trainer.global_step % self._every_n_train_steps != 0
+        )
 
         train_time_interval = self._train_time_interval
         skip_time = True
         now = time.monotonic()
         if train_time_interval:
             prev_time_check = self._last_time_checked
-            skip_time = prev_time_check is None or (now - prev_time_check) < train_time_interval.total_seconds()
+            skip_time = (
+                prev_time_check is None
+                or (now - prev_time_check) < train_time_interval.total_seconds()
+            )
             # in case we have time differences across ranks
             # broadcast the decision on whether to checkpoint from rank 0 to avoid possible hangs
             skip_time = trainer.strategy.broadcast(skip_time)
@@ -96,14 +106,20 @@ class VideoTunaModelCheckpoint(pl.callbacks.ModelCheckpoint):
             self._last_time_checked = now
 
         monitor_candidates = self._monitor_candidates(trainer)
-        self._save_last_checkpoint(trainer, monitor_candidates, pl_module)  # only save the last checkpoint
-    
+        self._save_last_checkpoint(
+            trainer, monitor_candidates, pl_module
+        )  # only save the last checkpoint
+
     @override
-    def on_train_epoch_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
+    def on_train_epoch_end(
+        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
+    ) -> None:
         pass
 
     @override
-    def on_validation_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
+    def on_validation_end(
+        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
+    ) -> None:
         pass
 
     @override
@@ -121,13 +137,21 @@ class VideoTunaModelCheckpoint(pl.callbacks.ModelCheckpoint):
 
         if self._enable_version_counter:
             version_cnt = self.STARTING_VERSION
-            while self.file_exists(filepath, trainer) and filepath != self.last_model_path:
-                filepath = self.format_checkpoint_name(monitor_candidates, self.CHECKPOINT_NAME_LAST, ver=version_cnt)
+            while (
+                self.file_exists(filepath, trainer) and filepath != self.last_model_path
+            ):
+                filepath = self.format_checkpoint_name(
+                    monitor_candidates, self.CHECKPOINT_NAME_LAST, ver=version_cnt
+                )
                 version_cnt += 1
 
         # set the last model path before saving because it will be part of the state.
         previous, self.last_model_path = self.last_model_path, filepath
-        if self.save_last == "link" and self._last_checkpoint_saved and self.save_top_k != 0:
+        if (
+            self.save_last == "link"
+            and self._last_checkpoint_saved
+            and self.save_top_k != 0
+        ):
             self._link_checkpoint(trainer, self._last_checkpoint_saved, filepath)
         else:
             self._save_checkpoint(trainer, filepath, pl_module)
@@ -155,86 +179,94 @@ class VideoTunaModelCheckpoint(pl.callbacks.ModelCheckpoint):
         if trainer.is_global_zero:
             for logger in trainer.loggers:
                 logger.after_save_checkpoint(proxy(self))
-    
+
     def _save_flow_checkpoint(
-        self,
-        trainer: "pl.Trainer",
-        pl_module: "pl.LightningModule",
-        filepath
+        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule", filepath
     ) -> None:
         """Save the whole model."""
         # check the save path
-        original_dirpath_list = filepath.split('/')
-        new_dirpath_list = original_dirpath_list[:-1] + ['flow']
-        new_dirpath = '/'.join(new_dirpath_list)
+        original_dirpath_list = filepath.split("/")
+        new_dirpath_list = original_dirpath_list[:-1] + ["flow"]
+        new_dirpath = "/".join(new_dirpath_list)
         if not os.path.exists(new_dirpath):
             os.makedirs(new_dirpath)
 
         new_filepath = os.path.join(new_dirpath, original_dirpath_list[-1])
         trainer.save_checkpoint(new_filepath, self.save_weights_only)
-    
+
     @rank_zero_only
     def _save_training_checkpoint(
-        self,
-        trainer: "pl.Trainer",
-        pl_module: "pl.LightningModule",
-        filepath
+        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule", filepath
     ) -> None:
         """Save only the trained model."""
         # check the save path
-        original_dirpath_list = filepath.split('/')
-        new_dirpath_list = original_dirpath_list[:-1] + ['only_trained_model']
-        new_dirpath = '/'.join(new_dirpath_list)
+        original_dirpath_list = filepath.split("/")
+        new_dirpath_list = original_dirpath_list[:-1] + ["only_trained_model"]
+        new_dirpath = "/".join(new_dirpath_list)
         if not os.path.exists(new_dirpath):
             os.makedirs(new_dirpath)
 
-        if trainer.strategy.__class__.__name__  == "DeepSpeedStrategy":
-            from deepspeed.utils.zero_to_fp32 import get_fp32_state_dict_from_zero_checkpoint
+        if trainer.strategy.__class__.__name__ == "DeepSpeedStrategy":
+            from deepspeed.utils.zero_to_fp32 import (
+                get_fp32_state_dict_from_zero_checkpoint,
+            )
+
             original_filename = original_dirpath_list[-1]
-            deepspeed_flow_path = original_dirpath_list[:-1] + ['flow', original_filename]
-            state_dict = get_fp32_state_dict_from_zero_checkpoint('/'.join(deepspeed_flow_path))
-    
+            deepspeed_flow_path = original_dirpath_list[:-1] + [
+                "flow",
+                original_filename,
+            ]
+            state_dict = get_fp32_state_dict_from_zero_checkpoint(
+                "/".join(deepspeed_flow_path)
+            )
+
             for seleted in self.selected_model:
-                new_state_dict = {name.replace(f"{seleted}.", ""): param for name, param in state_dict.items() if name.startswith(seleted)}
-                save_dict = {'state_dict': new_state_dict}
-                new_filename = original_filename.replace('flow', seleted)
+                new_state_dict = {
+                    name.replace(f"{seleted}.", ""): param
+                    for name, param in state_dict.items()
+                    if name.startswith(seleted)
+                }
+                save_dict = {"state_dict": new_state_dict}
+                new_filename = original_filename.replace("flow", seleted)
                 new_filepath = os.path.join(new_dirpath, new_filename)
                 torch.save(save_dict, new_filepath)
-                logger.info(f"Deepspeed Saving model {seleted} with {len(new_state_dict)} params to {new_filepath}")
+                logger.info(
+                    f"Deepspeed Saving model {seleted} with {len(new_state_dict)} params to {new_filepath}"
+                )
         else:
             original_filename = original_dirpath_list[-1]
             for seleted in self.selected_model:
                 model = getattr(pl_module, seleted)
                 state_dict = model.state_dict()
-                save_dict = {'state_dict': state_dict}
-                new_filename = original_filename.replace('flow', seleted)
+                save_dict = {"state_dict": state_dict}
+                new_filename = original_filename.replace("flow", seleted)
                 new_filepath = os.path.join(new_dirpath, new_filename)
                 torch.save(save_dict, new_filepath)
-                logger.info(f"Saving model {seleted} with {len(state_dict)} params  to {new_filepath}")
-    
+                logger.info(
+                    f"Saving model {seleted} with {len(state_dict)} params  to {new_filepath}"
+                )
+
     def _format_ckpt_path(
-        self,
-        monitor_candidates: dict[str, Tensor],
-        prefix: str = None
+        self, monitor_candidates: dict[str, Tensor], prefix: str = None
     ) -> str:
         """Format the checkpoint path with the current values of monitored quantities."""
         epoch = monitor_candidates.get("epoch").item()
         step = monitor_candidates.get("step").item()
 
-        if 'epoch' in self.filename and 'step' in self.filename:
+        if "epoch" in self.filename and "step" in self.filename:
             format_filename = self.filename.format(epoch=epoch, step=step)
-        elif 'epoch' in self.filename and 'step' not in self.filename:
+        elif "epoch" in self.filename and "step" not in self.filename:
             format_filename = self.filename.format(epoch=epoch)
-        elif 'epoch' not in self.filename and 'step' in self.filename:
+        elif "epoch" not in self.filename and "step" in self.filename:
             format_filename = self.filename.format(step=step)
         else:
             format_filename = self.filename
-        
+
         if prefix is not None:
-            format_filename = prefix + '-' + format_filename + '.ckpt'
-    
+            format_filename = prefix + "-" + format_filename + ".ckpt"
+
         filepath = os.path.join(self.dirpath, format_filename)
-        
+
         return filepath
 
 
@@ -360,9 +392,75 @@ class ImageLogger(Callback):
                 self.log_gradients(trainer, pl_module, batch_idx=batch_idx)
 
 
+class TrainingMetricsCallback(Callback):
+    """Log per-epoch wall time and peak GPU memory to metrics.json in the run directory."""
+
+    def __init__(self, save_dir: Optional[str] = None):
+        self.save_dir = save_dir
+        self._epoch_start: float = 0.0
+        self._epoch_peak_gb: float = 0.0
+        self.metrics: list[dict[str, float]] = []
+
+    def _gpu_index(self, trainer: "pl.Trainer") -> int:
+        device = trainer.strategy.root_device
+        return device.index if device.type == "cuda" else 0
+
+    def on_train_epoch_start(
+        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
+    ):
+        if torch.cuda.is_available():
+            gpu_index = self._gpu_index(trainer)
+            torch.cuda.reset_peak_memory_stats(gpu_index)
+        self._epoch_start = time.time()
+        self._epoch_peak_gb = 0.0
+
+    def on_train_batch_end(
+        self,
+        trainer: "pl.Trainer",
+        pl_module: "pl.LightningModule",
+        outputs: STEP_OUTPUT,
+        batch: Any,
+        batch_idx: int,
+    ):
+        if not torch.cuda.is_available():
+            return
+        gpu_index = self._gpu_index(trainer)
+        peak_gb = torch.cuda.max_memory_allocated(gpu_index) / (1024**3)
+        self._epoch_peak_gb = max(self._epoch_peak_gb, peak_gb)
+
+    def on_train_epoch_end(
+        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
+    ):
+        epoch_time_s = time.time() - self._epoch_start
+        entry = {
+            "epoch": float(trainer.current_epoch),
+            "epoch_time_s": round(epoch_time_s, 4),
+            "peak_vram_gb": round(self._epoch_peak_gb, 4),
+        }
+        self.metrics.append(entry)
+        rank_zero_info(
+            f"Epoch {trainer.current_epoch}: time={entry['epoch_time_s']}s "
+            f"peak_vram={entry['peak_vram_gb']}GB"
+        )
+        save_dir = self.save_dir or getattr(pl_module, "logdir", None)
+        if save_dir and trainer.global_rank == 0:
+            import json
+
+            os.makedirs(save_dir, exist_ok=True)
+            metrics_path = os.path.join(save_dir, "metrics.json")
+            with open(metrics_path, "w") as f:
+                json.dump({"epochs": self.metrics}, f, indent=2)
+
+
 class CUDACallback(Callback):
     # see https://github.com/SeanNaren/minGPT/blob/master/mingpt/callback.py
-    def on_train_batch_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule", batch: Any, batch_idx: int):
+    def on_train_batch_start(
+        self,
+        trainer: "pl.Trainer",
+        pl_module: "pl.LightningModule",
+        batch: Any,
+        batch_idx: int,
+    ):
         # Reset the memory use counter
         # lightning update
         gpu_index = trainer.strategy.root_device.index
@@ -370,7 +468,14 @@ class CUDACallback(Callback):
         torch.cuda.synchronize(gpu_index)
         self.start_time = time.time()
 
-    def on_train_batch_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule", outputs: STEP_OUTPUT, batch: Any, batch_idx: int):
+    def on_train_batch_end(
+        self,
+        trainer: "pl.Trainer",
+        pl_module: "pl.LightningModule",
+        outputs: STEP_OUTPUT,
+        batch: Any,
+        batch_idx: int,
+    ):
         gpu_index = trainer.strategy.root_device.index
         torch.cuda.synchronize(gpu_index)
         max_memory = torch.cuda.max_memory_allocated(gpu_index) / 2**20

@@ -1,6 +1,5 @@
 # Copyright 2024-2025 The Alibaba Wan Team Authors. All rights reserved.
 import gc
-from loguru import logger
 import math
 import os
 import random
@@ -15,19 +14,24 @@ import torch
 import torch.cuda.amp as amp
 import torch.distributed as dist
 import torchvision.transforms.functional as TF
-from tqdm import tqdm
+from loguru import logger
 from PIL import Image
+from tqdm import tqdm
 
+from ....schedulers.flow_matching import FlowMatchScheduler
+from ....utils.common_utils import monitor_resources
 from .distributed.fsdp import shard_model
 from .modules.clip import CLIPModel, XLMRobertaCLIP
 from .modules.model import WanModel
 from .modules.t5 import T5Encoder, T5EncoderModel
 from .modules.vae import WanVAE, WanVAE_
-from .utils.fm_solvers import (FlowDPMSolverMultistepScheduler,
-                               get_sampling_sigmas, retrieve_timesteps)
+from .utils.fm_solvers import (
+    FlowDPMSolverMultistepScheduler,
+    get_sampling_sigmas,
+    retrieve_timesteps,
+)
 from .utils.fm_solvers_unipc import FlowUniPCMultistepScheduler
-from ....utils.common_utils import monitor_resources
-from ....schedulers.flow_matching import FlowMatchScheduler
+
 
 class WanI2V:
 
@@ -42,10 +46,10 @@ class WanI2V:
         use_usp=False,
         t5_cpu=False,
         init_on_cpu=True,
-        first_stage_model: WanVAE_= None ,
-        cond_stage_model: T5Encoder=None,
-        cond_stage_2_model:XLMRobertaCLIP=None,
-        denoiser: WanModel=None,
+        first_stage_model: WanVAE_ = None,
+        cond_stage_model: T5Encoder = None,
+        cond_stage_2_model: XLMRobertaCLIP = None,
+        denoiser: WanModel = None,
     ):
         r"""
         Initializes the image-to-video generation model components.
@@ -79,38 +83,38 @@ class WanI2V:
         self.dit_fsdp = dit_fsdp
         self.num_train_timesteps = config.num_train_timesteps
         self.param_dtype = config.param_dtype
-        
+
         shard_fn = partial(shard_model, device_id=device_id)
-        self.text_encoder : T5EncoderModel = T5EncoderModel(
+        self.text_encoder: T5EncoderModel = T5EncoderModel(
             text_len=config.text_len,
             dtype=config.t5_dtype,
-            device=torch.device('cpu'),
+            device=torch.device("cpu"),
             checkpoint_path=os.path.join(checkpoint_dir, config.t5_checkpoint),
             tokenizer_path=os.path.join(checkpoint_dir, config.t5_tokenizer),
             shard_fn=shard_fn if t5_fsdp else None,
-            model=cond_stage_model
+            model=cond_stage_model,
         )
 
-        #vae
+        # vae
         self.vae_stride = config.vae_stride
         self.patch_size = config.patch_size
         self.vae: WanVAE = WanVAE(
             vae=first_stage_model,
             vae_pth=os.path.join(checkpoint_dir, config.vae_checkpoint),
-            device=self.device)
+            device=self.device,
+        )
 
-        #clip
+        # clip
         self.clip = CLIPModel(
             dtype=config.clip_dtype,
             device=self.device,
-            checkpoint_path=os.path.join(checkpoint_dir,
-                                         config.clip_checkpoint),
+            checkpoint_path=os.path.join(checkpoint_dir, config.clip_checkpoint),
             tokenizer_path=os.path.join(checkpoint_dir, config.clip_tokenizer),
-            model=cond_stage_2_model)
+            model=cond_stage_2_model,
+        )
 
-
-        #denoiser
-        self.model : WanModel = denoiser
+        # denoiser
+        self.model: WanModel = denoiser
         self.shard_fn = shard_fn
         self.sample_neg_prompt = config.sample_neg_prompt
         self.init_on_cpu = init_on_cpu
@@ -118,18 +122,20 @@ class WanI2V:
             self.init_on_cpu = False
 
     @monitor_resources(return_metrics=True)
-    def generate(self,
-                 input_prompt,
-                 img,
-                 max_area=720 * 1280,
-                 frame_num=81,
-                 shift=5.0,
-                 sample_solver='unipc',
-                 sampling_steps=40,
-                 guide_scale=5.0,
-                 n_prompt="",
-                 seed=-1,
-                 offload_model=True):
+    def generate(
+        self,
+        input_prompt,
+        img,
+        max_area=720 * 1280,
+        frame_num=81,
+        shift=5.0,
+        sample_solver="unipc",
+        sampling_steps=40,
+        guide_scale=5.0,
+        n_prompt="",
+        seed=-1,
+        offload_model=True,
+    ):
         r"""
         Generates video frames from input image and text prompt using diffusion process.
 
@@ -173,16 +179,26 @@ class WanI2V:
         h, w = img.shape[1:]
         aspect_ratio = h / w
         lat_h = round(
-            np.sqrt(max_area * aspect_ratio) // self.vae_stride[1] //
-            self.patch_size[1] * self.patch_size[1])
+            np.sqrt(max_area * aspect_ratio)
+            // self.vae_stride[1]
+            // self.patch_size[1]
+            * self.patch_size[1]
+        )
         lat_w = round(
-            np.sqrt(max_area / aspect_ratio) // self.vae_stride[2] //
-            self.patch_size[2] * self.patch_size[2])
+            np.sqrt(max_area / aspect_ratio)
+            // self.vae_stride[2]
+            // self.patch_size[2]
+            * self.patch_size[2]
+        )
         h = lat_h * self.vae_stride[1]
         w = lat_w * self.vae_stride[2]
 
-        max_seq_len = ((F - 1) // self.vae_stride[0] + 1) * lat_h * lat_w // (
-            self.patch_size[1] * self.patch_size[2])
+        max_seq_len = (
+            ((F - 1) // self.vae_stride[0] + 1)
+            * lat_h
+            * lat_w
+            // (self.patch_size[1] * self.patch_size[2])
+        )
         max_seq_len = int(math.ceil(max_seq_len / self.sp_size)) * self.sp_size
 
         seed = seed if seed >= 0 else random.randint(0, sys.maxsize)
@@ -195,14 +211,14 @@ class WanI2V:
             lat_w,
             dtype=torch.float32,
             generator=seed_g,
-            device=self.device)
+            device=self.device,
+        )
 
         msk = torch.ones(1, 81, lat_h, lat_w, device=self.device)
         msk[:, 1:] = 0
-        msk = torch.concat([
-            torch.repeat_interleave(msk[:, 0:1], repeats=4, dim=1), msk[:, 1:]
-        ],
-                           dim=1)
+        msk = torch.concat(
+            [torch.repeat_interleave(msk[:, 0:1], repeats=4, dim=1), msk[:, 1:]], dim=1
+        )
         msk = msk.view(1, msk.shape[1] // 4, 4, lat_h, lat_w)
         msk = msk.transpose(1, 2)[0]
 
@@ -217,8 +233,8 @@ class WanI2V:
             if offload_model:
                 self.text_encoder.model.cpu()
         else:
-            context = self.text_encoder([input_prompt], torch.device('cpu'))
-            context_null = self.text_encoder([n_prompt], torch.device('cpu'))
+            context = self.text_encoder([input_prompt], torch.device("cpu"))
+            context_null = self.text_encoder([n_prompt], torch.device("cpu"))
             context = [t.to(self.device) for t in context]
             context_null = [t.to(self.device) for t in context_null]
 
@@ -228,15 +244,19 @@ class WanI2V:
             self.clip.model.cpu()
 
         self.vae.model.to(self.device)
-        y = self.vae.encode([
-            torch.concat([
-                torch.nn.functional.interpolate(
-                    img[None].cpu(), size=(h, w), mode='bicubic').transpose(
-                        0, 1),
-                torch.zeros(3, 80, h, w)
-            ],
-                         dim=1).to(self.device)
-        ])[0]
+        y = self.vae.encode(
+            [
+                torch.concat(
+                    [
+                        torch.nn.functional.interpolate(
+                            img[None].cpu(), size=(h, w), mode="bicubic"
+                        ).transpose(0, 1),
+                        torch.zeros(3, 80, h, w),
+                    ],
+                    dim=1,
+                ).to(self.device)
+            ]
+        )[0]
         y = torch.concat([msk, y])
         if offload_model:
             self.vae.model.cpu()
@@ -245,29 +265,31 @@ class WanI2V:
         def noop_no_sync():
             yield
 
-        no_sync = getattr(self.model, 'no_sync', noop_no_sync)
+        no_sync = getattr(self.model, "no_sync", noop_no_sync)
 
         # evaluation mode
         with amp.autocast(dtype=self.param_dtype), torch.inference_mode(), no_sync():
 
-            if sample_solver == 'unipc':
+            if sample_solver == "unipc":
                 sample_scheduler = FlowUniPCMultistepScheduler(
                     num_train_timesteps=self.num_train_timesteps,
                     shift=1,
-                    use_dynamic_shifting=False)
+                    use_dynamic_shifting=False,
+                )
                 sample_scheduler.set_timesteps(
-                    sampling_steps, device=self.device, shift=shift)
+                    sampling_steps, device=self.device, shift=shift
+                )
                 timesteps = sample_scheduler.timesteps
-            elif sample_solver == 'dpm++':
+            elif sample_solver == "dpm++":
                 sample_scheduler = FlowDPMSolverMultistepScheduler(
                     num_train_timesteps=self.num_train_timesteps,
                     shift=1,
-                    use_dynamic_shifting=False)
+                    use_dynamic_shifting=False,
+                )
                 sampling_sigmas = get_sampling_sigmas(sampling_steps, shift)
                 timesteps, _ = retrieve_timesteps(
-                    sample_scheduler,
-                    device=self.device,
-                    sigmas=sampling_sigmas)
+                    sample_scheduler, device=self.device, sigmas=sampling_sigmas
+                )
             else:
                 raise NotImplementedError("Unsupported solver.")
 
@@ -275,17 +297,17 @@ class WanI2V:
             latent = noise
 
             arg_c = {
-                'context': [context[0]],
-                'clip_fea': clip_context,
-                'seq_len': max_seq_len,
-                'y': [y],
+                "context": [context[0]],
+                "clip_fea": clip_context,
+                "seq_len": max_seq_len,
+                "y": [y],
             }
 
             arg_null = {
-                'context': context_null,
-                'clip_fea': clip_context,
-                'seq_len': max_seq_len,
-                'y': [y],
+                "context": context_null,
+                "clip_fea": clip_context,
+                "seq_len": max_seq_len,
+                "y": [y],
             }
 
             if offload_model:
@@ -298,28 +320,31 @@ class WanI2V:
 
                 timestep = torch.stack(timestep).to(self.device)
 
-                noise_pred_cond = self.model(
-                    latent_model_input, t=timestep, **arg_c)[0].to(
-                        torch.device('cpu') if offload_model else self.device)
+                noise_pred_cond = self.model(latent_model_input, t=timestep, **arg_c)[
+                    0
+                ].to(torch.device("cpu") if offload_model else self.device)
                 if offload_model:
                     torch.cuda.empty_cache()
                 noise_pred_uncond = self.model(
-                    latent_model_input, t=timestep, **arg_null)[0].to(
-                        torch.device('cpu') if offload_model else self.device)
+                    latent_model_input, t=timestep, **arg_null
+                )[0].to(torch.device("cpu") if offload_model else self.device)
                 if offload_model:
                     torch.cuda.empty_cache()
                 noise_pred = noise_pred_uncond + guide_scale * (
-                    noise_pred_cond - noise_pred_uncond)
+                    noise_pred_cond - noise_pred_uncond
+                )
 
                 latent = latent.to(
-                    torch.device('cpu') if offload_model else self.device)
+                    torch.device("cpu") if offload_model else self.device
+                )
 
                 temp_x0 = sample_scheduler.step(
                     noise_pred.unsqueeze(0),
                     t,
                     latent.unsqueeze(0),
                     return_dict=False,
-                    generator=seed_g)[0]
+                    generator=seed_g,
+                )[0]
                 latent = temp_x0.squeeze(0)
 
                 x0 = [latent.to(self.device)]
@@ -344,21 +369,24 @@ class WanI2V:
             dist.barrier()
 
         return videos[0] if self.rank == 0 else None
-    
+
     def load_weight(self):
         self.text_encoder.load_weight()
         self.vae.load_weight()
         self.clip.load_weight()
-        #denoiser use from_pretrained, no need load again
+        # denoiser use from_pretrained, no need load again
         if self.use_usp:
-            from xfuser.core.distributed import \
-                get_sequence_parallel_world_size
+            from xfuser.core.distributed import get_sequence_parallel_world_size
 
-            from .distributed.xdit_context_parallel import (usp_attn_forward,
-                                                            usp_dit_forward)
+            from .distributed.xdit_context_parallel import (
+                usp_attn_forward,
+                usp_dit_forward,
+            )
+
             for block in self.model.blocks:
                 block.self_attn.forward = types.MethodType(
-                    usp_attn_forward, block.self_attn)
+                    usp_attn_forward, block.self_attn
+                )
             self.model.forward = types.MethodType(usp_dit_forward, self.model)
             self.sp_size = get_sequence_parallel_world_size()
         else:
@@ -375,47 +403,72 @@ class WanI2V:
     def enable_vram_management(self):
         pass
 
-
-    def training_step(self, batch, batch_idx, 
-                      first_stage_key:str, 
-                      cond_stage_key:str,
-                      model_offload:bool = True,
-                      dtype:torch.dtype = torch.bfloat16,
-                      device:str = "cuda"):
+    def training_step(
+        self,
+        batch,
+        batch_idx,
+        first_stage_key: str,
+        cond_stage_key: str,
+        model_offload: bool = True,
+        dtype: torch.dtype = torch.bfloat16,
+        device: str = "cuda",
+    ):
         videos = batch[first_stage_key]
         first_frame = videos[:, :, 0:1, :, :]
-        
+
         ## compute latent and embeddings
         with torch.inference_mode():
             if model_offload:
                 self.vae.model.to(device)
-                latents = torch.stack(self.vae.encode(videos)).to(dtype=dtype, device=device).detach()
+                latents = (
+                    torch.stack(self.vae.encode(videos))
+                    .to(dtype=dtype, device=device)
+                    .detach()
+                )
                 videos[:, :, 1:, :, :] = 0
-                y = torch.stack(self.vae.encode(videos)).to(dtype=dtype, device=device).detach()
-                self.vae.model.to('cpu')
+                y = (
+                    torch.stack(self.vae.encode(videos))
+                    .to(dtype=dtype, device=device)
+                    .detach()
+                )
+                self.vae.model.to("cpu")
                 self.text_encoder.model.to(device)
                 text_cond_embed = self.text_encoder(batch[cond_stage_key], device)
-                self.text_encoder.model.to('cpu')
+                self.text_encoder.model.to("cpu")
                 self.clip.model.to(device)
                 clip_context = self.clip.visual(first_frame)
-                self.clip.model.to('cpu')
+                self.clip.model.to("cpu")
             else:
-                latents = torch.stack(self.vae.encode(videos)).to(dtype=dtype, device=device).detach()
+                latents = (
+                    torch.stack(self.vae.encode(videos))
+                    .to(dtype=dtype, device=device)
+                    .detach()
+                )
                 videos[:, :, 1:, :, :] = 0
-                y = torch.stack(self.vae.encode(videos)).to(dtype=dtype, device=device).detach()
+                y = (
+                    torch.stack(self.vae.encode(videos))
+                    .to(dtype=dtype, device=device)
+                    .detach()
+                )
                 text_cond_embed = self.text_encoder(batch[cond_stage_key], device)
                 clip_context = self.clip.visual(first_frame)
 
         ## scheduler
-        self.scheduler : FlowMatchScheduler = FlowMatchScheduler(shift=5, sigma_min=0.0, extra_one_step=True)
+        self.scheduler: FlowMatchScheduler = FlowMatchScheduler(
+            shift=5, sigma_min=0.0, extra_one_step=True
+        )
         self.scheduler.set_timesteps(1000, training=True)
 
         ## noise
         b, c, f, h, w = latents.shape
         noise = torch.randn_like(latents)
         timestep_ids = torch.randint(0, self.scheduler.num_train_timesteps, (b,))
-        timesteps = self.scheduler.timesteps[timestep_ids].to(dtype=dtype, device=device)
-        noisy_latents = self.scheduler.add_noise(latents, noise, timesteps).to(dtype=dtype, device=device)
+        timesteps = self.scheduler.timesteps[timestep_ids].to(
+            dtype=dtype, device=device
+        )
+        noisy_latents = self.scheduler.add_noise(latents, noise, timesteps).to(
+            dtype=dtype, device=device
+        )
         training_target = noise.to(device) - latents
 
         # compute loss
@@ -423,7 +476,16 @@ class WanI2V:
         mask[:, :, 0, :, :] = 1
         y = torch.cat([mask, y], dim=1)
 
-        noise_pred = self.model(x=noisy_latents, t=timesteps, context=text_cond_embed, clip_fea=clip_context, seq_len=None, y=y)
-        loss = torch.nn.functional.mse_loss(torch.stack(noise_pred).float(), training_target.float())
+        noise_pred = self.model(
+            x=noisy_latents,
+            t=timesteps,
+            context=text_cond_embed,
+            clip_fea=clip_context,
+            seq_len=None,
+            y=y,
+        )
+        loss = torch.nn.functional.mse_loss(
+            torch.stack(noise_pred).float(), training_target.float()
+        )
         loss = loss * self.scheduler.training_weight(timesteps).to(device=device)
         return loss

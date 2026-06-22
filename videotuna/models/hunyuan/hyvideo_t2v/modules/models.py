@@ -1,20 +1,19 @@
-from typing import Any, List, Tuple, Optional, Union, Dict
-from einops import rearrange
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-from diffusers.models import ModelMixin
 from diffusers.configuration_utils import ConfigMixin, register_to_config
+from diffusers.models import ModelMixin
+from einops import rearrange
 
 from .activation_layers import get_activation_layer
+from .attenion import attention, get_cu_seqlens, parallel_attention
+from .embed_layers import PatchEmbed, TextProjection, TimestepEmbedder
+from .mlp_layers import MLP, FinalLayer, MLPEmbedder
+from .modulate_layers import ModulateDiT, apply_gate, modulate
 from .norm_layers import get_norm_layer
-from .embed_layers import TimestepEmbedder, PatchEmbed, TextProjection
-from .attenion import attention, parallel_attention, get_cu_seqlens
 from .posemb_layers import apply_rotary_emb
-from .mlp_layers import MLP, MLPEmbedder, FinalLayer
-from .modulate_layers import ModulateDiT, modulate, apply_gate
 from .token_refiner import SingleTokenRefiner
 
 
@@ -198,7 +197,7 @@ class MMDoubleStreamBlock(nn.Module):
         assert (
             cu_seqlens_q.shape[0] == 2 * img.shape[0] + 1
         ), f"cu_seqlens_q.shape:{cu_seqlens_q.shape}, img.shape[0]:{img.shape[0]}"
-        
+
         # attention computation start
         if not self.hybrid_seq_parallel_attn:
             attn = attention(
@@ -220,9 +219,9 @@ class MMDoubleStreamBlock(nn.Module):
                 img_q_len=img_q.shape[1],
                 img_kv_len=img_k.shape[1],
                 cu_seqlens_q=cu_seqlens_q,
-                cu_seqlens_kv=cu_seqlens_kv
+                cu_seqlens_kv=cu_seqlens_kv,
             )
-            
+
         # attention computation end
 
         img_attn, txt_attn = attn[:, : img.shape[1]], attn[:, img.shape[1] :]
@@ -281,7 +280,7 @@ class MMSingleStreamBlock(nn.Module):
         head_dim = hidden_size // heads_num
         mlp_hidden_dim = int(hidden_size * mlp_width_ratio)
         self.mlp_hidden_dim = mlp_hidden_dim
-        self.scale = qk_scale or head_dim ** -0.5
+        self.scale = qk_scale or head_dim**-0.5
 
         # qkv and mlp_in
         self.linear1 = nn.Linear(
@@ -362,7 +361,7 @@ class MMSingleStreamBlock(nn.Module):
         assert (
             cu_seqlens_q.shape[0] == 2 * x.shape[0] + 1
         ), f"cu_seqlens_q.shape:{cu_seqlens_q.shape}, x.shape[0]:{x.shape[0]}"
-        
+
         # attention computation start
         if not self.hybrid_seq_parallel_attn:
             attn = attention(
@@ -384,7 +383,7 @@ class MMSingleStreamBlock(nn.Module):
                 img_q_len=img_q.shape[1],
                 img_kv_len=img_k.shape[1],
                 cu_seqlens_q=cu_seqlens_q,
-                cu_seqlens_kv=cu_seqlens_kv
+                cu_seqlens_kv=cu_seqlens_kv,
             )
         # attention computation end
 

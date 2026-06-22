@@ -185,7 +185,11 @@ def generate_video(
         # 5. Export the generated frames to a video file. fps must be 8 for original video.
         export_to_video(video_generate, output_path_, fps=8)
     save_metrics(
-        savedir=output_path if os.path.isdir(output_path) else os.path.dirname(output_path) or ".",
+        savedir=(
+            output_path
+            if os.path.isdir(output_path)
+            else os.path.dirname(output_path) or "."
+        ),
         metrics={"per_sample": per_sample, "frames": num_frames},
     )
 

@@ -3,11 +3,9 @@ from typing import Optional, Tuple, Union
 
 import numpy as np
 import torch
-
 from diffusers.configuration_utils import ConfigMixin, register_to_config
-from diffusers.utils import BaseOutput, logging
 from diffusers.schedulers.scheduling_utils import SchedulerMixin
-
+from diffusers.utils import BaseOutput, logging
 
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
@@ -65,7 +63,7 @@ class FlowMatchDiscreteScheduler(SchedulerMixin, ConfigMixin):
 
         self._step_index = None
         self._begin_index = None
-        
+
         self.device = device
 
         self.supported_solver = ["euler"]
@@ -121,7 +119,7 @@ class FlowMatchDiscreteScheduler(SchedulerMixin, ConfigMixin):
         """
         device = device or self.device
         self.num_inference_steps = num_inference_steps
-        
+
         sigmas = torch.linspace(1, 0, num_inference_steps + 1, device=device)
         sigmas = self.sd3_time_shift(sigmas, time_shift)
 

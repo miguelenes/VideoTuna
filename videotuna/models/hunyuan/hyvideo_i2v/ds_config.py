@@ -6,17 +6,18 @@ def get_tensorboard_config(output_dir: str, job_name: str):
     tensorboard_config = {
         "enabled": True,
         "output_path": output_dir,
-        "job_name": job_name
+        "job_name": job_name,
     }
     return tensorboard_config
 
 
-def get_deepspeed_config(args: argparse.Namespace,
-                         micro_batch_size: int,
-                         global_batch_size: int,
-                         output_dir: str = None,
-                         job_name: str = None,
-                         ):
+def get_deepspeed_config(
+    args: argparse.Namespace,
+    micro_batch_size: int,
+    global_batch_size: int,
+    output_dir: str = None,
+    job_name: str = None,
+):
     config = {
         "train_batch_size": global_batch_size,
         "train_micro_batch_size_per_gpu": micro_batch_size,
@@ -26,29 +27,23 @@ def get_deepspeed_config(args: argparse.Namespace,
             "type": "AdamW",
             "params": {
                 "lr": args.lr,
-                "betas": [
-                    args.adam_beta1,
-                    args.adam_beta2
-                ],
+                "betas": [args.adam_beta1, args.adam_beta2],
                 "eps": args.adam_eps,
-                "weight_decay": args.weight_decay
-            }
+                "weight_decay": args.weight_decay,
+            },
         },
         "gradient_clipping": 1.0,
         "prescale_gradients": True,
-
         "fp16": {
-            "enabled": args.precision == 'fp16',
+            "enabled": args.precision == "fp16",
             "fp16_master_weights_and_grads": False,
             "loss_scale": 0,
             "loss_scale_window": 500,
             "hysteresis": 2,
             "min_loss_scale": 1,
-            "initial_scale_power": 15
+            "initial_scale_power": 15,
         },
-        "bf16": {
-            "enabled": args.precision == 'bf16'
-        },
+        "bf16": {"enabled": args.precision == "bf16"},
         "wall_clock_breakdown": False,
         "zero_optimization": {
             "stage": args.zero_stage,

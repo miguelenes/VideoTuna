@@ -1,14 +1,13 @@
+import argparse
+import json
 import os
 import sys
 import time
-import json
-import argparse
-
 
 import torch
-from tqdm import trange
 from omegaconf import OmegaConf
 from pytorch_lightning import seed_everything
+from tqdm import trange
 
 sys.path.insert(0, os.getcwd())
 sys.path.insert(1, f"{os.getcwd()}/src")

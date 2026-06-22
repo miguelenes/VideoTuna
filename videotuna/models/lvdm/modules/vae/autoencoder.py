@@ -1,13 +1,13 @@
 import os
 
-import torch
-from einops import rearrange
 import pytorch_lightning as pl
+import torch
 import torch.nn.functional as F
+from einops import rearrange
 
 from videotuna.models.lvdm.modules.ae_modules import Decoder, Encoder
-from videotuna.utils.distributions import DiagonalGaussianDistribution
 from videotuna.utils.common_utils import instantiate_from_config
+from videotuna.utils.distributions import DiagonalGaussianDistribution
 
 
 class AutoencoderKL(pl.LightningModule):

@@ -17,22 +17,23 @@
 #
 # ==============================================================================
 import inspect
-from typing import Any, Callable, Dict, List, Optional, Union, Tuple
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+
+import numpy as np
 import torch
 import torch.distributed as dist
-import numpy as np
-from dataclasses import dataclass
-from packaging import version
-
 from diffusers.callbacks import MultiPipelineCallbacks, PipelineCallback
 from diffusers.configuration_utils import FrozenDict
 from diffusers.image_processor import VaeImageProcessor
 from diffusers.loaders import LoraLoaderMixin, TextualInversionLoaderMixin
 from diffusers.models import AutoencoderKL
 from diffusers.models.lora import adjust_lora_scale_text_encoder
+from diffusers.pipelines.pipeline_utils import DiffusionPipeline
 from diffusers.schedulers import KarrasDiffusionSchedulers
 from diffusers.utils import (
     USE_PEFT_BACKEND,
+    BaseOutput,
     deprecate,
     logging,
     replace_example_docstring,
@@ -40,14 +41,13 @@ from diffusers.utils import (
     unscale_lora_layers,
 )
 from diffusers.utils.torch_utils import randn_tensor
-from diffusers.pipelines.pipeline_utils import DiffusionPipeline
-from diffusers.utils import BaseOutput
+from packaging import version
 
 from ...constants import PRECISION_TO_TYPE
-from ...vae.autoencoder_kl_causal_3d import AutoencoderKLCausal3D
-from ...text_encoder import TextEncoder
 from ...modules import HYVideoDiffusionTransformer
+from ...text_encoder import TextEncoder
 from ...utils.data_utils import black_image
+from ...vae.autoencoder_kl_causal_3d import AutoencoderKLCausal3D
 
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
@@ -175,8 +175,8 @@ class HunyuanVideoPipeline(DiffusionPipeline):
         scheduler: KarrasDiffusionSchedulers,
         text_encoder_2: Optional[TextEncoder] = None,
         progress_bar_config: Dict[str, Any] = None,
-        vae_precision: str = 'fp16',
-        precision: str = 'bf16',
+        vae_precision: str = "fp16",
+        precision: str = "bf16",
         disable_autocast: bool = False,
     ):
         super().__init__()
@@ -255,7 +255,7 @@ class HunyuanVideoPipeline(DiffusionPipeline):
         clip_skip: Optional[int] = None,
         text_encoder: Optional[TextEncoder] = None,
         data_type: Optional[str] = "image",
-        semantic_images=None
+        semantic_images=None,
     ):
         r"""
         Encodes the prompt into text encoder hidden states.
@@ -320,7 +320,10 @@ class HunyuanVideoPipeline(DiffusionPipeline):
 
             if clip_skip is None:
                 prompt_outputs = text_encoder.encode(
-                    text_inputs, data_type=data_type, semantic_images=semantic_images, device=device
+                    text_inputs,
+                    data_type=data_type,
+                    semantic_images=semantic_images,
+                    device=device,
                 )
                 prompt_embeds = prompt_outputs.hidden_state
             else:
@@ -405,12 +408,17 @@ class HunyuanVideoPipeline(DiffusionPipeline):
             uncond_input = text_encoder.text2tokens(uncond_tokens, data_type=data_type)
 
             if semantic_images is not None:
-                uncond_image = [black_image(img.size[0], img.size[1]) for img in semantic_images]
+                uncond_image = [
+                    black_image(img.size[0], img.size[1]) for img in semantic_images
+                ]
             else:
                 uncond_image = None
 
             negative_prompt_outputs = text_encoder.encode(
-                uncond_input, data_type=data_type, semantic_images=uncond_image, device=device
+                uncond_input,
+                data_type=data_type,
+                semantic_images=uncond_image,
+                device=device,
             )
             negative_prompt_embeds = negative_prompt_outputs.hidden_state
 
@@ -565,7 +573,6 @@ class HunyuanVideoPipeline(DiffusionPipeline):
                     f" got: `prompt_embeds` {prompt_embeds.shape} != `negative_prompt_embeds`"
                     f" {negative_prompt_embeds.shape}."
                 )
-
 
     def prepare_latents(
         self,
@@ -781,7 +788,7 @@ class HunyuanVideoPipeline(DiffusionPipeline):
             negative_prompt_embeds (`torch.Tensor`, *optional*):
                 Pre-generated negative text embeddings. Can be used to easily tweak text inputs (prompt weighting). If
                 not provided, `negative_prompt_embeds` are generated from the `negative_prompt` input argument.
-                
+
             output_type (`str`, *optional*, defaults to `"pil"`):
                 The output format of the generated image. Choose between `PIL.Image` or `np.array`.
             return_dict (`bool`, *optional*, defaults to `True`):
@@ -868,7 +875,11 @@ class HunyuanVideoPipeline(DiffusionPipeline):
         else:
             batch_size = prompt_embeds.shape[0]
 
-        device = torch.device(f"cuda:{dist.get_rank()}") if dist.is_initialized() else self._execution_device
+        device = (
+            torch.device(f"cuda:{dist.get_rank()}")
+            if dist.is_initialized()
+            else self._execution_device
+        )
 
         # 3. Encode input prompt
         lora_scale = (
@@ -895,7 +906,7 @@ class HunyuanVideoPipeline(DiffusionPipeline):
             lora_scale=lora_scale,
             clip_skip=self.clip_skip,
             data_type=data_type,
-            semantic_images=semantic_images
+            semantic_images=semantic_images,
         )
         if self.text_encoder_2 is not None:
             (
@@ -936,7 +947,6 @@ class HunyuanVideoPipeline(DiffusionPipeline):
             if prompt_mask_2 is not None:
                 prompt_mask_2 = torch.cat([negative_prompt_mask_2, prompt_mask_2])
 
-
         # 4. Prepare timesteps
         extra_set_timesteps_kwargs = self.prepare_extra_func_kwargs(
             self.scheduler.set_timesteps, {"n_tokens": n_tokens}
@@ -972,7 +982,7 @@ class HunyuanVideoPipeline(DiffusionPipeline):
             img_latents=img_latents,
             i2v_mode=i2v_mode,
             i2v_condition_type=i2v_condition_type,
-            i2v_stability=i2v_stability
+            i2v_stability=i2v_stability,
         )
 
         if i2v_mode and i2v_condition_type == "latent_concat":
@@ -985,8 +995,13 @@ class HunyuanVideoPipeline(DiffusionPipeline):
             i2v_mask = torch.zeros(video_length)
             i2v_mask[0] = 1
 
-            mask_concat = torch.ones(img_latents_concat.shape[0], 1, img_latents_concat.shape[2], img_latents_concat.shape[3],
-                                     img_latents_concat.shape[4]).to(device=img_latents.device)
+            mask_concat = torch.ones(
+                img_latents_concat.shape[0],
+                1,
+                img_latents_concat.shape[2],
+                img_latents_concat.shape[3],
+                img_latents_concat.shape[4],
+            ).to(device=img_latents.device)
             mask_concat[:, :, 1:, ...] = 0
 
         # 6. Prepare extra step kwargs. TODO: Logic should ideally just be moved out of the pipeline
@@ -996,9 +1011,7 @@ class HunyuanVideoPipeline(DiffusionPipeline):
         )
 
         target_dtype = PRECISION_TO_TYPE[self.precision]
-        autocast_enabled = (
-            target_dtype != torch.float32
-        ) and not self.disable_autocast
+        autocast_enabled = (target_dtype != torch.float32) and not self.disable_autocast
         vae_dtype = PRECISION_TO_TYPE[self.vae_precision]
         vae_autocast_enabled = (
             vae_dtype != torch.float32
@@ -1015,11 +1028,15 @@ class HunyuanVideoPipeline(DiffusionPipeline):
                     continue
 
                 if i2v_mode and i2v_condition_type == "token_replace":
-                    latents = torch.concat([img_latents, latents[:, :, 1:, :, :]], dim=2)
+                    latents = torch.concat(
+                        [img_latents, latents[:, :, 1:, :, :]], dim=2
+                    )
 
                 # expand the latents if we are doing classifier free guidance
                 if i2v_mode and i2v_condition_type == "latent_concat":
-                    latent_model_input = torch.concat([latents, img_latents_concat, mask_concat], dim=1)
+                    latent_model_input = torch.concat(
+                        [latents, img_latents_concat, mask_concat], dim=1
+                    )
                 else:
                     latent_model_input = latents
 
@@ -1081,11 +1098,13 @@ class HunyuanVideoPipeline(DiffusionPipeline):
                 # compute the previous noisy sample x_t -> x_t-1
                 if i2v_mode and i2v_condition_type == "token_replace":
                     latents = self.scheduler.step(
-                        noise_pred[:, :, 1:, :, :], t, latents[:, :, 1:, :, :], **extra_step_kwargs, return_dict=False
+                        noise_pred[:, :, 1:, :, :],
+                        t,
+                        latents[:, :, 1:, :, :],
+                        **extra_step_kwargs,
+                        return_dict=False,
                     )[0]
-                    latents = torch.concat(
-                        [img_latents, latents], dim=2
-                    )
+                    latents = torch.concat([img_latents, latents], dim=2)
                 else:
                     latents = self.scheduler.step(
                         noise_pred, t, latents, **extra_step_kwargs, return_dict=False

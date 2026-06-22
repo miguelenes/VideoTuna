@@ -88,7 +88,7 @@ cd ../..
 # ---- Wan ----
 mkdir checkpoints/wan/
 cd checkpoints/wan
-huggingface-cli download Wan-AI/Wan2.1-T2V-14B --local-dir ./Wan2.1-T2V-14B
+hf download Wan-AI/Wan2.1-T2V-14B --local-dir ./Wan2.1-T2V-14B
 cd ../..
 
 
@@ -120,7 +120,7 @@ wget https://huggingface.co/stabilityai/stable-diffusion-2-1-base/resolve/main/v
 # ---- Wan ----
 mkdir -p checkpoints/wan/
 cd checkpoints/wan
-huggingface-cli download Wan-AI/Wan2.1-I2V-14B-720P --local-dir ./Wan2.1-I2V-14B-720P
+hf download Wan-AI/Wan2.1-I2V-14B-720P --local-dir ./Wan2.1-I2V-14B-720P
 cd ../..
 
 # ---------------------------- V2V ----------------------------

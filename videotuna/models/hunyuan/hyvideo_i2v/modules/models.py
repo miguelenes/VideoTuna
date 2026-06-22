@@ -1,26 +1,31 @@
-from typing import Any, List, Tuple, Optional, Union, Dict
-from einops import rearrange
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from pathlib import Path
-from loguru import logger
-
-from diffusers.models import ModelMixin
-from diffusers.configuration_utils import ConfigMixin, register_to_config
 import torch.utils
 import torch.utils.checkpoint
+from diffusers.configuration_utils import ConfigMixin, register_to_config
+from diffusers.models import ModelMixin
+from einops import rearrange
+from loguru import logger
 
+from ..constants import (
+    NEGATIVE_PROMPT,
+    NEGATIVE_PROMPT_I2V,
+    PRECISION_TO_TYPE,
+    PROMPT_TEMPLATE,
+)
 from .activation_layers import get_activation_layer
+from .attenion import attention, get_cu_seqlens, parallel_attention
+from .embed_layers import PatchEmbed, TextProjection, TimestepEmbedder
+from .mlp_layers import MLP, FinalLayer, MLPEmbedder
+from .modulate_layers import ModulateDiT, apply_gate, ckpt_wrapper, modulate
 from .norm_layers import get_norm_layer
-from .embed_layers import TimestepEmbedder, PatchEmbed, TextProjection
-from .attenion import attention, parallel_attention, get_cu_seqlens
 from .posemb_layers import apply_rotary_emb
-from .mlp_layers import MLP, MLPEmbedder, FinalLayer
-from .modulate_layers import ModulateDiT, modulate, apply_gate, ckpt_wrapper
 from .token_refiner import SingleTokenRefiner
-from ..constants import PROMPT_TEMPLATE, NEGATIVE_PROMPT, PRECISION_TO_TYPE, NEGATIVE_PROMPT_I2V
+
 
 class MMDoubleStreamBlock(nn.Module):
     """
@@ -148,20 +153,25 @@ class MMDoubleStreamBlock(nn.Module):
         frist_frame_token_num: int = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         if condition_type == "token_replace":
-            img_mod1, token_replace_img_mod1 = self.img_mod(vec, condition_type=condition_type, \
-                                                            token_replace_vec=token_replace_vec)
-            (img_mod1_shift,
-             img_mod1_scale,
-             img_mod1_gate,
-             img_mod2_shift,
-             img_mod2_scale,
-             img_mod2_gate) = img_mod1.chunk(6, dim=-1)
-            (tr_img_mod1_shift,
-             tr_img_mod1_scale,
-             tr_img_mod1_gate,
-             tr_img_mod2_shift,
-             tr_img_mod2_scale,
-             tr_img_mod2_gate) = token_replace_img_mod1.chunk(6, dim=-1)
+            img_mod1, token_replace_img_mod1 = self.img_mod(
+                vec, condition_type=condition_type, token_replace_vec=token_replace_vec
+            )
+            (
+                img_mod1_shift,
+                img_mod1_scale,
+                img_mod1_gate,
+                img_mod2_shift,
+                img_mod2_scale,
+                img_mod2_gate,
+            ) = img_mod1.chunk(6, dim=-1)
+            (
+                tr_img_mod1_shift,
+                tr_img_mod1_scale,
+                tr_img_mod1_gate,
+                tr_img_mod2_shift,
+                tr_img_mod2_scale,
+                tr_img_mod2_gate,
+            ) = token_replace_img_mod1.chunk(6, dim=-1)
         else:
             (
                 img_mod1_shift,
@@ -185,9 +195,13 @@ class MMDoubleStreamBlock(nn.Module):
         img_modulated = self.img_norm1(img)
         if condition_type == "token_replace":
             img_modulated = modulate(
-                img_modulated, shift=img_mod1_shift, scale=img_mod1_scale, condition_type=condition_type,
-                tr_shift=tr_img_mod1_shift, tr_scale=tr_img_mod1_scale,
-                frist_frame_token_num=frist_frame_token_num
+                img_modulated,
+                shift=img_mod1_shift,
+                scale=img_mod1_scale,
+                condition_type=condition_type,
+                tr_shift=tr_img_mod1_shift,
+                tr_scale=tr_img_mod1_scale,
+                frist_frame_token_num=frist_frame_token_num,
             )
         else:
             img_modulated = modulate(
@@ -229,7 +243,7 @@ class MMDoubleStreamBlock(nn.Module):
         assert (
             cu_seqlens_q.shape[0] == 2 * img.shape[0] + 1
         ), f"cu_seqlens_q.shape:{cu_seqlens_q.shape}, img.shape[0]:{img.shape[0]}"
-        
+
         # attention computation start
         if not self.hybrid_seq_parallel_attn:
             attn = attention(
@@ -251,26 +265,38 @@ class MMDoubleStreamBlock(nn.Module):
                 img_q_len=img_q.shape[1],
                 img_kv_len=img_k.shape[1],
                 cu_seqlens_q=cu_seqlens_q,
-                cu_seqlens_kv=cu_seqlens_kv
+                cu_seqlens_kv=cu_seqlens_kv,
             )
-            
+
         # attention computation end
 
         img_attn, txt_attn = attn[:, : img.shape[1]], attn[:, img.shape[1] :]
 
         # Calculate the img bloks.
         if condition_type == "token_replace":
-            img = img + apply_gate(self.img_attn_proj(img_attn), gate=img_mod1_gate, condition_type=condition_type,
-                                   tr_gate=tr_img_mod1_gate, frist_frame_token_num=frist_frame_token_num)
+            img = img + apply_gate(
+                self.img_attn_proj(img_attn),
+                gate=img_mod1_gate,
+                condition_type=condition_type,
+                tr_gate=tr_img_mod1_gate,
+                frist_frame_token_num=frist_frame_token_num,
+            )
             img = img + apply_gate(
                 self.img_mlp(
                     modulate(
-                        self.img_norm2(img), shift=img_mod2_shift, scale=img_mod2_scale, condition_type=condition_type,
-                        tr_shift=tr_img_mod2_shift, tr_scale=tr_img_mod2_scale, frist_frame_token_num=frist_frame_token_num
+                        self.img_norm2(img),
+                        shift=img_mod2_shift,
+                        scale=img_mod2_scale,
+                        condition_type=condition_type,
+                        tr_shift=tr_img_mod2_shift,
+                        tr_scale=tr_img_mod2_scale,
+                        frist_frame_token_num=frist_frame_token_num,
                     )
                 ),
-                gate=img_mod2_gate, condition_type=condition_type,
-                tr_gate=tr_img_mod2_gate, frist_frame_token_num=frist_frame_token_num
+                gate=img_mod2_gate,
+                condition_type=condition_type,
+                tr_gate=tr_img_mod2_gate,
+                frist_frame_token_num=frist_frame_token_num,
             )
         else:
             img = img + apply_gate(self.img_attn_proj(img_attn), gate=img_mod1_gate)
@@ -326,7 +352,7 @@ class MMSingleStreamBlock(nn.Module):
         head_dim = hidden_size // heads_num
         mlp_hidden_dim = int(hidden_size * mlp_width_ratio)
         self.mlp_hidden_dim = mlp_hidden_dim
-        self.scale = qk_scale or head_dim ** -0.5
+        self.scale = qk_scale or head_dim**-0.5
 
         # qkv and mlp_in
         self.linear1 = nn.Linear(
@@ -383,20 +409,23 @@ class MMSingleStreamBlock(nn.Module):
         frist_frame_token_num: int = None,
     ) -> torch.Tensor:
         if condition_type == "token_replace":
-            mod, tr_mod = self.modulation(vec,
-                                          condition_type=condition_type,
-                                          token_replace_vec=token_replace_vec)
-            (mod_shift,
-             mod_scale,
-             mod_gate) = mod.chunk(3, dim=-1)
-            (tr_mod_shift,
-             tr_mod_scale,
-             tr_mod_gate) = tr_mod.chunk(3, dim=-1)
+            mod, tr_mod = self.modulation(
+                vec, condition_type=condition_type, token_replace_vec=token_replace_vec
+            )
+            (mod_shift, mod_scale, mod_gate) = mod.chunk(3, dim=-1)
+            (tr_mod_shift, tr_mod_scale, tr_mod_gate) = tr_mod.chunk(3, dim=-1)
         else:
             mod_shift, mod_scale, mod_gate = self.modulation(vec).chunk(3, dim=-1)
         if condition_type == "token_replace":
-            x_mod = modulate(self.pre_norm(x), shift=mod_shift, scale=mod_scale, condition_type=condition_type,
-                             tr_shift=tr_mod_shift, tr_scale=tr_mod_scale, frist_frame_token_num=frist_frame_token_num)
+            x_mod = modulate(
+                self.pre_norm(x),
+                shift=mod_shift,
+                scale=mod_scale,
+                condition_type=condition_type,
+                tr_shift=tr_mod_shift,
+                tr_scale=tr_mod_scale,
+                frist_frame_token_num=frist_frame_token_num,
+            )
         else:
             x_mod = modulate(self.pre_norm(x), shift=mod_shift, scale=mod_scale)
         qkv, mlp = torch.split(
@@ -425,7 +454,7 @@ class MMSingleStreamBlock(nn.Module):
         assert (
             cu_seqlens_q.shape[0] == 2 * x.shape[0] + 1
         ), f"cu_seqlens_q.shape:{cu_seqlens_q.shape}, x.shape[0]:{x.shape[0]}"
-        
+
         # attention computation start
         if not self.hybrid_seq_parallel_attn:
             attn = attention(
@@ -447,7 +476,7 @@ class MMSingleStreamBlock(nn.Module):
                 img_q_len=img_q.shape[1],
                 img_kv_len=img_k.shape[1],
                 cu_seqlens_q=cu_seqlens_q,
-                cu_seqlens_kv=cu_seqlens_kv
+                cu_seqlens_kv=cu_seqlens_kv,
             )
         # attention computation end
 
@@ -455,11 +484,17 @@ class MMSingleStreamBlock(nn.Module):
         output = self.linear2(torch.cat((attn, self.mlp_act(mlp)), 2))
 
         if condition_type == "token_replace":
-            output = x + apply_gate(output, gate=mod_gate, condition_type=condition_type,
-                                    tr_gate=tr_mod_gate, frist_frame_token_num=frist_frame_token_num)
+            output = x + apply_gate(
+                output,
+                gate=mod_gate,
+                condition_type=condition_type,
+                tr_gate=tr_mod_gate,
+                frist_frame_token_num=frist_frame_token_num,
+            )
             return output
         else:
             return x + apply_gate(output, gate=mod_gate)
+
 
 class HYVideoDiffusionTransformer(ModelMixin, ConfigMixin):
     """
@@ -534,7 +569,7 @@ class HYVideoDiffusionTransformer(ModelMixin, ConfigMixin):
         use_attention_mask: bool = True,
         dtype: Optional[torch.dtype] = None,
         device: Optional[torch.device] = None,
-        #below args
+        # below args
         i2v_condition_type: str = "token_replace",
         text_states_dim: int = 4096,
         text_states_dim_2: int = 768,
@@ -564,10 +599,14 @@ class HYVideoDiffusionTransformer(ModelMixin, ConfigMixin):
         self.gradient_checkpoint = gradient_checkpoint
         self.gradient_checkpoint_layers = gradient_checkpoint_layers
         if self.gradient_checkpoint:
-            assert self.gradient_checkpoint_layers <= mm_double_blocks_depth + mm_single_blocks_depth, \
-                f"Gradient checkpoint layers must be less or equal than the depth of the model. " \
-                f"Got gradient_checkpoint_layers={self.gradient_checkpoint_layers} and " \
+            assert (
+                self.gradient_checkpoint_layers
+                <= mm_double_blocks_depth + mm_single_blocks_depth
+            ), (
+                f"Gradient checkpoint layers must be less or equal than the depth of the model. "
+                f"Got gradient_checkpoint_layers={self.gradient_checkpoint_layers} and "
                 f"depth={mm_double_blocks_depth + mm_single_blocks_depth}."
+            )
 
         if hidden_size % heads_num != 0:
             raise ValueError(
@@ -761,10 +800,18 @@ class HYVideoDiffusionTransformer(ModelMixin, ConfigMixin):
                 frist_frame_token_num,
             ]
 
-            if self.training and self.gradient_checkpoint and \
-                    (self.gradient_checkpoint_layers == -1 or layer_num < self.gradient_checkpoint_layers):
+            if (
+                self.training
+                and self.gradient_checkpoint
+                and (
+                    self.gradient_checkpoint_layers == -1
+                    or layer_num < self.gradient_checkpoint_layers
+                )
+            ):
                 # print(f'gradient checkpointing...')
-                img, txt = torch.utils.checkpoint.checkpoint(ckpt_wrapper(block), *double_block_args, use_reentrant=False)
+                img, txt = torch.utils.checkpoint.checkpoint(
+                    ckpt_wrapper(block), *double_block_args, use_reentrant=False
+                )
             else:
                 img, txt = block(*double_block_args)
 
@@ -787,9 +834,18 @@ class HYVideoDiffusionTransformer(ModelMixin, ConfigMixin):
                     frist_frame_token_num,
                 ]
 
-                if self.training and self.gradient_checkpoint and \
-                        (self.gradient_checkpoint_layers == -1 or layer_num + len(self.double_blocks) < self.gradient_checkpoint_layers):
-                    x = torch.utils.checkpoint.checkpoint(ckpt_wrapper(block), *single_block_args, use_reentrant=False)
+                if (
+                    self.training
+                    and self.gradient_checkpoint
+                    and (
+                        self.gradient_checkpoint_layers == -1
+                        or layer_num + len(self.double_blocks)
+                        < self.gradient_checkpoint_layers
+                    )
+                ):
+                    x = torch.utils.checkpoint.checkpoint(
+                        ckpt_wrapper(block), *single_block_args, use_reentrant=False
+                    )
                 else:
                     x = block(*single_block_args)
 
@@ -847,6 +903,7 @@ class HYVideoDiffusionTransformer(ModelMixin, ConfigMixin):
     def set_input_tensor(self, input_tensor):
         pass
 
+
 #################################################################################
 #                             HunyuanVideo Configs                              #
 #################################################################################
@@ -881,25 +938,27 @@ HUNYUAN_VIDEO_CONFIG = {
 
 
 class HYVideoDiffusionTransformerWrapper(nn.Module):
-    def __init__(self,
-                device: str = 'cuda',
-                i2v_mode: bool = True,
-                i2v_condition_type: str = 'token_replace',
-                precision: str = 'bf16',
-                latent_channels: int = 16,
-                embedded_cfg_scale: float = 6.0,
-                model: str = 'HYVideo-T/2',
-                gradient_checkpoint: bool = False,
-                gradient_checkpoint_layers: int = -1,
-                text_states_dim: int = 4096,
-                text_states_dim_2: int = 768,
-                ckpt_path: str = None,
-                dit_weight: str = None,
-                i2v_dit_weight: str = None,
-                model_resolution: str = '720p',
-                load_key: str = 'module',
-                *args, 
-                **kwargs):
+    def __init__(
+        self,
+        device: str = "cuda",
+        i2v_mode: bool = True,
+        i2v_condition_type: str = "token_replace",
+        precision: str = "bf16",
+        latent_channels: int = 16,
+        embedded_cfg_scale: float = 6.0,
+        model: str = "HYVideo-T/2",
+        gradient_checkpoint: bool = False,
+        gradient_checkpoint_layers: int = -1,
+        text_states_dim: int = 4096,
+        text_states_dim_2: int = 768,
+        ckpt_path: str = None,
+        dit_weight: str = None,
+        i2v_dit_weight: str = None,
+        model_resolution: str = "720p",
+        load_key: str = "module",
+        *args,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
 
         factor_kwargs = {"device": device, "dtype": PRECISION_TO_TYPE[precision]}
@@ -933,7 +992,6 @@ class HYVideoDiffusionTransformerWrapper(nn.Module):
         self.i2v_mode = i2v_mode
         self.device = device
 
-
     def load_weight(self):
         load_key = self.load_key
         if self.i2v_mode:
@@ -953,10 +1011,14 @@ class HYVideoDiffusionTransformerWrapper(nn.Module):
                 files = [f for f in files if str(f).endswith("_model_states.pt")]
                 model_path = files[0]
                 if len(files) > 1:
-                    logger.warning(f"Multiple model weights found in {dit_weight}, using {model_path}")
+                    logger.warning(
+                        f"Multiple model weights found in {dit_weight}, using {model_path}"
+                    )
                 bare_model = False
             else:
-                raise ValueError(f"Invalid model path: {dit_weight} with unrecognized weight format")
+                raise ValueError(
+                    f"Invalid model path: {dit_weight} with unrecognized weight format"
+                )
         else:
             if dit_weight.is_dir():
                 files = list(dit_weight.glob("*.pt"))
@@ -969,10 +1031,14 @@ class HYVideoDiffusionTransformerWrapper(nn.Module):
                     files = [f for f in files if str(f).endswith("_model_states.pt")]
                     model_path = files[0]
                     if len(files) > 1:
-                        logger.warning(f"Multiple model weights found in {dit_weight}, using {model_path}")
+                        logger.warning(
+                            f"Multiple model weights found in {dit_weight}, using {model_path}"
+                        )
                     bare_model = False
                 else:
-                    raise ValueError(f"Invalid model path: {dit_weight} with unrecognized weight format")
+                    raise ValueError(
+                        f"Invalid model path: {dit_weight} with unrecognized weight format"
+                    )
             elif dit_weight.is_file():
                 model_path = dit_weight
                 bare_model = "unknown"
@@ -990,6 +1056,8 @@ class HYVideoDiffusionTransformerWrapper(nn.Module):
             if load_key in state_dict:
                 state_dict = state_dict[load_key]
             else:
-                raise KeyError(f"Missing key: `{load_key}` in the checkpoint: {model_path}")
+                raise KeyError(
+                    f"Missing key: `{load_key}` in the checkpoint: {model_path}"
+                )
         self.model.load_state_dict(state_dict, strict=True)
         self.model = self.model.to(self.device)

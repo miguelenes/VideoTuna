@@ -1,6 +1,7 @@
-import torch
-import pytorch_lightning as pl
 from typing import Any, Dict, List, Optional, Union
+
+import pytorch_lightning as pl
+import torch
 
 
 class TrainBase(pl.LightningModule):
@@ -17,14 +18,14 @@ class TrainBase(pl.LightningModule):
         Call the parent class constructor using super().__init__().
         """
         super().__init__()
-    
+
     def configure_optimizers(self):
         """
         Configures the optimizers and learning rate schedulers.
         This method should be overridden in the child class to define the optimizers and learning rate schedules.
         """
         raise NotImplementedError("Please implement the configure_optimizers method")
-    
+
     def forward(self):
         """
         Defines the forward pass of the model.
@@ -36,7 +37,7 @@ class TrainBase(pl.LightningModule):
         """
         Defines a single training step.
         This method should be overridden in the child class to implement the logic for a single training step.
-        
+
         :param batch: A batch of input data.
         :param batch_idx: The index of the current batch.
         :return: A dictionary containing the loss and any other metrics to log.
@@ -49,7 +50,7 @@ class TrainBase(pl.LightningModule):
         Defines a single validation step.
         This method can be overridden in the child class to implement the logic for a single validation step.
         If not overridden, it does nothing by default.
-        
+
         :param batch: A batch of input data.
         :param batch_idx: The index of the current batch.
         :return: A dictionary containing the loss and any other metrics to log.

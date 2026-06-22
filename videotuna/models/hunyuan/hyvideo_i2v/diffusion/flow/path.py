@@ -12,6 +12,7 @@ def expand_t_like_x(t, x):
     t = t.view(t.size(0), *dims)
     return t
 
+
 class ICPlan:
     """Linear Coupling Plan"""
 
@@ -154,9 +155,13 @@ class VPCPlan(ICPlan):
         self.sigma_min = sigma_min
         self.sigma_max = sigma_max
         self.log_mean_coeff = (
-            lambda t: -0.25 * ((1 - t) ** 2) * (self.sigma_max - self.sigma_min) - 0.5 * (1 - t) * self.sigma_min
+            lambda t: -0.25 * ((1 - t) ** 2) * (self.sigma_max - self.sigma_min)
+            - 0.5 * (1 - t) * self.sigma_min
         )
-        self.d_log_mean_coeff = lambda t: 0.5 * (1 - t) * (self.sigma_max - self.sigma_min) + 0.5 * self.sigma_min
+        self.d_log_mean_coeff = (
+            lambda t: 0.5 * (1 - t) * (self.sigma_max - self.sigma_min)
+            + 0.5 * self.sigma_min
+        )
         self.reverse = reverse
         if self.reverse:
             raise NotImplementedError("Reverse VPCPlan is not implemented")
@@ -184,6 +189,7 @@ class VPCPlan(ICPlan):
         t = expand_t_like_x(t, x)
         beta_t = self.sigma_min + (1 - t) * (self.sigma_max - self.sigma_min)
         return -0.5 * beta_t * x, beta_t / 2
+
 
 class GVPCPlan(ICPlan):
     def __init__(self, sigma=0.0, reverse=False):

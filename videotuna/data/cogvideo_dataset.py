@@ -160,7 +160,7 @@ class VideoDataset(Dataset):
             raise ValueError(
                 "Expected '--video_column' to be a path to a file in `--instance_data_root` containing line-separated paths to video data but found atleast one path that is not a valid file."
             )
-        
+
         return instance_prompts, instance_videos
 
     def _preprocess_data(self):
@@ -206,7 +206,7 @@ class VideoDataset(Dataset):
             frames = frames[: self.max_num_frames]
             selected_num_frames = frames.shape[0]
 
-            # TODO: check this 
+            # TODO: check this
             # Choose first (4k + 1) frames as this is how many is required by the VAE
             remainder = (3 + (selected_num_frames % 4)) % 4
             if remainder != 0:

@@ -1,25 +1,24 @@
 import importlib
+import json
 import os
-from colorama import Fore, Style
-from omegaconf import DictConfig, OmegaConf
-import time
-import psutil
 import subprocess
 import sys
+import time
+from argparse import Namespace
 from functools import wraps
-from loguru import logger
+from typing import Any, Dict, List, Optional, Union
 
 import cv2
 import numpy as np
+import psutil
 import torch
 import torch.distributed as dist
-import json
-from typing import Any, Dict, List, Optional, Union
-from argparse import Namespace
+from colorama import Fore, Style
+from loguru import logger
+from omegaconf import DictConfig, OmegaConf
 
 from videotuna.utils.attention import get_attn_backend
 from videotuna.utils.inference_cli import resolve_offload_mode
-
 
 precision_to_dtype = {
     "float32": torch.float32,
@@ -34,10 +33,10 @@ def get_resize_crop_region_for_grid(src, target):
     src: (h, w)
     target: (h, w)
     """
-    
+
     h, w = src
     th, tw = target
-    
+
     r = h / w
     if r > (th / tw):
         resize_height = th
@@ -70,15 +69,18 @@ def check_istarget(name, para_list):
             return True
     return istarget
 
+
 def get_dtype_from_str(dtype_str):
     import torch
+
     dtype_map = {
         "float16": torch.float16,
         "float32": torch.float32,
         "float64": torch.float64,
-        "bfloat16": torch.bfloat16
+        "bfloat16": torch.bfloat16,
     }
     return dtype_map.get(dtype_str, torch.float32)  # 默认返回float32
+
 
 def get_params(config, resolve=True):
     params = config.get("params")
@@ -89,6 +91,7 @@ def get_params(config, resolve=True):
         return OmegaConf.to_container(params, resolve=True)
     return params
 
+
 # resolve will make params dict type rather than DictConfig type
 def instantiate_from_config(config, resolve=False):
     if not "target" in config:
@@ -97,10 +100,18 @@ def instantiate_from_config(config, resolve=False):
         elif config == "__is_unconditional__":
             return None
         raise KeyError("Expected key `target` to instantiate.")
-    if "diffusers" in config["target"] or config["target"].startswith("transformers") or config.get("use_from_pretrained", False):
-        return get_obj_from_str(config["target"]).from_pretrained(
-            **get_params(config, resolve)
-        )
+    if (
+        "diffusers" in config["target"]
+        or config["target"].startswith("transformers")
+        or config.get("use_from_pretrained", False)
+    ):
+        params = get_params(config, resolve)
+        if isinstance(params.get("pretrained_model_name_or_path"), str):
+            local_path = os.path.abspath(params["pretrained_model_name_or_path"])
+            if os.path.isdir(local_path):
+                params = dict(params)
+                params["local_files_only"] = True
+        return get_obj_from_str(config["target"]).from_pretrained(**params)
     return get_obj_from_str(config["target"])(**get_params(config, resolve))
 
 
@@ -150,8 +161,10 @@ def setup_dist(args):
 def print_green(text):
     print(Fore.GREEN + text + Style.RESET_ALL)
 
+
 def print_red(text):
     print(Fore.RED + text + Style.RESET_ALL)
+
 
 def print_yellow(text):
     print(Fore.YELLOW + text + Style.RESET_ALL)
@@ -203,14 +216,18 @@ def monitor_resources(
             gpu_mem_used = None
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
-                gpu_mem_used = torch.cuda.max_memory_allocated() / 1024 / 1024 / 1024  # GB
+                gpu_mem_used = (
+                    torch.cuda.max_memory_allocated() / 1024 / 1024 / 1024
+                )  # GB
                 logger.info(f"Peak GPU memory used: {gpu_mem_used:.2f} GB")
 
             if return_metrics:
                 sample = _build_sample_metrics(time_used, gpu_mem_used, frames)
                 sample["cpu"] = round(cpu_mem_used, 2)
                 sample["attention_backend"] = get_attn_backend()
-                sample["torch_compile"] = os.environ.get("VIDEOTUNA_TORCH_COMPILE", "0") == "1"
+                sample["torch_compile"] = (
+                    os.environ.get("VIDEOTUNA_TORCH_COMPILE", "0") == "1"
+                )
                 sample["result"] = result
                 if inference_config is not None:
                     sample["offload_mode"] = _offload_mode_from_config(inference_config)
@@ -259,7 +276,9 @@ def save_metrics(
                 {
                     "peak_vram_gb": g,
                     "wall_time_s": t,
-                    "seconds_per_frame": round(t / frames, 4) if frames > 0 and t else None,
+                    "seconds_per_frame": (
+                        round(t / frames, 4) if frames > 0 and t else None
+                    ),
                 }
             )
         metrics = {
@@ -277,8 +296,16 @@ def save_metrics(
         metrics["config"] = config_dict
 
     if metrics.get("per_sample"):
-        peaks = [s.get("peak_vram_gb") for s in metrics["per_sample"] if s.get("peak_vram_gb") is not None]
-        times = [s.get("wall_time_s") for s in metrics["per_sample"] if s.get("wall_time_s") is not None]
+        peaks = [
+            s.get("peak_vram_gb")
+            for s in metrics["per_sample"]
+            if s.get("peak_vram_gb") is not None
+        ]
+        times = [
+            s.get("wall_time_s")
+            for s in metrics["per_sample"]
+            if s.get("wall_time_s") is not None
+        ]
         if peaks:
             metrics["peak_vram_gb"] = max(peaks)
         if times:
@@ -294,7 +321,8 @@ def save_metrics(
     legacy_path = os.path.join(savedir, "metric.json")
     with open(legacy_path, "w") as f:
         json.dump(metrics, f, indent=4)
-    
+
+
 def get_dist_info():
     try:
         local_rank = int(os.environ.get("LOCAL_RANK"))

@@ -6,43 +6,46 @@ from omegaconf import OmegaConf
 mainlogger = logging.getLogger("mainlogger")
 
 from collections import OrderedDict
+from contextlib import contextmanager
 
 import torch
 from safetensors import safe_open
 from torch import nn
 
 from videotuna.utils.common_utils import instantiate_from_config
-from contextlib import contextmanager
+
 # from lvdm.personalization.lora import net_load_lora
 
 
 @contextmanager
-def init_weights_on_device(device = torch.device("meta"), include_buffers :bool = False):
-    
+def init_weights_on_device(device=torch.device("meta"), include_buffers: bool = False):
+
     old_register_parameter = torch.nn.Module.register_parameter
     if include_buffers:
         old_register_buffer = torch.nn.Module.register_buffer
-    
+
     def register_empty_parameter(module, name, param):
         old_register_parameter(module, name, param)
         if param is not None:
             param_cls = type(module._parameters[name])
             kwargs = module._parameters[name].__dict__
             kwargs["requires_grad"] = param.requires_grad
-            module._parameters[name] = param_cls(module._parameters[name].to(device), **kwargs)
+            module._parameters[name] = param_cls(
+                module._parameters[name].to(device), **kwargs
+            )
 
     def register_empty_buffer(module, name, buffer, persistent=True):
         old_register_buffer(module, name, buffer, persistent=persistent)
         if buffer is not None:
             module._buffers[name] = module._buffers[name].to(device)
-            
+
     def patch_tensor_constructor(fn):
         def wrapper(*args, **kwargs):
             kwargs["device"] = device
             return fn(*args, **kwargs)
 
         return wrapper
-    
+
     if include_buffers:
         tensor_constructors_to_patch = {
             torch_function_name: getattr(torch, torch_function_name)
@@ -50,19 +53,26 @@ def init_weights_on_device(device = torch.device("meta"), include_buffers :bool 
         }
     else:
         tensor_constructors_to_patch = {}
-    
+
     try:
         torch.nn.Module.register_parameter = register_empty_parameter
         if include_buffers:
             torch.nn.Module.register_buffer = register_empty_buffer
         for torch_function_name in tensor_constructors_to_patch.keys():
-            setattr(torch, torch_function_name, patch_tensor_constructor(getattr(torch, torch_function_name)))
+            setattr(
+                torch,
+                torch_function_name,
+                patch_tensor_constructor(getattr(torch, torch_function_name)),
+            )
         yield
     finally:
         torch.nn.Module.register_parameter = old_register_parameter
         if include_buffers:
             torch.nn.Module.register_buffer = old_register_buffer
-        for torch_function_name, old_torch_function in tensor_constructors_to_patch.items():
+        for (
+            torch_function_name,
+            old_torch_function,
+        ) in tensor_constructors_to_patch.items():
             setattr(torch, torch_function_name, old_torch_function)
 
 
@@ -456,7 +466,9 @@ def change_sd_weight(
             k = k.replace("output_blocks.8.2.conv", "output_blocks.8.3.conv")
 
         if k not in model_sd:
-            import pdb; pdb.set_trace()
+            import pdb
+
+            pdb.set_trace()
 
         # merge new token
         if (
@@ -545,8 +557,10 @@ def load_model_checkpoint_t2v(
             sd_sd = load_sd_state_dict(sd_ckpt)
             token_emb = sd_sd["cond_stage_model.model.token_embedding.weight"][49408:]
         else:
-            import pdb; pdb.set_trace()
-        
+            import pdb
+
+            pdb.set_trace()
+
         if token_emb is not None:
             pl_sd["cond_stage_model.model.token_embedding.weight"] = torch.cat(
                 [pl_sd["cond_stage_model.model.token_embedding.weight"], token_emb],

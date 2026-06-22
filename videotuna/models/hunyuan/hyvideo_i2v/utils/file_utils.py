@@ -1,16 +1,17 @@
+import json
 import logging
 import os
-from pathlib import Path
-import json
 import tarfile
 from collections import defaultdict
-from einops import rearrange
+from pathlib import Path
 from typing import List
+
+import imageio
+import numpy as np
+import PIL.Image
 import torch
 import torchvision
-import numpy as np
-import imageio
-import PIL.Image
+from einops import rearrange
 from PIL import Image
 
 CODE_SUFFIXES = {

@@ -16,13 +16,21 @@ from tqdm import tqdm, trange
 sys.path.insert(0, os.getcwd())
 sys.path.insert(1, f"{os.getcwd()}/src")
 
-from videotuna.utils.args_utils import prepare_inference_args
-from videotuna.utils.common_utils import instantiate_from_config, monitor_resources, save_metrics
 from videotuna.base.generation_base import GenerationBase
-from videotuna.utils.inference_cli import add_standard_inference_flags, apply_compile_env
-from videotuna.utils.fp8_utils import validate_fp8_inference
+from videotuna.utils.args_utils import prepare_inference_args
 from videotuna.utils.attention import apply_diffusers_attention_backend
+from videotuna.utils.common_utils import (
+    instantiate_from_config,
+    monitor_resources,
+    save_metrics,
+)
 from videotuna.utils.device_utils import checkpoints_exist, require_nvidia_cuda_for_flow
+from videotuna.utils.fp8_utils import validate_fp8_inference
+from videotuna.utils.inference_cli import (
+    add_standard_inference_flags,
+    apply_compile_env,
+)
+
 
 def get_parser():
     parser = argparse.ArgumentParser()
@@ -43,7 +51,9 @@ def get_parser():
     parser.add_argument(
         "--trained_ckpt", type=str, default=None, help="denoiser full checkpoint"
     )
-    parser.add_argument("--config", type=str, default=None, help="model config (yaml) path")
+    parser.add_argument(
+        "--config", type=str, default=None, help="model config (yaml) path"
+    )
     parser.add_argument(
         "--prompt_file",
         type=str,
@@ -156,29 +166,31 @@ def get_parser():
         default=None,
         help="generate generative frame interpolation (gfi) or not",
     )
-    parser.add_argument("--savefps", type=str, default=None, help="video fps to generate")
     parser.add_argument(
-        "--time_shift", 
-        type=float, 
-        default=None, 
+        "--savefps", type=str, default=None, help="video fps to generate"
+    )
+    parser.add_argument(
+        "--time_shift",
+        type=float,
+        default=None,
         help="time shift",
     )
     parser.add_argument(
-        "--num_inference_steps", 
-        type=int, 
-        default=None, 
+        "--num_inference_steps",
+        type=int,
+        default=None,
         help="sampling steps",
     )
     parser.add_argument(
-        "--dit_weight", 
-        type=str, 
-        default=None, 
+        "--dit_weight",
+        type=str,
+        default=None,
         help="hunyuan dit weight",
     )
     parser.add_argument(
-        "--i2v_resolution", 
-        type=str, 
-        default=None, 
+        "--i2v_resolution",
+        type=str,
+        default=None,
         help="target resolution",
     )
     add_standard_inference_flags(parser)
@@ -193,8 +205,10 @@ def run_inference(args, gpu_num=1, rank=0, **kwargs):
     assert Path(args.config).exists(), f"Error: config file {args.config} NOT Found!"
     config = OmegaConf.load(args.config)
     config = prepare_inference_args(args, config)
-    
-    inference_config = config.pop("inference", OmegaConf.create(flags={"allow_objects": True}))
+
+    inference_config = config.pop(
+        "inference", OmegaConf.create(flags={"allow_objects": True})
+    )
     seed_everything(inference_config.seed)
 
     apply_compile_env(bool(getattr(args, "compile", False)))
@@ -218,8 +232,12 @@ def run_inference(args, gpu_num=1, rank=0, **kwargs):
         )
 
     # 1. create flow
-    flow : GenerationBase = instantiate_from_config(flow_config, resolve=True)
-    flow.from_pretrained(inference_config.ckpt_path, inference_config.trained_ckpt, inference_config.lorackpt)
+    flow: GenerationBase = instantiate_from_config(flow_config, resolve=True)
+    flow.from_pretrained(
+        inference_config.ckpt_path,
+        inference_config.trained_ckpt,
+        inference_config.lorackpt,
+    )
     if hasattr(flow, "pipeline"):
         apply_diffusers_attention_backend(flow.pipeline)
     flow.enable_vram_management()

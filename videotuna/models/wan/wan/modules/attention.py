@@ -6,8 +6,8 @@ import torch
 from videotuna.utils.attention import attention_varlen, get_attn_backend
 
 __all__ = [
-    'flash_attention',
-    'attention',
+    "flash_attention",
+    "attention",
 ]
 
 FLASH_ATTN_3_AVAILABLE = False
@@ -34,7 +34,7 @@ def flash_attention(
     v,
     q_lens=None,
     k_lens=None,
-    dropout_p=0.,
+    dropout_p=0.0,
     softmax_scale=None,
     q_scale=None,
     causal=False,
@@ -50,7 +50,7 @@ def flash_attention(
     """
     half_dtypes = (torch.float16, torch.bfloat16)
     assert dtype in half_dtypes
-    assert q.device.type == 'cuda' and q.size(-1) <= 256
+    assert q.device.type == "cuda" and q.size(-1) <= 256
 
     b, lq, lk, out_dtype = q.size(0), q.size(1), k.size(1), q.dtype
 
@@ -59,18 +59,18 @@ def flash_attention(
 
     if q_lens is None:
         q = half(q.flatten(0, 1))
-        q_lens = torch.tensor(
-            [lq] * b, dtype=torch.int32).to(
-                device=q.device, non_blocking=True)
+        q_lens = torch.tensor([lq] * b, dtype=torch.int32).to(
+            device=q.device, non_blocking=True
+        )
     else:
         q = half(torch.cat([u[:v] for u, v in zip(q, q_lens)]))
 
     if k_lens is None:
         k = half(k.flatten(0, 1))
         v = half(v.flatten(0, 1))
-        k_lens = torch.tensor(
-            [lk] * b, dtype=torch.int32).to(
-                device=k.device, non_blocking=True)
+        k_lens = torch.tensor([lk] * b, dtype=torch.int32).to(
+            device=k.device, non_blocking=True
+        )
     else:
         k = half(torch.cat([u[:v] for u, v in zip(k, k_lens)]))
         v = half(torch.cat([u[:v] for u, v in zip(v, k_lens)]))
@@ -83,14 +83,20 @@ def flash_attention(
 
     if version is not None and version == 3 and not FLASH_ATTN_3_AVAILABLE:
         warnings.warn(
-            'Flash attention 3 is not available, use flash attention 2 instead.'
+            "Flash attention 3 is not available, use flash attention 2 instead."
         )
 
     prefer_flash3 = (version is None or version == 3) and FLASH_ATTN_3_AVAILABLE
-    cu_seqlens_q = torch.cat([q_lens.new_zeros([1]), q_lens]).cumsum(
-        0, dtype=torch.int32).to(q.device, non_blocking=True)
-    cu_seqlens_k = torch.cat([k_lens.new_zeros([1]), k_lens]).cumsum(
-        0, dtype=torch.int32).to(k.device, non_blocking=True)
+    cu_seqlens_q = (
+        torch.cat([q_lens.new_zeros([1]), q_lens])
+        .cumsum(0, dtype=torch.int32)
+        .to(q.device, non_blocking=True)
+    )
+    cu_seqlens_k = (
+        torch.cat([k_lens.new_zeros([1]), k_lens])
+        .cumsum(0, dtype=torch.int32)
+        .to(k.device, non_blocking=True)
+    )
 
     x = attention_varlen(
         q=q,
@@ -119,7 +125,7 @@ def attention(
     v,
     q_lens=None,
     k_lens=None,
-    dropout_p=0.,
+    dropout_p=0.0,
     softmax_scale=None,
     q_scale=None,
     causal=False,
@@ -131,7 +137,7 @@ def attention(
     backend = get_attn_backend()
     if backend != "flash" and (q_lens is not None or k_lens is not None):
         warnings.warn(
-            'Padding mask is disabled when using scaled_dot_product_attention. It can have a significant impact on performance.'
+            "Padding mask is disabled when using scaled_dot_product_attention. It can have a significant impact on performance."
         )
 
     return flash_attention(

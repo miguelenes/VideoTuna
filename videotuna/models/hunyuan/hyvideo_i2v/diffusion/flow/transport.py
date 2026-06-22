@@ -1,14 +1,16 @@
+import copy
 import enum
 import math
 from typing import Callable
-import copy
+
 import numpy as np
 import torch as th
+
+from videotuna.models.hunyuan.hyvideo_i2v.constants import PRECISION_TO_TYPE
 
 from . import path
 from .integrators import ode, sde
 from .utils import mean_flat
-from videotuna.models.hunyuan.hyvideo_i2v.constants import PRECISION_TO_TYPE
 
 __all__ = ["ModelType", "PathType", "WeightType", "Transport", "Sampler", "SNRType"]
 
@@ -61,9 +63,21 @@ def time_shift(mu: float, sigma: float, t: th.Tensor):
 
 
 class Transport:
-    def __init__(self, *, model_type, path_type, loss_type, train_eps, sample_eps, snr_type,
-                 training_timesteps=1000, reverse_time_schedule=False, shift=1.0, video_shift=None, reverse=False,
-                 ):
+    def __init__(
+        self,
+        *,
+        model_type,
+        path_type,
+        loss_type,
+        train_eps,
+        sample_eps,
+        snr_type,
+        training_timesteps=1000,
+        reverse_time_schedule=False,
+        shift=1.0,
+        video_shift=None,
+        reverse=False,
+    ):
         path_options = {
             PathType.LINEAR: path.ICPlan,
             PathType.GVP: path.GVPCPlan,
@@ -79,7 +93,8 @@ class Transport:
         self.snr_type = snr_type
         # timestep shift: http://arxiv.org/abs/2403.03206
         self.shift = shift  # flow matching shift factor, =sqrt(m/n)
-        if video_shift is None: video_shift = shift # if video shift is not given, set it to be the same as flow shift
+        if video_shift is None:
+            video_shift = shift  # if video shift is not given, set it to be the same as flow shift
         self.video_shift = video_shift
         self.reverse = reverse
 
@@ -116,7 +131,12 @@ class Transport:
         elif (type(self.path_sampler) in [path.ICPlan, path.GVPCPlan]) and (
             self.model_type != ModelType.VELOCITY or sde
         ):  # avoid numerical issue by taking a first semi-implicit step
-            t0 = eps if (diffusion_form == "SBDM" and sde) or self.model_type != ModelType.VELOCITY else 0
+            t0 = (
+                eps
+                if (diffusion_form == "SBDM" and sde)
+                or self.model_type != ModelType.VELOCITY
+                else 0
+            )
             t1 = 1 - eps if (not sde or last_step_size == 0) else 1 - last_step_size
 
         if reverse:
@@ -143,7 +163,7 @@ class Transport:
         else:
             raise ValueError(f"Unknown snr type: {self.snr_type}")
 
-        if self.shift != 1.:
+        if self.shift != 1.0:
             if self.reverse:
                 # xt = (1 - t) * x1 + t * x0
                 t = (self.shift * t) / (1 + (self.shift - 1) * t)
@@ -160,8 +180,17 @@ class Transport:
         else:
             return t * self.training_timesteps
 
-    def training_losses(self, model, x1, model_kwargs=None, timestep=None, n_tokens=None,
-                        i2v_mode=False, cond_latents=None, args=None):
+    def training_losses(
+        self,
+        model,
+        x1,
+        model_kwargs=None,
+        timestep=None,
+        n_tokens=None,
+        i2v_mode=False,
+        cond_latents=None,
+        args=None,
+    ):
 
         self.shift = self.video_shift
         if model_kwargs == None:
@@ -175,13 +204,15 @@ class Transport:
 
         if i2v_mode and args.i2v_condition_type == "latent_concat":
             if cond_latents is not None:
-                x1_concat = cond_latents.repeat(1,1,x1.shape[2],1,1)
+                x1_concat = cond_latents.repeat(1, 1, x1.shape[2], 1, 1)
                 x1_concat[:, :, 1:, :, :] = 0.0
             else:
                 x1_concat = x1.cpu().clone().to(device=x1.device)
                 x1_concat[:, :, 1:, :, :] = 0.0
 
-            mask_concat = th.ones(x1.shape[0], 1, x1.shape[2], x1.shape[3], x1.shape[4]).to(device=x1.device)
+            mask_concat = th.ones(
+                x1.shape[0], 1, x1.shape[2], x1.shape[3], x1.shape[4]
+            ).to(device=x1.device)
             mask_concat[:, :, 1:, ...] = 0.0
 
             xt = th.concat([xt, x1_concat, mask_concat], dim=1)
@@ -200,16 +231,20 @@ class Transport:
         )
         model_kwargs["guidance"] = guidance_expand
 
-        model_output = model(xt, input_t, **model_kwargs)['x']
+        model_output = model(xt, input_t, **model_kwargs)["x"]
 
         if i2v_mode and args.i2v_condition_type == "token_replace":
-            assert self.model_type == ModelType.VELOCITY, f"self.model_type: {self.model_type} must be ModelType.VELOCITY"
+            assert (
+                self.model_type == ModelType.VELOCITY
+            ), f"self.model_type: {self.model_type} must be ModelType.VELOCITY"
             model_output = model_output[:, :, 1:, :, :]
             ut = ut[:, :, 1:, :, :]
 
         if not i2v_mode:
-            assert model_output.size() == xt.size(), f"Output shape from model does not match input shape: " \
-                                                 f"{model_output.size()} != {xt.size()}"
+            assert model_output.size() == xt.size(), (
+                f"Output shape from model does not match input shape: "
+                f"{model_output.size()} != {xt.size()}"
+            )
 
         terms = {}
         if self.model_type == ModelType.VELOCITY:
@@ -220,16 +255,16 @@ class Transport:
             if self.loss_type in [WeightType.VELOCITY]:
                 weight = (drift_var / sigma_t) ** 2
             elif self.loss_type in [WeightType.LIKELIHOOD]:
-                weight = drift_var / (sigma_t ** 2)
+                weight = drift_var / (sigma_t**2)
             elif self.loss_type in [WeightType.NONE]:
                 weight = 1
             else:
                 raise NotImplementedError()
 
             if self.model_type == ModelType.NOISE:
-                terms['loss'] = mean_flat(weight * ((model_output - x0) ** 2))
+                terms["loss"] = mean_flat(weight * ((model_output - x0) ** 2))
             else:
-                terms['loss'] = mean_flat(weight * ((model_output * sigma_t + x0) ** 2))
+                terms["loss"] = mean_flat(weight * ((model_output * sigma_t + x0) ** 2))
 
         return model_output, terms
 
@@ -261,7 +296,9 @@ class Transport:
 
         def body_fn(x, t, model, **model_kwargs):
             model_output = drift_fn(x, t, model, **model_kwargs)
-            assert model_output.shape == x.shape, "Output shape from ODE solver must match input shape"
+            assert (
+                model_output.shape == x.shape
+            ), "Output shape from ODE solver must match input shape"
             return model_output
 
         return body_fn
@@ -279,8 +316,10 @@ class Transport:
         elif self.model_type == ModelType.SCORE:
             score_fn = lambda x, t, model, **kwagrs: model(x, t, **kwagrs)
         elif self.model_type == ModelType.VELOCITY:
-            score_fn = lambda x, t, model, **kwargs: self.path_sampler.get_score_from_velocity(
-                model(x, t, **kwargs), x, t
+            score_fn = (
+                lambda x, t, model, **kwargs: self.path_sampler.get_score_from_velocity(
+                    model(x, t, **kwargs), x, t
+                )
             )
         else:
             raise NotImplementedError()
@@ -311,12 +350,14 @@ class Sampler:
         diffusion_norm=1.0,
     ):
         def diffusion_fn(x, t):
-            diffusion = self.transport.path_sampler.compute_diffusion(x, t, form=diffusion_form, norm=diffusion_norm)
+            diffusion = self.transport.path_sampler.compute_diffusion(
+                x, t, form=diffusion_form, norm=diffusion_norm
+            )
             return diffusion
 
-        sde_drift = lambda x, t, model, **kwargs: self.drift(x, t, model, **kwargs) + diffusion_fn(x, t) * self.score(
+        sde_drift = lambda x, t, model, **kwargs: self.drift(
             x, t, model, **kwargs
-        )
+        ) + diffusion_fn(x, t) * self.score(x, t, model, **kwargs)
 
         sde_diffusion = diffusion_fn
 
@@ -335,17 +376,21 @@ class Sampler:
             last_step_fn = lambda x, t, model, **model_kwargs: x
         elif last_step == "Mean":
             last_step_fn = (
-                lambda x, t, model, **model_kwargs: x + sde_drift(x, t, model, **model_kwargs) * last_step_size
+                lambda x, t, model, **model_kwargs: x
+                + sde_drift(x, t, model, **model_kwargs) * last_step_size
             )
         elif last_step == "Tweedie":
-            alpha = self.transport.path_sampler.compute_alpha_t  # simple aliasing; the original name was too long
+            alpha = (
+                self.transport.path_sampler.compute_alpha_t
+            )  # simple aliasing; the original name was too long
             sigma = self.transport.path_sampler.compute_sigma_t
-            last_step_fn = lambda x, t, model, **model_kwargs: x / alpha(t)[0][0] + (sigma(t)[0][0] ** 2) / alpha(t)[0][
-                0
-            ] * self.score(x, t, model, **model_kwargs)
+            last_step_fn = lambda x, t, model, **model_kwargs: x / alpha(t)[0][0] + (
+                sigma(t)[0][0] ** 2
+            ) / alpha(t)[0][0] * self.score(x, t, model, **model_kwargs)
         elif last_step == "Euler":
             last_step_fn = (
-                lambda x, t, model, **model_kwargs: x + self.drift(x, t, model, **model_kwargs) * last_step_size
+                lambda x, t, model, **model_kwargs: x
+                + self.drift(x, t, model, **model_kwargs) * last_step_size
             )
         else:
             raise NotImplementedError()
@@ -399,7 +444,9 @@ class Sampler:
             sampler_type=sampling_method,
         )
 
-        last_step_fn = self.__get_last_step(sde_drift, last_step=last_step, last_step_size=last_step_size)
+        last_step_fn = self.__get_last_step(
+            sde_drift, last_step=last_step, last_step_size=last_step_size
+        )
 
         def _sample(init, model, **model_kwargs):
             xs = _sde.sample(init, model, **model_kwargs)
@@ -434,7 +481,9 @@ class Sampler:
         - reverse: whether solving the ODE in reverse (data to noise); default to False
         """
         if reverse:
-            drift = lambda x, t, model, **kwargs: self.drift(x, th.ones_like(t) * (1 - t), model, **kwargs)
+            drift = lambda x, t, model, **kwargs: self.drift(
+                x, th.ones_like(t) * (1 - t), model, **kwargs
+            )
         else:
             drift = self.drift
 
@@ -484,7 +533,9 @@ class Sampler:
             t = th.ones_like(t) * (1 - t)
             with th.enable_grad():
                 x.requires_grad = True
-                grad = th.autograd.grad(th.sum(self.drift(x, t, model, **model_kwargs) * eps), x)[0]
+                grad = th.autograd.grad(
+                    th.sum(self.drift(x, t, model, **model_kwargs) * eps), x
+                )[0]
                 logp_grad = th.sum(grad * eps, dim=tuple(range(1, len(x.size()))))
                 drift = self.drift(x, t, model, **model_kwargs)
             return (-drift, logp_grad)

@@ -3,15 +3,16 @@ import torch
 import torch.distributed as dist
 import torch.nn as nn
 from einops import rearrange
-from timm.layers import DropPath
-from timm.layers import Mlp
+from timm.layers import DropPath, Mlp
 
 from videotuna.models.opensora.acceleration.checkpoint import auto_grad_checkpoint
 from videotuna.models.opensora.acceleration.communications import (
     gather_forward_split_backward,
     split_forward_gather_backward,
 )
-from videotuna.models.opensora.acceleration.parallel_states import get_sequence_parallel_group
+from videotuna.models.opensora.acceleration.parallel_states import (
+    get_sequence_parallel_group,
+)
 from videotuna.models.opensora.models.layers.blocks import (
     Attention,
     CaptionEmbedder,
@@ -274,8 +275,10 @@ class STDiT3(nn.Module):
         t = self.t_embedder(timestep, dtype=x.dtype)  # [B, C]
         t0 = self.t_block(t)  # [B, C]
         y = self.y_embedder(y, self.training)  # [B, 1, N_token, C]
-        import pdb; pdb.set_trace()
-        
+        import pdb
+
+        pdb.set_trace()
+
         if mask is not None:
             if mask.shape[0] != y.shape[0]:
                 mask = mask.repeat(y.shape[0] // mask.shape[0], 1)

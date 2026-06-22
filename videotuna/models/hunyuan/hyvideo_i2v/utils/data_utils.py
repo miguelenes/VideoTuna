@@ -1,10 +1,11 @@
-import numpy as np
-import math
-from PIL import Image
-import torch
 import copy
-import string
+import math
 import random
+import string
+
+import numpy as np
+import torch
+from PIL import Image
 
 
 def align_to(value, alignment):

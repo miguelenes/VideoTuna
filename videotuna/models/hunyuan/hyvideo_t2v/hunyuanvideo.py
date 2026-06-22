@@ -1,30 +1,33 @@
-import math
-import torch
 import inspect
-from transformers import T5EncoderModel, T5Tokenizer
+import math
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+
+import numpy as np
+import pytorch_lightning as pl
+import torch
 from diffusers import (
     AutoencoderKLCogVideoX,
+    CogVideoXDDIMScheduler,
     CogVideoXDPMScheduler,
     CogVideoXTransformer3DModel,
+    FlowMatchEulerDiscreteScheduler,
 )
-from diffusers.video_processor import VideoProcessor
-from diffusers.utils.torch_utils import randn_tensor
-from diffusers.callbacks import PipelineCallback, MultiPipelineCallbacks
+from diffusers.callbacks import MultiPipelineCallbacks, PipelineCallback
 from diffusers.models.embeddings import get_3d_rotary_pos_embed
-from diffusers import CogVideoXDDIMScheduler, FlowMatchEulerDiscreteScheduler
 from diffusers.training_utils import compute_loss_weighting_for_sd3
-
-import pytorch_lightning as pl
-from videotuna.utils.common_utils import instantiate_from_config
-from typing import List, Optional, Tuple, Union, Dict, Any, Callable
+from diffusers.utils.torch_utils import randn_tensor
+from diffusers.video_processor import VideoProcessor
 from peft import (
     LoraConfig,
+    get_peft_model,
     get_peft_model_state_dict,
     set_peft_model_state_dict,
-    get_peft_model,
 )
-import numpy as np
+from transformers import T5EncoderModel, T5Tokenizer
 
+from videotuna.utils.common_utils import instantiate_from_config
+from videotuna.utils.lora_utils import resolve_lora_target_modules
+from videotuna.utils.quantization import apply_quantization_to_config_params
 
 DEFAULT_PROMPT_TEMPLATE = {
     "template": (
@@ -38,6 +41,7 @@ DEFAULT_PROMPT_TEMPLATE = {
     ),
     "crop_start": 95,
 }
+
 
 # Copied from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion.retrieve_timesteps
 def retrieve_timesteps(
@@ -72,9 +76,13 @@ def retrieve_timesteps(
         second element is the number of inference steps.
     """
     if timesteps is not None and sigmas is not None:
-        raise ValueError("Only one of `timesteps` or `sigmas` can be passed. Please choose one to set custom values")
+        raise ValueError(
+            "Only one of `timesteps` or `sigmas` can be passed. Please choose one to set custom values"
+        )
     if timesteps is not None:
-        accepts_timesteps = "timesteps" in set(inspect.signature(scheduler.set_timesteps).parameters.keys())
+        accepts_timesteps = "timesteps" in set(
+            inspect.signature(scheduler.set_timesteps).parameters.keys()
+        )
         if not accepts_timesteps:
             raise ValueError(
                 f"The current scheduler class {scheduler.__class__}'s `set_timesteps` does not support custom"
@@ -84,7 +92,9 @@ def retrieve_timesteps(
         timesteps = scheduler.timesteps
         num_inference_steps = len(timesteps)
     elif sigmas is not None:
-        accept_sigmas = "sigmas" in set(inspect.signature(scheduler.set_timesteps).parameters.keys())
+        accept_sigmas = "sigmas" in set(
+            inspect.signature(scheduler.set_timesteps).parameters.keys()
+        )
         if not accept_sigmas:
             raise ValueError(
                 f"The current scheduler class {scheduler.__class__}'s `set_timesteps` does not support custom"
@@ -117,7 +127,13 @@ def compute_density_for_timestep_sampling(
     """
     if weighting_scheme == "logit_normal":
         # See 3.1 in the SD3 paper ($rf/lognorm(0.00,1.00)$).
-        u = torch.normal(mean=logit_mean, std=logit_std, size=(batch_size,), device=device, generator=generator)
+        u = torch.normal(
+            mean=logit_mean,
+            std=logit_std,
+            size=(batch_size,),
+            device=device,
+            generator=generator,
+        )
         u = torch.nn.functional.sigmoid(u)
     elif weighting_scheme == "mode":
         u = torch.rand(size=(batch_size,), device=device, generator=generator)
@@ -125,7 +141,6 @@ def compute_density_for_timestep_sampling(
     else:
         u = torch.rand(size=(batch_size,), device=device, generator=generator)
     return u
-
 
 
 def prepare_sigmas(
@@ -170,7 +185,9 @@ def prepare_loss_weights(
     flow_weighting_scheme: str = "none",
 ) -> torch.Tensor:
     if isinstance(scheduler, FlowMatchEulerDiscreteScheduler):
-        return compute_loss_weighting_for_sd3(sigmas=sigmas, weighting_scheme=flow_weighting_scheme)
+        return compute_loss_weighting_for_sd3(
+            sigmas=sigmas, weighting_scheme=flow_weighting_scheme
+        )
     else:
         raise ValueError(f"Unsupported scheduler type {type(scheduler)}")
 
@@ -203,6 +220,7 @@ class HunyuanVideoWorkFlow(pl.LightningModule):
         learning_rate: float = 6e-6,
         adapter_config=None,
         deepspeed_config=None,
+        gradient_checkpointing: bool = True,
         logdir=None,
     ):
         super().__init__()
@@ -236,14 +254,10 @@ class HunyuanVideoWorkFlow(pl.LightningModule):
         #     vae_scale_factor=self.vae_scale_factor_spatial
         # )
         self.vae_scale_factor_temporal = (
-            self.vae.temporal_compression_ratio 
-            if getattr(self, "vae", None) 
-            else 4
+            self.vae.temporal_compression_ratio if getattr(self, "vae", None) else 4
         )
         self.vae_scale_factor_spatial = (
-            self.vae.spatial_compression_ratio 
-            if getattr(self, "vae", None) 
-            else 8
+            self.vae.spatial_compression_ratio if getattr(self, "vae", None) else 8
         )
         self.video_processor = VideoProcessor(
             vae_scale_factor=self.vae_scale_factor_spatial
@@ -255,28 +269,37 @@ class HunyuanVideoWorkFlow(pl.LightningModule):
         # add adapter config (Support Lora and HRA )
         self.lora_args = []
         if adapter_config is not None:
-            self.inject_adapter(adapter_config)
+            self.inject_adapter(
+                adapter_config, gradient_checkpointing=gradient_checkpointing
+            )
+        elif gradient_checkpointing:
+            self.model.enable_gradient_checkpointing()
         if deepspeed_config is not None:
             self.deepspeed_config = deepspeed_config.params
-        
-    
-    def inject_adapter(self, adapter_config):
+
+    def inject_adapter(self, adapter_config, gradient_checkpointing: bool = True):
         self.model.requires_grad_(False)
-        self.model.enable_gradient_checkpointing()
-        transformer_adapter_config = instantiate_from_config(adapter_config)   
-        # print(transformer_adapter_config)
-        self.model = get_peft_model(self.model, transformer_adapter_config, autocast_adapter_dtype=False)
+        if gradient_checkpointing:
+            self.model.enable_gradient_checkpointing()
+        transformer_adapter_config = instantiate_from_config(adapter_config)
+        if hasattr(transformer_adapter_config, "target_modules"):
+            transformer_adapter_config.target_modules = resolve_lora_target_modules(
+                self.model, transformer_adapter_config.target_modules
+            )
+        self.model = get_peft_model(
+            self.model, transformer_adapter_config, autocast_adapter_dtype=False
+        )
         self.model.print_trainable_parameters()
-    
-    ## VAE is named as first_stage_model 
-    ## followed functions are all first stage related. 
+
+    ## VAE is named as first_stage_model
+    ## followed functions are all first stage related.
     def instantiate_first_stage(self, config):
         # import pdb;pdb.set_trace()
         model = instantiate_from_config(config)
         self.vae = model.eval()
         # self.vae.train = disabled_train
         self.vae.requires_grad_(False)
-    
+
     @torch.no_grad()
     def encode_first_stage(self, x):
         x = x.permute(0, 2, 1, 3, 4)  # [B, C, F, H, W]
@@ -284,7 +307,7 @@ class HunyuanVideoWorkFlow(pl.LightningModule):
         return latent_dist
 
     def _decode_core(self, z, **kwargs):
-        z = 1. / self.scale_factor * z
+        z = 1.0 / self.scale_factor * z
 
         if self.encoder_type == "2d" and z.dim() == 5:
             return self.decode_first_stage_2DAE(z)
@@ -298,27 +321,36 @@ class HunyuanVideoWorkFlow(pl.LightningModule):
     def differentiable_decode_first_stage(self, z, **kwargs):
         """same as decode_first_stage but without decorator"""
         return self._decode_core(z, **kwargs)
-    
-    ## second stage : text condition and other condtions 
+
+    ## second stage : text condition and other condtions
     def instantiate_cond_stage(self, config):
-        model = instantiate_from_config(config)
+        cfg = config
+        if cfg is not None and isinstance(cfg, dict) and cfg.get("params"):
+            cfg = dict(cfg)
+            cfg["params"] = apply_quantization_to_config_params(dict(cfg["params"]))
+        model = instantiate_from_config(cfg)
         # # in finetune cogvideox don't train as default
         self.cond_stage_model = model.eval()
         self.cond_stage_model.requires_grad_(False)
-    
+
     def instantiate_cond_stage_2(self, config):
-        model = instantiate_from_config(config)
+        cfg = config
+        if cfg is not None and isinstance(cfg, dict) and cfg.get("params"):
+            cfg = dict(cfg)
+            cfg["params"] = apply_quantization_to_config_params(dict(cfg["params"]))
+        model = instantiate_from_config(cfg)
         # # in finetune cogvideox don't train as default
         self.cond_stage_model_2 = model.eval()
         self.cond_stage_model_2.requires_grad_(False)
 
     def decode_latents(self, latents: torch.Tensor) -> torch.Tensor:
-        latents = latents.permute(0, 2, 1, 3, 4)  # [batch_size, num_channels, num_frames, height, width]
+        latents = latents.permute(
+            0, 2, 1, 3, 4
+        )  # [batch_size, num_channels, num_frames, height, width]
         latents = 1 / self.vae.config.scaling_factor * latents
 
         frames = self.vae.decode(latents).sample
         return frames
-    
 
     def check_inputs(
         self,
@@ -331,7 +363,9 @@ class HunyuanVideoWorkFlow(pl.LightningModule):
         prompt_template=None,
     ):
         if height % 16 != 0 or width % 16 != 0:
-            raise ValueError(f"`height` and `width` have to be divisible by 16 but are {height} and {width}.")
+            raise ValueError(
+                f"`height` and `width` have to be divisible by 16 but are {height} and {width}."
+            )
 
         # if callback_on_step_end_tensor_inputs is not None and not all(
         #     k in self._callback_tensor_inputs for k in callback_on_step_end_tensor_inputs
@@ -354,19 +388,28 @@ class HunyuanVideoWorkFlow(pl.LightningModule):
             raise ValueError(
                 "Provide either `prompt` or `prompt_embeds`. Cannot leave both `prompt` and `prompt_embeds` undefined."
             )
-        elif prompt is not None and (not isinstance(prompt, str) and not isinstance(prompt, list)):
-            raise ValueError(f"`prompt` has to be of type `str` or `list` but is {type(prompt)}")
-        elif prompt_2 is not None and (not isinstance(prompt_2, str) and not isinstance(prompt_2, list)):
-            raise ValueError(f"`prompt_2` has to be of type `str` or `list` but is {type(prompt_2)}")
+        elif prompt is not None and (
+            not isinstance(prompt, str) and not isinstance(prompt, list)
+        ):
+            raise ValueError(
+                f"`prompt` has to be of type `str` or `list` but is {type(prompt)}"
+            )
+        elif prompt_2 is not None and (
+            not isinstance(prompt_2, str) and not isinstance(prompt_2, list)
+        ):
+            raise ValueError(
+                f"`prompt_2` has to be of type `str` or `list` but is {type(prompt_2)}"
+            )
 
         if prompt_template is not None:
             if not isinstance(prompt_template, dict):
-                raise ValueError(f"`prompt_template` has to be of type `dict` but is {type(prompt_template)}")
+                raise ValueError(
+                    f"`prompt_template` has to be of type `dict` but is {type(prompt_template)}"
+                )
             if "template" not in prompt_template:
                 raise ValueError(
                     f"`prompt_template` has to contain a key `template` but only found {prompt_template.keys()}"
                 )
-    
 
     def _get_llama_prompt_embeds(
         self,
@@ -382,7 +425,7 @@ class HunyuanVideoWorkFlow(pl.LightningModule):
         # dtype = dtype or self.text_encoder.dtype
 
         device = self.device
-        # TODO: fix data type 
+        # TODO: fix data type
         # dtype = torch.float32
         dtype = torch.float16
 
@@ -404,7 +447,7 @@ class HunyuanVideoWorkFlow(pl.LightningModule):
             crop_start = prompt_template_input["input_ids"].shape[-1]
             # Remove <|eot_id|> token and placeholder {}
             crop_start -= 2
-        
+
         max_sequence_length += crop_start
         text_inputs = self.tokenizer(
             prompt,
@@ -434,10 +477,14 @@ class HunyuanVideoWorkFlow(pl.LightningModule):
         # duplicate text embeddings for each generation per prompt, using mps friendly method
         _, seq_len, _ = prompt_embeds.shape
         prompt_embeds = prompt_embeds.repeat(1, num_videos_per_prompt, 1)
-        prompt_embeds = prompt_embeds.view(batch_size * num_videos_per_prompt, seq_len, -1)
+        prompt_embeds = prompt_embeds.view(
+            batch_size * num_videos_per_prompt, seq_len, -1
+        )
         prompt_attention_mask = prompt_attention_mask.repeat(1, num_videos_per_prompt)
 
-        prompt_attention_mask = prompt_attention_mask.view(batch_size * num_videos_per_prompt, seq_len)
+        prompt_attention_mask = prompt_attention_mask.view(
+            batch_size * num_videos_per_prompt, seq_len
+        )
 
         return prompt_embeds, prompt_attention_mask
 
@@ -453,7 +500,7 @@ class HunyuanVideoWorkFlow(pl.LightningModule):
         # dtype = dtype or self.text_encoder_2.dtype
 
         device = self.device
-        # TODO: fix data type 
+        # TODO: fix data type
         # dtype = torch.float32
         dtype = torch.float16
 
@@ -469,22 +516,29 @@ class HunyuanVideoWorkFlow(pl.LightningModule):
         )
 
         text_input_ids = text_inputs.input_ids
-        untruncated_ids = self.tokenizer_2(prompt, padding="longest", return_tensors="pt").input_ids
-        if untruncated_ids.shape[-1] >= text_input_ids.shape[-1] and not torch.equal(text_input_ids, untruncated_ids):
-            removed_text = self.tokenizer_2.batch_decode(untruncated_ids[:, max_sequence_length - 1 : -1])
-            # logger.warning( 
+        untruncated_ids = self.tokenizer_2(
+            prompt, padding="longest", return_tensors="pt"
+        ).input_ids
+        if untruncated_ids.shape[-1] >= text_input_ids.shape[-1] and not torch.equal(
+            text_input_ids, untruncated_ids
+        ):
+            removed_text = self.tokenizer_2.batch_decode(
+                untruncated_ids[:, max_sequence_length - 1 : -1]
+            )
+            # logger.warning(
             #     "The following part of your input was truncated because CLIP can only handle sequences up to"
             #     f" {max_sequence_length} tokens: {removed_text}"
             # )
 
-        prompt_embeds = self.cond_stage_model_2(text_input_ids.to(device), output_hidden_states=False).pooler_output
+        prompt_embeds = self.cond_stage_model_2(
+            text_input_ids.to(device), output_hidden_states=False
+        ).pooler_output
         prompt_embeds = prompt_embeds.to(dtype=dtype)
         # duplicate text embeddings for each generation per prompt, using mps friendly method
         prompt_embeds = prompt_embeds.repeat(1, num_videos_per_prompt)
         prompt_embeds = prompt_embeds.view(batch_size * num_videos_per_prompt, -1)
 
         return prompt_embeds
-
 
     def encode_prompt(
         self,
@@ -581,7 +635,6 @@ class HunyuanVideoWorkFlow(pl.LightningModule):
         computing decoding in one step.
         """
         self.vae.disable_tiling()
-      
 
     # Copied from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion.StableDiffusionPipeline.prepare_extra_step_kwargs
     def prepare_extra_step_kwargs(self, generator, eta):
@@ -590,17 +643,21 @@ class HunyuanVideoWorkFlow(pl.LightningModule):
         # eta corresponds to η in DDIM paper: https://arxiv.org/abs/2010.02502
         # and should be between [0, 1]
 
-        accepts_eta = "eta" in set(inspect.signature(self.scheduler.step).parameters.keys())
+        accepts_eta = "eta" in set(
+            inspect.signature(self.scheduler.step).parameters.keys()
+        )
         extra_step_kwargs = {}
         if accepts_eta:
             extra_step_kwargs["eta"] = eta
 
         # check if the scheduler accepts generator
-        accepts_generator = "generator" in set(inspect.signature(self.scheduler.step).parameters.keys())
+        accepts_generator = "generator" in set(
+            inspect.signature(self.scheduler.step).parameters.keys()
+        )
         if accepts_generator:
             extra_step_kwargs["generator"] = generator
         return extra_step_kwargs
-    
+
     @torch.no_grad()
     def sample(
         self,
@@ -622,7 +679,11 @@ class HunyuanVideoWorkFlow(pl.LightningModule):
         return_dict: bool = True,
         attention_kwargs: Optional[Dict[str, Any]] = None,
         callback_on_step_end: Optional[
-            Union[Callable[[int, int, Dict], None], PipelineCallback, MultiPipelineCallbacks]
+            Union[
+                Callable[[int, int, Dict], None],
+                PipelineCallback,
+                MultiPipelineCallbacks,
+            ]
         ] = None,
         callback_on_step_end_tensor_inputs: List[str] = ["latents"],
         prompt_template: Dict[str, Any] = DEFAULT_PROMPT_TEMPLATE,
@@ -728,7 +789,7 @@ class HunyuanVideoWorkFlow(pl.LightningModule):
             batch_size = len(prompt)
         else:
             batch_size = prompt_embeds.shape[0]
-        
+
         # 3. Encode input prompt
         prompt_embeds, pooled_prompt_embeds, prompt_attention_mask = self.encode_prompt(
             prompt=prompt,
@@ -749,7 +810,11 @@ class HunyuanVideoWorkFlow(pl.LightningModule):
             pooled_prompt_embeds = pooled_prompt_embeds.to(transformer_dtype)
 
         # 4. Prepare timesteps
-        sigmas = np.linspace(1.0, 0.0, num_inference_steps + 1)[:-1] if sigmas is None else sigmas
+        sigmas = (
+            np.linspace(1.0, 0.0, num_inference_steps + 1)[:-1]
+            if sigmas is None
+            else sigmas
+        )
         timesteps, num_inference_steps = retrieve_timesteps(
             self.scheduler,
             num_inference_steps,
@@ -774,12 +839,19 @@ class HunyuanVideoWorkFlow(pl.LightningModule):
         )
 
         # 6. Prepare guidance condition
-        guidance = torch.tensor([guidance_scale] * latents.shape[0], dtype=transformer_dtype, device=device) * 1000.0
+        guidance = (
+            torch.tensor(
+                [guidance_scale] * latents.shape[0],
+                dtype=transformer_dtype,
+                device=device,
+            )
+            * 1000.0
+        )
 
         # 7. Denoising loop
         num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
         self._num_timesteps = len(timesteps)
-        self.interrupt = False 
+        self.interrupt = False
         self.model.cuda()
 
         # with self.progress_bar(total=num_inference_steps) as progress_bar:
@@ -818,7 +890,7 @@ class HunyuanVideoWorkFlow(pl.LightningModule):
                 # # call the callback, if provided
                 # if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0):
                 #     progress_bar.update()
-        
+
         self._current_timestep = None
 
         if not output_type == "latent":
@@ -831,40 +903,49 @@ class HunyuanVideoWorkFlow(pl.LightningModule):
         # Offload all models
         # self.maybe_free_model_hooks()
 
-        video = video[None,...]
+        video = video[None, ...]
         video = video.cpu()
         torch.cuda.empty_cache()
-        return video 
-    
-    # training specific functions 
+        return video
+
+    # training specific functions
     def configure_optimizers(self):
         if self.deepspeed_config is not None and self.deepspeed_config.use_cpu_adam:
             from deepspeed.ops.adam import DeepSpeedCPUAdam
-            optimizer = DeepSpeedCPUAdam([p for p in self.model.parameters() if p.requires_grad ], lr=self.learning_rate)
+
+            optimizer = DeepSpeedCPUAdam(
+                [p for p in self.model.parameters() if p.requires_grad],
+                lr=self.learning_rate,
+            )
         else:
-            optimizer = torch.optim.AdamW([p for p in self.model.parameters() if p.requires_grad ], lr=self.learning_rate)
+            optimizer = torch.optim.AdamW(
+                [p for p in self.model.parameters() if p.requires_grad],
+                lr=self.learning_rate,
+            )
         return optimizer
-    
+
     def on_save_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
         new_satate_dict = checkpoint["state_dict"]
         new_satate_dict = {k: v for k, v in new_satate_dict.items() if "lora" in k}
         checkpoint["state_dict"] = new_satate_dict
         return checkpoint
-        
+
     def on_load_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
         pass
-    
-    def encode_video(self,video):
-        video = video.to(self.device, dtype=self.vae.dtype).unsqueeze(0) # [1, 61, 3, 544, 960]
+
+    def encode_video(self, video):
+        video = video.to(self.device, dtype=self.vae.dtype).unsqueeze(
+            0
+        )  # [1, 61, 3, 544, 960]
         # video = video.to(self.device, dtype=self.vae.dtype).unsqueeze(0) # [1, 61, 3, 544, 960]
         video = video.permute(0, 2, 1, 3, 4)  # [B, C, F, H, W], [1, 3, 61, 544, 960]
-        
+
         latent_dist = self.vae.encode(video).latent_dist
         return latent_dist
-   
+
     def get_batch_input(self, batch):
         """
-        Prepare model batch inputs 
+        Prepare model batch inputs
         """
         # equal to collate_fn
         # the resonable video latents range is [-5,5], approximately.
@@ -879,25 +960,27 @@ class HunyuanVideoWorkFlow(pl.LightningModule):
             "videos": videos,
             "prompts": prompts,
         }
-    
+
     def training_step(self, batch, batch_idx):
         batch = self.get_batch_input(batch)
         # model_input = batch["videos"].permute(0, 2, 1, 3, 4).to(dtype=self.vae.dtype)  # [B, F, C, H, W]
         model_input = batch["videos"].to(dtype=self.vae.dtype)
         prompts = batch["prompts"]
-        
-        max_sequence_length = 256 # TODO: check this value
+
+        max_sequence_length = 256  # TODO: check this value
         with torch.no_grad():
-            prompt_embeds, pooled_prompt_embeds, prompt_attention_mask = self.encode_prompt(
-                prompt=prompts,
-                prompt_2=None,
-                prompt_template=DEFAULT_PROMPT_TEMPLATE,
-                num_videos_per_prompt=1,
-                prompt_embeds=None,
-                pooled_prompt_embeds=None,
-                prompt_attention_mask=None,
-                device=self.device,
-                max_sequence_length=max_sequence_length,
+            prompt_embeds, pooled_prompt_embeds, prompt_attention_mask = (
+                self.encode_prompt(
+                    prompt=prompts,
+                    prompt_2=None,
+                    prompt_template=DEFAULT_PROMPT_TEMPLATE,
+                    num_videos_per_prompt=1,
+                    prompt_embeds=None,
+                    pooled_prompt_embeds=None,
+                    prompt_attention_mask=None,
+                    device=self.device,
+                    max_sequence_length=max_sequence_length,
+                )
             )
 
         batch_size, num_frames, num_channels, height, width = model_input.shape
@@ -906,7 +989,7 @@ class HunyuanVideoWorkFlow(pl.LightningModule):
         # flow_logit_mean: float = 0.0
         # flow_logit_std: float = 1.0
         # flow_mode_scale: float = 1.29
-        
+
         sigmas = prepare_sigmas(
             scheduler=self.scheduler,
             sigmas=self.scheduler_sigmas.to(self.device),
@@ -917,14 +1000,14 @@ class HunyuanVideoWorkFlow(pl.LightningModule):
             flow_logit_std=1.0,
             flow_mode_scale=1.29,
             device=self.device,
-            generator=None, # TODO: do we need to set the generator here?
+            generator=None,  # TODO: do we need to set the generator here?
         )
 
         timesteps = (sigmas * 1000.0).long()
 
         noise = torch.randn(
             model_input.shape,
-            generator=None, # TODO: do we need to set the generator here?
+            generator=None,  # TODO: do we need to set the generator here?
             device=self.device,
             dtype=self.vae.dtype,
         )
@@ -934,7 +1017,7 @@ class HunyuanVideoWorkFlow(pl.LightningModule):
         noisy_latents = noisy_latents.to(model_input.dtype)
         weights = prepare_loss_weights(
             scheduler=self.scheduler,
-            alphas=None, # None for flow matching
+            alphas=None,  # None for flow matching
             sigmas=sigmas,
             flow_weighting_scheme="none",
         )
@@ -948,18 +1031,25 @@ class HunyuanVideoWorkFlow(pl.LightningModule):
         #     **text_conditions,
         # )
         guidance_scale = 1.0
-        guidance = torch.tensor([guidance_scale] * noisy_latents.shape[0], dtype=noisy_latents.dtype, device=noisy_latents.device) * 1000.0
-        
+        guidance = (
+            torch.tensor(
+                [guidance_scale] * noisy_latents.shape[0],
+                dtype=noisy_latents.dtype,
+                device=noisy_latents.device,
+            )
+            * 1000.0
+        )
+
         model_output = self.model(
-                    hidden_states=noisy_latents,
-                    timestep=timesteps,
-                    encoder_hidden_states=prompt_embeds.to(noisy_latents),
-                    encoder_attention_mask=prompt_attention_mask,
-                    pooled_projections=pooled_prompt_embeds.to(noisy_latents),
-                    guidance=guidance,
-                    # attention_kwargs=attention_kwargs,
-                    return_dict=False,
-                )[0]
+            hidden_states=noisy_latents,
+            timestep=timesteps,
+            encoder_hidden_states=prompt_embeds.to(noisy_latents),
+            encoder_attention_mask=prompt_attention_mask,
+            pooled_projections=pooled_prompt_embeds.to(noisy_latents),
+            guidance=guidance,
+            # attention_kwargs=attention_kwargs,
+            return_dict=False,
+        )[0]
         target = prepare_target(
             scheduler=self.scheduler, noise=noise, latents=model_input
         )
@@ -970,14 +1060,13 @@ class HunyuanVideoWorkFlow(pl.LightningModule):
         loss = loss.mean()
         return loss
 
-
     def training_step_old(self, batch, batch_idx):
         batch = self.get_batch_input(batch)
         # model_input = batch["videos"].permute(0, 2, 1, 3, 4).to(dtype=self.vae.dtype)  # [B, F, C, H, W]
         model_input = batch["videos"].to(dtype=self.vae.dtype)
         prompts = batch["prompts"]
-        
-        max_sequence_length = 256 # TODO: check this value
+
+        max_sequence_length = 256  # TODO: check this value
         with torch.no_grad():
             # prompt_embeds = self.encode_prompt(
             #     prompts,
@@ -987,29 +1076,34 @@ class HunyuanVideoWorkFlow(pl.LightningModule):
             #     device=self.device,
             #     dtype=self.vae.dtype,
             # )
-            prompt_embeds, pooled_prompt_embeds, prompt_attention_mask = self.encode_prompt(
-                prompt=prompts,
-                prompt_2=None,
-                prompt_template=DEFAULT_PROMPT_TEMPLATE,
-                num_videos_per_prompt=1,
-                prompt_embeds=None,
-                pooled_prompt_embeds=None,
-                prompt_attention_mask=None,
-                device=self.device,
-                max_sequence_length=max_sequence_length,
+            prompt_embeds, pooled_prompt_embeds, prompt_attention_mask = (
+                self.encode_prompt(
+                    prompt=prompts,
+                    prompt_2=None,
+                    prompt_template=DEFAULT_PROMPT_TEMPLATE,
+                    num_videos_per_prompt=1,
+                    prompt_embeds=None,
+                    pooled_prompt_embeds=None,
+                    prompt_attention_mask=None,
+                    device=self.device,
+                    max_sequence_length=max_sequence_length,
+                )
             )
-            
+
         batch_size, num_frames, num_channels, height, width = model_input.shape
-        
-        # generate noise 
-        # 
-        
+
+        # generate noise
+        #
+
         # Sample noise that will be added to the latents
         noise = torch.randn_like(model_input)
 
         # Sample a random timestep for each image
         timesteps = torch.randint(
-            0, self.scheduler.config.num_train_timesteps, (batch_size,), device=self.device
+            0,
+            self.scheduler.config.num_train_timesteps,
+            (batch_size,),
+            device=self.device,
         )
         timesteps = timesteps.long()
 
@@ -1019,18 +1113,27 @@ class HunyuanVideoWorkFlow(pl.LightningModule):
 
         # guidance = torch.tensor([self._guidance_scale], device=self.device, dtype=self.vae.dtype) * 1000.0
         guidance_scale = 1.0
-        guidance = torch.tensor([guidance_scale] * noisy_model_input.shape[0], dtype=noisy_model_input.dtype, device=noisy_model_input.device) * 1000.0
+        guidance = (
+            torch.tensor(
+                [guidance_scale] * noisy_model_input.shape[0],
+                dtype=noisy_model_input.dtype,
+                device=noisy_model_input.device,
+            )
+            * 1000.0
+        )
         model_output = self.model(
-                    hidden_states=noisy_model_input,
-                    timestep=timesteps,
-                    encoder_hidden_states=prompt_embeds,
-                    encoder_attention_mask=prompt_attention_mask,
-                    pooled_projections=pooled_prompt_embeds,
-                    guidance=guidance,
-                    # attention_kwargs=attention_kwargs,
-                    return_dict=False,
-                )[0]
-        model_pred = self.scheduler.get_velocity(model_output, noisy_model_input, timesteps)
+            hidden_states=noisy_model_input,
+            timestep=timesteps,
+            encoder_hidden_states=prompt_embeds,
+            encoder_attention_mask=prompt_attention_mask,
+            pooled_projections=pooled_prompt_embeds,
+            guidance=guidance,
+            # attention_kwargs=attention_kwargs,
+            return_dict=False,
+        )[0]
+        model_pred = self.scheduler.get_velocity(
+            model_output, noisy_model_input, timesteps
+        )
 
         alphas_cumprod = self.scheduler.alphas_cumprod[timesteps]
         weights = 1 / (1 - alphas_cumprod)
@@ -1038,9 +1141,9 @@ class HunyuanVideoWorkFlow(pl.LightningModule):
             weights = weights.unsqueeze(-1)
 
         target = model_input
-        # TODO: inherent loss computation from base class. 
-        loss = torch.mean((weights * (model_pred - target) ** 2).reshape(batch_size, -1), dim=1)
+        # TODO: inherent loss computation from base class.
+        loss = torch.mean(
+            (weights * (model_pred - target) ** 2).reshape(batch_size, -1), dim=1
+        )
         loss = loss.mean()
         return loss
-
-

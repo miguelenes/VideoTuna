@@ -1,21 +1,26 @@
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import Optional, Tuple
-from copy import deepcopy
-from omegaconf import DictConfig, OmegaConf
+
 import torch
 import torch.nn as nn
+from omegaconf import DictConfig, OmegaConf
 from transformers import (
+    AutoModel,
+    AutoTokenizer,
+    CLIPImageProcessor,
     CLIPTextModel,
     CLIPTokenizer,
-    AutoTokenizer,
-    AutoModel,
     LlavaForConditionalGeneration,
-    CLIPImageProcessor,
 )
 from transformers.utils import ModelOutput
 
-from ..constants import TEXT_ENCODER_PATH, TOKENIZER_PATH
-from ..constants import PRECISION_TO_TYPE, PROMPT_TEMPLATE
+from ..constants import (
+    PRECISION_TO_TYPE,
+    PROMPT_TEMPLATE,
+    TEXT_ENCODER_PATH,
+    TOKENIZER_PATH,
+)
 
 
 def use_default(value, default):
@@ -169,9 +174,9 @@ class TextEncoder(nn.Module):
         self.use_template = self.prompt_template is not None
         if self.use_template:
             assert (
-                (isinstance(self.prompt_template, dict) or isinstance(self.prompt_template, DictConfig))
-                and "template" in self.prompt_template
-            ), f"`prompt_template` must be a dictionary with a key 'template', got {self.prompt_template}"
+                isinstance(self.prompt_template, dict)
+                or isinstance(self.prompt_template, DictConfig)
+            ) and "template" in self.prompt_template, f"`prompt_template` must be a dictionary with a key 'template', got {self.prompt_template}"
             assert "{}" in str(self.prompt_template["template"]), (
                 "`prompt_template['template']` must contain a placeholder `{}` for the input text, "
                 f"got {self.prompt_template['template']}"
@@ -181,9 +186,9 @@ class TextEncoder(nn.Module):
         if self.use_video_template:
             if self.prompt_template_video is not None:
                 assert (
-                    (isinstance(self.prompt_template_video, dict) or isinstance(self.prompt_template, DictConfig))
-                    and "template" in self.prompt_template_video
-                ), f"`prompt_template_video` must be a dictionary with a key 'template', got {self.prompt_template_video}"
+                    isinstance(self.prompt_template_video, dict)
+                    or isinstance(self.prompt_template, DictConfig)
+                ) and "template" in self.prompt_template_video, f"`prompt_template_video` must be a dictionary with a key 'template', got {self.prompt_template_video}"
             assert "{}" in str(self.prompt_template_video["template"]), (
                 "`prompt_template_video['template']` must contain a placeholder `{}` for the input text, "
                 f"got {self.prompt_template_video['template']}"
@@ -413,8 +418,9 @@ class TextEncoder(nn.Module):
                         last_double_return_token_indices = torch.cat(
                             (
                                 last_double_return_token_indices,
-                                torch.tensor([batch_encoding["input_ids"].shape[-1]]).to(
-                                    device=last_double_return_token_indices.device),
+                                torch.tensor(
+                                    [batch_encoding["input_ids"].shape[-1]]
+                                ).to(device=last_double_return_token_indices.device),
                             )
                         )
                     last_double_return_token_indices = (
@@ -490,10 +496,10 @@ class TextEncoder(nn.Module):
 
                 if semantic_images is not None and 0 < self.image_embed_interleave < 6:
                     image_last_hidden_state = image_last_hidden_state[
-                        :, ::self.image_embed_interleave, :
+                        :, :: self.image_embed_interleave, :
                     ]
                     image_attention_mask = image_attention_mask[
-                        :, ::self.image_embed_interleave
+                        :, :: self.image_embed_interleave
                     ]
 
                 assert (
@@ -537,23 +543,25 @@ class TextEncoder(nn.Module):
 
 
 class TextEncoderWrapper(nn.Module):
-    def __init__(self, 
-                i2v_mode: bool = True,
-                i2v_condition_type: str = 'token_replace',
-                text_encoder: str = "llm-i2v",
-                text_encoder_precision: str = "fp16",
-                text_states_dim: int = 4096,
-                text_len: int = 256,
-                tokenizer: str = "llm-i2v",
-                prompt_template: str = "dit-llm-encode-i2v",
-                prompt_template_video: str = "dit-llm-encode-video-i2v",
-                hidden_state_skip_layer: int = 2,
-                apply_final_norm: bool = False,
-                reproduce: bool = False,
-                device: str = 'cuda',
-                use_cpu_offload: bool = True,
-                *args, 
-                 **kwargs):
+    def __init__(
+        self,
+        i2v_mode: bool = True,
+        i2v_condition_type: str = "token_replace",
+        text_encoder: str = "llm-i2v",
+        text_encoder_precision: str = "fp16",
+        text_states_dim: int = 4096,
+        text_len: int = 256,
+        tokenizer: str = "llm-i2v",
+        prompt_template: str = "dit-llm-encode-i2v",
+        prompt_template_video: str = "dit-llm-encode-video-i2v",
+        hidden_state_skip_layer: int = 2,
+        apply_final_norm: bool = False,
+        reproduce: bool = False,
+        device: str = "cuda",
+        use_cpu_offload: bool = True,
+        *args,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         self.i2v_mode = i2v_mode
         self.text_encoder = text_encoder
@@ -568,7 +576,7 @@ class TextEncoderWrapper(nn.Module):
         self.reproduce = reproduce
         self.i2v_condition_type = i2v_condition_type
         self.use_cpu_offload = use_cpu_offload
-        
+
         # Text encoder
         if self.i2v_mode:
             self.text_encoder = "llm-i2v"
@@ -577,15 +585,25 @@ class TextEncoderWrapper(nn.Module):
             self.prompt_template_video = "dit-llm-encode-video-i2v"
 
         if self.prompt_template_video is not None:
-            crop_start = PROMPT_TEMPLATE[self.prompt_template_video].get("crop_start", 0)
+            crop_start = PROMPT_TEMPLATE[self.prompt_template_video].get(
+                "crop_start", 0
+            )
         elif self.prompt_template is not None:
             crop_start = PROMPT_TEMPLATE[self.prompt_template].get("crop_start", 0)
         else:
             crop_start = 0
         max_length = self.text_len + crop_start
 
-        prompt_template = PROMPT_TEMPLATE[self.prompt_template] if self.prompt_template is not None else None
-        prompt_template_video = PROMPT_TEMPLATE[self.prompt_template_video] if self.prompt_template_video is not None else None
+        prompt_template = (
+            PROMPT_TEMPLATE[self.prompt_template]
+            if self.prompt_template is not None
+            else None
+        )
+        prompt_template_video = (
+            PROMPT_TEMPLATE[self.prompt_template_video]
+            if self.prompt_template_video is not None
+            else None
+        )
 
         if self.i2v_mode and self.i2v_condition_type == "latent_concat":
             image_embed_interleave = 2
@@ -593,7 +611,7 @@ class TextEncoderWrapper(nn.Module):
             image_embed_interleave = 4
         else:
             image_embed_interleave = 1
-        
+
         self.text_encoder = TextEncoder(
             text_encoder_type=self.text_encoder,
             max_length=max_length,
@@ -607,5 +625,5 @@ class TextEncoderWrapper(nn.Module):
             reproduce=self.reproduce,
             logger=None,
             device=device if not use_cpu_offload else "cpu",
-            image_embed_interleave=image_embed_interleave
+            image_embed_interleave=image_embed_interleave,
         )

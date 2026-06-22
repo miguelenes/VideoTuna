@@ -19,13 +19,7 @@ from pytorch_lightning.utilities import rank_zero_only
 from torch.optim.lr_scheduler import CosineAnnealingLR, LambdaLR
 from torchvision.utils import make_grid
 
-from videotuna.schedulers.ddim import DDIMSampler
 from videotuna.models.lvdm.ddpm3d import DDPMFlow
-from videotuna.schedulers.diffusion_schedulers import DDPMScheduler
-from videotuna.utils.distributions import DiagonalGaussianDistribution, normal_kl
-from videotuna.utils.diffusion_utils import (
-    discretized_gaussian_log_likelihood,
-)
 from videotuna.models.lvdm.modules.utils import (
     default,
     disabled_train,
@@ -33,7 +27,11 @@ from videotuna.models.lvdm.modules.utils import (
     extract_into_tensor,
     noise_like,
 )
+from videotuna.schedulers.ddim import DDIMSampler
+from videotuna.schedulers.diffusion_schedulers import DDPMScheduler
 from videotuna.utils.common_utils import instantiate_from_config
+from videotuna.utils.diffusion_utils import discretized_gaussian_log_likelihood
+from videotuna.utils.distributions import DiagonalGaussianDistribution, normal_kl
 
 
 def mean_flat(tensor: torch.Tensor, mask=None) -> torch.Tensor:
@@ -1008,7 +1006,9 @@ class LatentDiffusion(SpacedDiffusion):
         )
 
         # add support for auto gradient checkpointing
-        from videotuna.models.opensora.acceleration.checkpoint import set_grad_checkpoint
+        from videotuna.models.opensora.acceleration.checkpoint import (
+            set_grad_checkpoint,
+        )
 
         set_grad_checkpoint(self.model)
 

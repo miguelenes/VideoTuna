@@ -92,7 +92,9 @@ def _run_backend(
 
 
 def main(argv: List[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Benchmark VideoTuna attention backends.")
+    parser = argparse.ArgumentParser(
+        description="Benchmark VideoTuna attention backends."
+    )
     parser.add_argument(
         "--model-path",
         default=os.environ.get("VIDEOTUNA_BENCH_MODEL", "THUDM/CogVideoX-2b"),
@@ -116,7 +118,9 @@ def main(argv: List[str] | None = None) -> int:
         default=None,
         help="Backends to test (default: eager sdpa flash when available).",
     )
-    parser.add_argument("--json", action="store_true", help="Print JSON instead of a table.")
+    parser.add_argument(
+        "--json", action="store_true", help="Print JSON instead of a table."
+    )
     args = parser.parse_args(argv)
 
     backends = args.backends or ["eager", "sdpa"]

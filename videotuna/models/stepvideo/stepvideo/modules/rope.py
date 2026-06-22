@@ -1,5 +1,9 @@
 import torch
-from videotuna.models.stepvideo.stepvideo.parallel import get_sequence_parallel_world_size, get_sequence_parallel_rank
+
+from videotuna.models.stepvideo.stepvideo.parallel import (
+    get_sequence_parallel_rank,
+    get_sequence_parallel_world_size,
+)
 
 
 class RoPE1D:
@@ -11,7 +15,9 @@ class RoPE1D:
 
     def get_cos_sin(self, D, seq_len, device, dtype):
         if (D, seq_len, device, dtype) not in self.cache:
-            inv_freq = 1.0 / (self.base ** (torch.arange(0, D, 2).float().to(device) / D))
+            inv_freq = 1.0 / (
+                self.base ** (torch.arange(0, D, 2).float().to(device) / D)
+            )
             t = torch.arange(seq_len, device=device, dtype=inv_freq.dtype)
             freqs = torch.einsum("i,j->ij", t, inv_freq).to(dtype)
             freqs = torch.cat((freqs, freqs), dim=-1)
@@ -22,7 +28,7 @@ class RoPE1D:
 
     @staticmethod
     def rotate_half(x):
-        x1, x2 = x[..., : x.shape[-1] // 2], x[..., x.shape[-1] // 2:]
+        x1, x2 = x[..., : x.shape[-1] // 2], x[..., x.shape[-1] // 2 :]
         return torch.cat((-x2, x1), dim=-1)
 
     def apply_rope1d(self, tokens, pos1d, cos, sin):
@@ -41,10 +47,11 @@ class RoPE1D:
         """
         D = tokens.size(3)
         assert positions.ndim == 2  # Batch, Seq
-        cos, sin = self.get_cos_sin(D, int(positions.max()) + 1, tokens.device, tokens.dtype)
+        cos, sin = self.get_cos_sin(
+            D, int(positions.max()) + 1, tokens.device, tokens.dtype
+        )
         tokens = self.apply_rope1d(tokens, positions, cos, sin)
         return tokens
-
 
 
 class RoPE3D(RoPE1D):
@@ -56,12 +63,14 @@ class RoPE3D(RoPE1D):
         f, h, w = rope_positions
 
         if f"{f}-{h}-{w}" not in self.position_cache:
-            x = torch.arange(f, device='cpu')
-            y = torch.arange(h, device='cpu')
-            z = torch.arange(w, device='cpu')
-            self.position_cache[f"{f}-{h}-{w}"] = torch.cartesian_prod(x, y, z).view(1, f*h*w, 3).expand(bsz, -1, 3)
+            x = torch.arange(f, device="cpu")
+            y = torch.arange(h, device="cpu")
+            z = torch.arange(w, device="cpu")
+            self.position_cache[f"{f}-{h}-{w}"] = (
+                torch.cartesian_prod(x, y, z).view(1, f * h * w, 3).expand(bsz, -1, 3)
+            )
         return self.position_cache[f"{f}-{h}-{w}"]
-     
+
     def __call__(self, tokens, rope_positions, ch_split, parallel=False):
         """
         input:
@@ -70,21 +79,25 @@ class RoPE3D(RoPE1D):
         output:
             * tokens after appplying RoPE2D (batch_size x ntokens x nheads x dim)
         """
-        assert sum(ch_split) == tokens.size(-1); 
+        assert sum(ch_split) == tokens.size(-1)
 
         mesh_grid = self.get_mesh_3d(rope_positions, bsz=tokens.shape[0])
         out = []
-        for i, (D, x) in enumerate(zip(ch_split, torch.split(tokens, ch_split, dim=-1))):
-            cos, sin = self.get_cos_sin(D, int(mesh_grid.max()) + 1, tokens.device, tokens.dtype)
-            
+        for i, (D, x) in enumerate(
+            zip(ch_split, torch.split(tokens, ch_split, dim=-1))
+        ):
+            cos, sin = self.get_cos_sin(
+                D, int(mesh_grid.max()) + 1, tokens.device, tokens.dtype
+            )
+
             if parallel:
-                mesh = torch.chunk(mesh_grid[:, :, i], get_sequence_parallel_world_size(),dim=1)[get_sequence_parallel_rank()].clone()
+                mesh = torch.chunk(
+                    mesh_grid[:, :, i], get_sequence_parallel_world_size(), dim=1
+                )[get_sequence_parallel_rank()].clone()
             else:
                 mesh = mesh_grid[:, :, i].clone()
             x = self.apply_rope1d(x, mesh.to(tokens.device), cos, sin)
             out.append(x)
-            
+
         tokens = torch.cat(out, dim=-1)
         return tokens
-    
-

@@ -12,10 +12,11 @@
 
 # Preliminary steps
   1) [Install the environment](#1prepare-environment)
-  2) To use deepspeed Zero3 training, please review the following preparation steps.
+  2) To use deepspeed ZeRO-3 training, install the pinned build (requires conda CUDA toolkit 12.6):
 ```shell
 poetry run install-deepspeed
 ```
+This installs `deepspeed==0.19.2` with CPU Adam support. After training, per-epoch wall time and peak VRAM are written to `metrics.json` in the run directory.
   3) Download the example training data.
 You can download manually from [this link](https://huggingface.co/datasets/Yingqing/VideoTuna-Datasets/resolve/main/apply_lipstick.zip), or download via `wget`:
 ```
@@ -25,11 +26,15 @@ unzip apply_lipstick.zip -d apply_lipstick
 ```
 Make sure the data is putted at `data/apply_lipstick/metadata.csv`
 
-  4) [Download the checkpoints](docs/CHECKPOINTS.md) and get the checkpoint
+  4) Download the Wan checkpoints (requires the [Hugging Face CLI](https://huggingface.co/docs/huggingface_hub/guides/cli#hf-cli)):
+
+```shell
+mkdir -p checkpoints/wan
+hf download Wan-AI/Wan2.1-T2V-14B --local-dir checkpoints/wan/Wan2.1-T2V-14B
+hf download Wan-AI/Wan2.1-I2V-14B-480P --local-dir checkpoints/wan/Wan2.1-I2V-14B-480P
 ```
-  $ ll checkpoints/wan/Wan2.1-T2V-14B
-  $ ll checkpoints/wan/Wan2.1-I2V-14B-480P
-```
+
+Verify the download:
 
 # Steps of Simple Fine-tuning
 **1. Full Fine-tuning of WanVideo Text-to-Video:**

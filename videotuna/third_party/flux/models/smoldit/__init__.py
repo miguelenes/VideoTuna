@@ -64,4 +64,3 @@ SmolDiTConfigurations = {
     },
 }
 SmolDiTConfigurationNames = list(SmolDiTConfigurations.keys())
-

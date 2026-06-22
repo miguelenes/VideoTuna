@@ -29,7 +29,6 @@ os.environ["ACCELERATE_LOG_LEVEL"] = "WARNING"
 from accelerate.logging import get_logger
 from diffusers.models.embeddings import get_2d_rotary_pos_embed
 
-from videotuna.utils.common_utils import get_resize_crop_region_for_grid
 from videotuna.third_party.flux import log_format  # noqa
 from videotuna.third_party.flux.caching.memory import reclaim_memory
 from videotuna.third_party.flux.configuration.loader import load_config
@@ -77,6 +76,7 @@ from videotuna.third_party.flux.training.validation import (
     prepare_validation_prompt_list,
 )
 from videotuna.third_party.flux.training.wrappers import unwrap_model
+from videotuna.utils.common_utils import get_resize_crop_region_for_grid
 
 logger = get_logger(
     "SimpleTuner", log_level=os.environ.get("SIMPLETUNER_LOG_LEVEL", "INFO")

@@ -1,7 +1,8 @@
-from typing import Any, Dict, Optional, Union, Tuple
+import math
+from typing import Any, Dict, Optional, Tuple, Union
+
 import torch
 import torch.nn as nn
-import math
 
 
 class RMSNorm(nn.Module):
@@ -59,7 +60,7 @@ class RMSNorm(nn.Module):
         if hasattr(self, "weight"):
             output = output * self.weight
         return output
-    
+
 
 ACTIVATION_FUNCTIONS = {
     "swish": nn.SiLU(),
@@ -85,7 +86,6 @@ def get_activation(act_fn: str) -> nn.Module:
         return ACTIVATION_FUNCTIONS[act_fn]
     else:
         raise ValueError(f"Unsupported activation function: {act_fn}")
-
 
 
 def get_timestep_embedding(
@@ -131,9 +131,10 @@ def get_timestep_embedding(
     return emb
 
 
-
 class Timesteps(nn.Module):
-    def __init__(self, num_channels: int, flip_sin_to_cos: bool, downscale_freq_shift: float):
+    def __init__(
+        self, num_channels: int, flip_sin_to_cos: bool, downscale_freq_shift: float
+    ):
         super().__init__()
         self.num_channels = num_channels
         self.flip_sin_to_cos = flip_sin_to_cos
@@ -149,7 +150,6 @@ class Timesteps(nn.Module):
         return t_emb
 
 
-
 class TimestepEmbedding(nn.Module):
     def __init__(
         self,
@@ -159,23 +159,23 @@ class TimestepEmbedding(nn.Module):
         out_dim: int = None,
         post_act_fn: Optional[str] = None,
         cond_proj_dim=None,
-        sample_proj_bias=True
+        sample_proj_bias=True,
     ):
         super().__init__()
         linear_cls = nn.Linear
 
         self.linear_1 = linear_cls(
-                in_channels, 
-                time_embed_dim, 
-                bias=sample_proj_bias,
-            )
+            in_channels,
+            time_embed_dim,
+            bias=sample_proj_bias,
+        )
 
         if cond_proj_dim is not None:
             self.cond_proj = linear_cls(
-                    cond_proj_dim, 
-                    in_channels, 
-                    bias=False,
-                )
+                cond_proj_dim,
+                in_channels,
+                bias=False,
+            )
         else:
             self.cond_proj = None
 
@@ -185,12 +185,12 @@ class TimestepEmbedding(nn.Module):
             time_embed_dim_out = out_dim
         else:
             time_embed_dim_out = time_embed_dim
-            
+
         self.linear_2 = linear_cls(
-                time_embed_dim, 
-                time_embed_dim_out, 
-                bias=sample_proj_bias, 
-            )
+            time_embed_dim,
+            time_embed_dim_out,
+            bias=sample_proj_bias,
+        )
 
         if post_act_fn is None:
             self.post_act = None
@@ -212,34 +212,54 @@ class TimestepEmbedding(nn.Module):
         return sample
 
 
-
-
 class PixArtAlphaCombinedTimestepSizeEmbeddings(nn.Module):
-    def __init__(self, embedding_dim, size_emb_dim, use_additional_conditions: bool = False):
+    def __init__(
+        self, embedding_dim, size_emb_dim, use_additional_conditions: bool = False
+    ):
         super().__init__()
 
         self.outdim = size_emb_dim
-        self.time_proj = Timesteps(num_channels=256, flip_sin_to_cos=True, downscale_freq_shift=0)
-        self.timestep_embedder = TimestepEmbedding(in_channels=256, time_embed_dim=embedding_dim)
+        self.time_proj = Timesteps(
+            num_channels=256, flip_sin_to_cos=True, downscale_freq_shift=0
+        )
+        self.timestep_embedder = TimestepEmbedding(
+            in_channels=256, time_embed_dim=embedding_dim
+        )
 
         self.use_additional_conditions = use_additional_conditions
         if self.use_additional_conditions:
-            self.additional_condition_proj = Timesteps(num_channels=256, flip_sin_to_cos=True, downscale_freq_shift=0)
-            self.resolution_embedder = TimestepEmbedding(in_channels=256, time_embed_dim=size_emb_dim)
-            self.nframe_embedder = TimestepEmbedding(in_channels=256, time_embed_dim=embedding_dim)
-            self.fps_embedder = TimestepEmbedding(in_channels=256, time_embed_dim=embedding_dim)
+            self.additional_condition_proj = Timesteps(
+                num_channels=256, flip_sin_to_cos=True, downscale_freq_shift=0
+            )
+            self.resolution_embedder = TimestepEmbedding(
+                in_channels=256, time_embed_dim=size_emb_dim
+            )
+            self.nframe_embedder = TimestepEmbedding(
+                in_channels=256, time_embed_dim=embedding_dim
+            )
+            self.fps_embedder = TimestepEmbedding(
+                in_channels=256, time_embed_dim=embedding_dim
+            )
 
     def forward(self, timestep, resolution=None, nframe=None, fps=None):
         hidden_dtype = next(self.timestep_embedder.parameters()).dtype
 
         timesteps_proj = self.time_proj(timestep)
-        timesteps_emb = self.timestep_embedder(timesteps_proj.to(dtype=hidden_dtype))  # (N, D)
+        timesteps_emb = self.timestep_embedder(
+            timesteps_proj.to(dtype=hidden_dtype)
+        )  # (N, D)
 
         if self.use_additional_conditions:
             batch_size = timestep.shape[0]
-            resolution_emb = self.additional_condition_proj(resolution.flatten()).to(hidden_dtype)
-            resolution_emb = self.resolution_embedder(resolution_emb).reshape(batch_size, -1)
-            nframe_emb = self.additional_condition_proj(nframe.flatten()).to(hidden_dtype)
+            resolution_emb = self.additional_condition_proj(resolution.flatten()).to(
+                hidden_dtype
+            )
+            resolution_emb = self.resolution_embedder(resolution_emb).reshape(
+                batch_size, -1
+            )
+            nframe_emb = self.additional_condition_proj(nframe.flatten()).to(
+                hidden_dtype
+            )
             nframe_emb = self.nframe_embedder(nframe_emb).reshape(batch_size, -1)
             conditioning = timesteps_emb + resolution_emb + nframe_emb
 
@@ -253,22 +273,29 @@ class PixArtAlphaCombinedTimestepSizeEmbeddings(nn.Module):
         return conditioning
 
 
-
 class AdaLayerNormSingle(nn.Module):
     r"""
-        Norm layer adaptive layer norm single (adaLN-single).
+    Norm layer adaptive layer norm single (adaLN-single).
 
-        As proposed in PixArt-Alpha (see: https://arxiv.org/abs/2310.00426; Section 2.3).
+    As proposed in PixArt-Alpha (see: https://arxiv.org/abs/2310.00426; Section 2.3).
 
-        Parameters:
-            embedding_dim (`int`): The size of each embedding vector.
-            use_additional_conditions (`bool`): To use additional conditions for normalization or not.
+    Parameters:
+        embedding_dim (`int`): The size of each embedding vector.
+        use_additional_conditions (`bool`): To use additional conditions for normalization or not.
     """
-    def __init__(self, embedding_dim: int, use_additional_conditions: bool = False, time_step_rescale=1000):
+
+    def __init__(
+        self,
+        embedding_dim: int,
+        use_additional_conditions: bool = False,
+        time_step_rescale=1000,
+    ):
         super().__init__()
 
         self.emb = PixArtAlphaCombinedTimestepSizeEmbeddings(
-            embedding_dim, size_emb_dim=embedding_dim // 2, use_additional_conditions=use_additional_conditions
+            embedding_dim,
+            size_emb_dim=embedding_dim // 2,
+            use_additional_conditions=use_additional_conditions,
         )
 
         self.silu = nn.SiLU()
@@ -281,12 +308,14 @@ class AdaLayerNormSingle(nn.Module):
         timestep: torch.Tensor,
         added_cond_kwargs: Dict[str, torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        embedded_timestep = self.emb(timestep*self.time_step_rescale, **added_cond_kwargs)
+        embedded_timestep = self.emb(
+            timestep * self.time_step_rescale, **added_cond_kwargs
+        )
 
         out = self.linear(self.silu(embedded_timestep))
 
         return out, embedded_timestep
-    
+
 
 class PixArtAlphaTextProjection(nn.Module):
     """
@@ -298,20 +327,19 @@ class PixArtAlphaTextProjection(nn.Module):
     def __init__(self, in_features, hidden_size):
         super().__init__()
         self.linear_1 = nn.Linear(
-                in_features, 
-                hidden_size, 
-                bias=True, 
-            )        
+            in_features,
+            hidden_size,
+            bias=True,
+        )
         self.act_1 = nn.GELU(approximate="tanh")
         self.linear_2 = nn.Linear(
-                hidden_size, 
-                hidden_size, 
-                bias=True, 
-            )
+            hidden_size,
+            hidden_size,
+            bias=True,
+        )
 
     def forward(self, caption):
         hidden_states = self.linear_1(caption)
         hidden_states = self.act_1(hidden_states)
         hidden_states = self.linear_2(hidden_states)
         return hidden_states
-

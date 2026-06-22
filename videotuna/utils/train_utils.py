@@ -78,6 +78,10 @@ def get_trainer_callbacks(lightning_config, logdir, ckptdir):
             "params": {"logging_interval": "step", "log_momentum": False},
         },
         "cuda_callback": {"target": "videotuna.utils.callbacks.CUDACallback"},
+        "training_metrics": {
+            "target": "videotuna.utils.callbacks.TrainingMetricsCallback",
+            "params": {},
+        },
     }
 
     if "callbacks" in lightning_config:

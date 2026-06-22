@@ -27,7 +27,9 @@ from videotuna.models.opensora.acceleration.communications import (
     all_to_all,
     split_forward_gather_backward,
 )
-from videotuna.models.opensora.acceleration.parallel_states import get_sequence_parallel_group
+from videotuna.models.opensora.acceleration.parallel_states import (
+    get_sequence_parallel_group,
+)
 from videotuna.utils.attention import attention_dense, attention_eager
 
 approx_gelu = lambda: nn.GELU(approximate="tanh")

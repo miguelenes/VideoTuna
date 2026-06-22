@@ -166,7 +166,9 @@ class AutoencodingEngine(AbstractAutoencoder):
 
         if ckpt_path is not None:
             assert ckpt_engine is None, "Can't set ckpt_engine and ckpt_path"
-            logpy.warning("Checkpoint path is deprecated, use `checkpoint_egnine` instead")
+            logpy.warning(
+                "Checkpoint path is deprecated, use `checkpoint_egnine` instead"
+            )
         self.apply_ckpt(default(ckpt_path, ckpt_engine))
         self.additional_decode_keys = set(default(additional_decode_keys, []))
 

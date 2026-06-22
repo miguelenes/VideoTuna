@@ -1,14 +1,13 @@
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import Optional, Tuple
-from copy import deepcopy
 
 import torch
 import torch.nn as nn
-from transformers import CLIPTextModel, CLIPTokenizer, AutoTokenizer, AutoModel
+from transformers import AutoModel, AutoTokenizer, CLIPTextModel, CLIPTokenizer
 from transformers.utils import ModelOutput
 
-from ..constants import TEXT_ENCODER_PATH, TOKENIZER_PATH
-from ..constants import PRECISION_TO_TYPE
+from ..constants import PRECISION_TO_TYPE, TEXT_ENCODER_PATH, TOKENIZER_PATH
 
 
 def use_default(value, default):
@@ -24,7 +23,7 @@ def load_text_encoder(
 ):
     if text_encoder_path is None:
         text_encoder_path = TEXT_ENCODER_PATH[text_encoder_type]
-        print(f"text_encoder_path: {text_encoder_path}") 
+        print(f"text_encoder_path: {text_encoder_path}")
     if logger is not None:
         logger.info(
             f"Loading text encoder model ({text_encoder_type}) from: {text_encoder_path}"
@@ -126,7 +125,7 @@ class TextEncoder(nn.Module):
         self.max_length = max_length
         self.precision = text_encoder_precision
         self.model_path = text_encoder_path
-        print(f"model_path: {self.model_path}") # None 
+        print(f"model_path: {self.model_path}")  # None
         self.tokenizer_type = (
             tokenizer_type if tokenizer_type is not None else text_encoder_type
         )

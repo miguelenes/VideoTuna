@@ -158,7 +158,12 @@ def get_parser():
     )
     #
     parser.add_argument("--savefps", type=str, default=10, help="video fps to generate")
-    parser.add_argument("--denoiser_precision", type=str, default="fp32", help="precision of denoiser model")
+    parser.add_argument(
+        "--denoiser_precision",
+        type=str,
+        default="fp32",
+        help="precision of denoiser model",
+    )
     return parser
 
 
@@ -171,12 +176,17 @@ def load_model(args, cuda_idx=0):
     model_config = config.pop("model", OmegaConf.create())
     if args.lorackpt is not None:
         model_config["params"]["lora_args"] = {"lora_ckpt": args.lorackpt}
-    
-    model_config["params"]["denoiser_config"]["params"]["load_dtype"] = args.denoiser_precision
+
+    model_config["params"]["denoiser_config"]["params"][
+        "load_dtype"
+    ] = args.denoiser_precision
     model = instantiate_from_config(model_config)
     model = model.cuda(cuda_idx)
     # load weights
-    skip_loading_weight = hasattr(model_config, "skip_loading_weight") and model_config.skip_loading_weight
+    skip_loading_weight = (
+        hasattr(model_config, "skip_loading_weight")
+        and model_config.skip_loading_weight
+    )
     if not skip_loading_weight:
         assert os.path.exists(
             args.ckpt_path

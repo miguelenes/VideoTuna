@@ -5,13 +5,18 @@ import torch
 from diffusers import FluxPipeline
 
 from videotuna.utils.common_utils import monitor_resources, save_metrics
-from videotuna.utils.inference_cli import add_standard_inference_flags, apply_compile_env
+from videotuna.utils.inference_cli import (
+    add_standard_inference_flags,
+    apply_compile_env,
+)
 from videotuna.utils.inference_utils import load_prompts_from_txt
 
 
 def inference(args):
     apply_compile_env(bool(getattr(args, "compile", False)))
-    flux_dtype = torch.float16 if getattr(args, "dtype", None) == "fp16" else torch.bfloat16
+    flux_dtype = (
+        torch.float16 if getattr(args, "dtype", None) == "fp16" else torch.bfloat16
+    )
     if args.model_type == "dev":
         pipe = FluxPipeline.from_pretrained(
             "black-forest-labs/FLUX.1-dev", dtype=flux_dtype

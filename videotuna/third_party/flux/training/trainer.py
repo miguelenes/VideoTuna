@@ -32,7 +32,6 @@ from videotuna.third_party.flux.data_backend.factory import (
     configure_multi_databackend,
     random_dataloader_iterator,
 )
-from videotuna.utils.common_utils import get_resize_crop_region_for_grid
 from videotuna.third_party.flux.training import steps_remaining_in_epoch
 from videotuna.third_party.flux.training.adapter import (
     determine_adapter_target_modules,
@@ -72,6 +71,7 @@ from videotuna.third_party.flux.training.validation import (
     prepare_validation_prompt_list,
 )
 from videotuna.third_party.flux.training.wrappers import unwrap_model
+from videotuna.utils.common_utils import get_resize_crop_region_for_grid
 
 logger = get_logger(
     "SimpleTuner", log_level=os.environ.get("SIMPLETUNER_LOG_LEVEL", "INFO")

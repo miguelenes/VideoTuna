@@ -10,7 +10,7 @@ def load_lora_for_pipeline(
     LORA_PREFIX_TEXT_ENCODER="",
     alpha=1.0,
     device=0,
-    is_parallel=False
+    is_parallel=False,
 ):
     # load LoRA weight from .safetensors
     if is_parallel:

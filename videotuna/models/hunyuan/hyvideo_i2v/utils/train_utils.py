@@ -1,23 +1,19 @@
+import os
 import random
-import torchvision.transforms as transforms
-
-import numpy as np
-import torch
+from pathlib import Path
+from typing import List, Optional, Union
 
 import imageio
-import os
+import numpy as np
 import PIL.Image
-from typing import Union, Optional, List
-from peft import get_peft_model_state_dict
-
+import torch
+import torchvision.transforms as transforms
+from einops import rearrange
+from hyvideo.constants import PRECISION_TO_TYPE
 from hyvideo.modules.posemb_layers import get_nd_rotary_pos_embed
 from hyvideo.vae import AutoencoderKLCausal3D
-
-from pathlib import Path
-from einops import rearrange
+from peft import get_peft_model_state_dict
 from PIL import Image
-
-from hyvideo.constants import PRECISION_TO_TYPE
 from safetensors.torch import load_file
 
 
@@ -222,7 +218,7 @@ class set_worker_seed_builder:
         self.global_rank = global_rank
 
     def __call__(self, worker_id):
-        set_manual_seed(torch.initial_seed() % (2 ** 32 - 1))
+        set_manual_seed(torch.initial_seed() % (2**32 - 1))
 
 
 def set_reproducibility(enable, global_seed=None):

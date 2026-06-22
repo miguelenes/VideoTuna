@@ -1,18 +1,19 @@
+from .flow.transport import *
 from .pipelines import HunyuanVideoPipeline
 from .schedulers import FlowMatchDiscreteScheduler
-from .flow.transport import *
+
 
 def create_transport(
-        *,
-        path_type,
-        prediction,
-        loss_weight=None,
-        train_eps=None,
-        sample_eps=None,
-        snr_type="uniform",
-        shift=1.0,
-        video_shift=None,
-        reverse=False,
+    *,
+    path_type,
+    prediction,
+    loss_weight=None,
+    train_eps=None,
+    sample_eps=None,
+    snr_type="uniform",
+    shift=1.0,
+    video_shift=None,
+    reverse=False,
 ):
     if prediction == "noise":
         model_type = ModelType.NOISE
@@ -49,7 +50,10 @@ def create_transport(
     if path_type in [PathType.VP]:
         train_eps = 1e-5 if train_eps is None else train_eps
         sample_eps = 1e-3 if train_eps is None else sample_eps
-    elif path_type in [PathType.GVP, PathType.LINEAR] and model_type != ModelType.VELOCITY:
+    elif (
+        path_type in [PathType.GVP, PathType.LINEAR]
+        and model_type != ModelType.VELOCITY
+    ):
         train_eps = 1e-3 if train_eps is None else train_eps
         sample_eps = 1e-3 if train_eps is None else sample_eps
     else:  # velocity & [GVP, LINEAR] is stable everywhere
@@ -71,18 +75,20 @@ def create_transport(
 
     return state
 
+
 def load_denoiser(args):
     if args.denoise_type == "flow":
-        denoiser = create_transport(path_type=args.flow_path_type,
-                                    prediction=args.flow_predict_type,
-                                    loss_weight=args.flow_loss_weight,
-                                    train_eps=args.flow_train_eps,
-                                    sample_eps=args.flow_sample_eps,
-                                    snr_type=args.flow_snr_type,
-                                    shift=args.flow_shift,
-                                    video_shift=args.flow_shift,
-                                    reverse=args.flow_reverse,
-                                    )
+        denoiser = create_transport(
+            path_type=args.flow_path_type,
+            prediction=args.flow_predict_type,
+            loss_weight=args.flow_loss_weight,
+            train_eps=args.flow_train_eps,
+            sample_eps=args.flow_sample_eps,
+            snr_type=args.flow_snr_type,
+            shift=args.flow_shift,
+            video_shift=args.flow_shift,
+            reverse=args.flow_reverse,
+        )
     else:
         raise ValueError(f"Unknown denoise type: {args.denoise_type}")
     return denoiser

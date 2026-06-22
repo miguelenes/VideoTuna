@@ -5,19 +5,21 @@ from contextlib import contextmanager
 from functools import partial
 
 import numpy as np
-from einops import rearrange, repeat
-from tqdm import tqdm
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from einops import rearrange, repeat
+from tqdm import tqdm
 
-from videotuna.utils.diffusion_utils import make_beta_schedule, rescale_zero_terminal_snr
 from videotuna.models.lvdm.modules.utils import (
     default,
     disabled_train,
     exists,
     noise_like,
+)
+from videotuna.utils.diffusion_utils import (
+    make_beta_schedule,
+    rescale_zero_terminal_snr,
 )
 
 
@@ -107,10 +109,14 @@ class DDPM:
         self.log_one_minus_alphas_cumprod = to_torch(np.log(1.0 - alphas_cumprod))
         if self.parameterization == "v":
             self.sqrt_recip_alphas_cumprod = torch.zeros_like(to_torch(alphas_cumprod))
-            self.sqrt_recipm1_alphas_cumprod = torch.zeros_like(to_torch(alphas_cumprod))
+            self.sqrt_recipm1_alphas_cumprod = torch.zeros_like(
+                to_torch(alphas_cumprod)
+            )
         else:
             self.sqrt_recip_alphas_cumprod = to_torch(np.sqrt(1.0 / alphas_cumprod))
-            self.sqrt_recipm1_alphas_cumprod = to_torch(np.sqrt(1.0 / alphas_cumprod - 1))
+            self.sqrt_recipm1_alphas_cumprod = to_torch(
+                np.sqrt(1.0 / alphas_cumprod - 1)
+            )
 
         # calculations for posterior q(x_{t-1} | x_t, x_0)
         posterior_variance = (1 - self.v_posterior) * betas * (
@@ -119,9 +125,15 @@ class DDPM:
         # above: equal to 1. / (1. / (1. - alpha_cumprod_tm1) + alpha_t / beta_t)
         self.posterior_variance = to_torch(posterior_variance)
         # below: log calculation clipped because the posterior variance is 0 at the beginning of the diffusion chain
-        self.posterior_log_variance_clipped = to_torch(np.log(np.maximum(posterior_variance, 1e-20)))
-        self.posterior_mean_coef1 = to_torch(betas * np.sqrt(alphas_cumprod_prev) / (1.0 - alphas_cumprod))
-        self.posterior_mean_coef2 = to_torch((1.0 - alphas_cumprod_prev) * np.sqrt(alphas) / (1.0 - alphas_cumprod))
+        self.posterior_log_variance_clipped = to_torch(
+            np.log(np.maximum(posterior_variance, 1e-20))
+        )
+        self.posterior_mean_coef1 = to_torch(
+            betas * np.sqrt(alphas_cumprod_prev) / (1.0 - alphas_cumprod)
+        )
+        self.posterior_mean_coef2 = to_torch(
+            (1.0 - alphas_cumprod_prev) * np.sqrt(alphas) / (1.0 - alphas_cumprod)
+        )
 
         if self.parameterization == "eps":
             lvlb_weights = self.betas**2 / (

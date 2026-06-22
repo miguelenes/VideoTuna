@@ -1,14 +1,12 @@
 import collections.abc
-
-from itertools import repeat
-
 import contextlib
 import os
 import random
+from itertools import repeat
 
+import deepspeed
 import numpy as np
 import torch
-import deepspeed
 import torch.distributed as dist
 from torch.utils.tensorboard import SummaryWriter
 

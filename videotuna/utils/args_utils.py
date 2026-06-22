@@ -1,16 +1,19 @@
 import argparse
 import json
+import os
 import time
-from colorama import Fore, Style
-from omegaconf import OmegaConf, MissingMandatoryValue
+from enum import Enum
 from pathlib import Path
 from typing import Union
+
 import torch
-from enum import Enum
-from pytorch_lightning import Trainer
-from videotuna.utils.lightning_utils import add_trainer_args_to_parser
+from colorama import Fore, Style
 from loguru import logger
-import os
+from omegaconf import MissingMandatoryValue, OmegaConf
+from pytorch_lightning import Trainer
+
+from videotuna.utils.lightning_utils import add_trainer_args_to_parser
+
 
 class VideoMode(Enum):
     I2V = "i2v"
@@ -38,7 +41,7 @@ def prepare_train_args(parser: argparse.Namespace):
     cli = OmegaConf.from_dotlist(unknown)
     config = OmegaConf.merge(*configs, cli)
 
-    ## parser args replace train config 
+    ## parser args replace train config
     train_config = config.get("train", OmegaConf.create())
     for k, v in vars(args).items():
         if not k in train_config.keys():
@@ -47,18 +50,19 @@ def prepare_train_args(parser: argparse.Namespace):
             if v is not None:
                 train_config[k] = v
 
-    if OmegaConf.select(config, 'train.mapping') is not None:
+    if OmegaConf.select(config, "train.mapping") is not None:
         for source_path, target_path in config.train.mapping.items():
             if not path_exists(config, source_path):
                 raise ValueError(f"Error: invalid mapping {source_path} not exists")
             if not path_exists(config, target_path):
                 raise ValueError(f"Error: invalid mapping {target_path} not exists")
-            
+
             value = OmegaConf.select(config, source_path)
             if value is not None:
                 OmegaConf.update(config, target_path, value)
                 logger.info(f"update {target_path} by {source_path} value: {value}")
     logger.info(f"All Config: {OmegaConf.to_yaml(config)}")
+
     def resolve_dtype(dtype_str):
         mapping = {
             "torch.float16": torch.float16,
@@ -67,13 +71,15 @@ def prepare_train_args(parser: argparse.Namespace):
             "torch.bfloat16": torch.bfloat16,
         }
         return mapping.get(dtype_str)
+
     OmegaConf.register_new_resolver("dtype_resolver", resolve_dtype)
 
     ## extract trainer config
-    trainer_config = config.train.lightning.trainer 
+    trainer_config = config.train.lightning.trainer
     for k in get_nondefault_trainer_args(args):
         trainer_config[k] = getattr(args, k)
     return config
+
 
 def get_nondefault_trainer_args(args):
     parser = argparse.ArgumentParser()
@@ -86,6 +92,7 @@ def get_nondefault_trainer_args(args):
         if getattr(args, k) != getattr(default_trainer_args, k)
     )
 
+
 # omegaconf has bug, does not work as expected
 def path_exists(cfg, path):
     try:
@@ -93,6 +100,7 @@ def path_exists(cfg, path):
         return True
     except MissingMandatoryValue:
         return False
+
 
 def prepare_inference_args(args: argparse.Namespace, config: OmegaConf):
     """
@@ -111,27 +119,27 @@ def prepare_inference_args(args: argparse.Namespace, config: OmegaConf):
         else:
             if v is not None:
                 inference_config[k] = v
-                
+
     check_args(inference_config)
-    inference_config.savedir = process_savedir(inference_config.savedir)    
+    inference_config.savedir = process_savedir(inference_config.savedir)
     config.inference = inference_config
     print_inference_config(inference_config)
 
-
-    #update flow config with inference mapping config
-    if OmegaConf.select(config, 'inference.mapping') is not None:
+    # update flow config with inference mapping config
+    if OmegaConf.select(config, "inference.mapping") is not None:
         for source_path, target_path in config.inference.mapping.items():
             if not path_exists(config, source_path):
                 raise ValueError(f"Error: invalid mapping {source_path} not exists")
             if not path_exists(config, target_path):
                 raise ValueError(f"Error: invalid mapping {target_path} not exists")
-            
+
             value = OmegaConf.select(config, source_path)
             if value is not None:
                 OmegaConf.update(config, target_path, value)
                 logger.info(f"update {target_path} by {source_path} value: {value}")
 
     logger.info(f"All Config: {OmegaConf.to_yaml(config)}")
+
     # resolve interpolation first
     def resolve_dtype(dtype_str):
         mapping = {
@@ -141,10 +149,12 @@ def prepare_inference_args(args: argparse.Namespace, config: OmegaConf):
             "torch.bfloat16": torch.bfloat16,
         }
         return mapping.get(dtype_str)
+
     OmegaConf.register_new_resolver("dtype_resolver", resolve_dtype)
     config = OmegaConf.to_container(config, resolve=True)
     config = OmegaConf.create(config, flags={"allow_objects": True})
     return config
+
 
 def check_args(inference_config: OmegaConf):
     """
@@ -160,7 +170,7 @@ def check_args(inference_config: OmegaConf):
 def process_savedir(savedir: str):
     """
     Process the savedir.
-    Add the current time to the savedir. 
+    Add the current time to the savedir.
     Remove empty directories.
 
     :param savedir: The savedir config.
@@ -169,7 +179,7 @@ def process_savedir(savedir: str):
 
     save_time = time.strftime("%Y%m%d_%H%M%S")
     savedir = os.path.join(savedir, save_time)
-    
+
     # create the savedir
     Path(savedir).mkdir(parents=True, exist_ok=True)
 
@@ -193,7 +203,7 @@ def print_inference_config(inference_config: OmegaConf):
     # Header
     border = f"{BORDER}{'=' * 60}{RESET}"
     title = f"{HEADER}Inference Configuration{RESET}"
-    
+
     print(border)
     print(f"{title:^60}")
     print(border)
@@ -220,4 +230,3 @@ def print_inference_config(inference_config: OmegaConf):
 
     # Footer
     print(border)
-    

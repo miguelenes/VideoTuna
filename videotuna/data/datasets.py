@@ -23,6 +23,11 @@ from videotuna.data.transforms import (
     get_transforms_image,
     get_transforms_video,
 )
+from videotuna.utils.video_io import (
+    get_video_frame_count,
+    read_video_frames,
+    sample_frame_indices,
+)
 
 
 class DatasetFromCSV(torch.utils.data.Dataset):
@@ -79,8 +84,11 @@ class DatasetFromCSV(torch.utils.data.Dataset):
         train: bool = True,
         split_val: bool = False,
         image_to_video: bool = False,
+        video_backend: str = "auto",
         **kwargs,
     ):
+        if "video_length" in kwargs:
+            num_frames = kwargs.pop("video_length")
         self.csv_path = csv_path
         if isinstance(csv_path, str):
             csv_path = [csv_path]
@@ -96,7 +104,12 @@ class DatasetFromCSV(torch.utils.data.Dataset):
 
         if transform is None:
             transform = dict(
-                video=get_transforms_video((height, width), num_frames, frame_interval),
+                video=get_transforms_video(
+                    (height, width),
+                    num_frames,
+                    frame_interval,
+                    temporal_crop=False,
+                ),
                 image=get_transforms_image((height, width), num_frames),
             )
 
@@ -116,6 +129,7 @@ class DatasetFromCSV(torch.utils.data.Dataset):
         self.split_val = split_val
         self.safe_data_list = set()
         self.image_to_video = image_to_video
+        self.video_backend = video_backend
         self.check_video = CheckVideo(self.resolution, frame_interval, num_frames)
 
         self.load_annotations(csv_path, data_root)
@@ -164,10 +178,16 @@ class DatasetFromCSV(torch.utils.data.Dataset):
         data = copy.deepcopy(self.data_list[index])
         path = data.pop("path")
         if is_video(path):
-            video = read_video(path)
-            video = self.check_video(
-                video, index
-            )  # filter the video with unsatisfied resolution and frames
+            total_frames = get_video_frame_count(path)
+            if total_frames < self.frame_limit:
+                raise ValueError(
+                    f"The video has not enough frames. Current frames: {total_frames}"
+                )
+            indices = sample_frame_indices(
+                total_frames, self.num_frames, self.frame_interval
+            )
+            video = read_video_frames(path, indices, backend=self.video_backend)
+            video = self.check_video(video, index)
             video = self.transform["video"](video)
         elif is_image(path):
             video = pil_loader(path)

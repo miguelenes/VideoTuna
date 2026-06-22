@@ -97,7 +97,10 @@ train:
     target: videotuna.data.lightningdata.DataModuleFromConfig
     params:
       batch_size: 1
-      num_workers: 16
+      num_workers: 4
+      pin_memory: true
+      persistent_workers: true
+      prefetch_factor: 2
       wrap: false
       train:
         target: videotuna.data.datasets.DatasetFromCSV

@@ -14,8 +14,8 @@ from functools import partial
 
 import numpy as np
 from einops import rearrange, repeat
-from tqdm import tqdm
 from omegaconf import DictConfig
+from tqdm import tqdm
 
 mainlogger = logging.getLogger("mainlogger")
 
@@ -27,12 +27,11 @@ from pytorch_lightning.utilities import rank_zero_only
 from torch.optim.lr_scheduler import CosineAnnealingLR, LambdaLR
 from torchvision.utils import make_grid
 
-from videotuna.schedulers.ddim import DDIMSampler
-from videotuna.utils.distributions import DiagonalGaussianDistribution
-from videotuna.utils.ema import LitEma
-
 from videotuna.models.lvdm.models.rlhf_utils.batch_ddim import batch_ddim_sampling
-from videotuna.models.lvdm.modules.encoders.ip_resampler import ImageProjModel, Resampler
+from videotuna.models.lvdm.modules.encoders.ip_resampler import (
+    ImageProjModel,
+    Resampler,
+)
 from videotuna.models.lvdm.modules.utils import (
     default,
     disabled_train,
@@ -40,7 +39,10 @@ from videotuna.models.lvdm.modules.utils import (
     extract_into_tensor,
     noise_like,
 )
+from videotuna.schedulers.ddim import DDIMSampler
 from videotuna.utils.common_utils import instantiate_from_config
+from videotuna.utils.distributions import DiagonalGaussianDistribution
+from videotuna.utils.ema import LitEma
 
 __conditioning_keys__ = {"concat": "c_concat", "crossattn": "c_crossattn", "adm": "y"}
 
@@ -1208,7 +1210,9 @@ class RewardLVDMTrainer(LVDMFlow):
             loss_type = self.reward_loss_type
 
         if loss_type == "aesthetic":
-            from videotuna.models.lvdm.models.rlhf_utils.reward_fn import aesthetic_loss_fn
+            from videotuna.models.lvdm.models.rlhf_utils.reward_fn import (
+                aesthetic_loss_fn,
+            )
 
             self.loss_fn = aesthetic_loss_fn(
                 grad_scale=0.1,
@@ -1613,17 +1617,20 @@ class LatentVisualDiffusionFlow(LVDMFlow):
 
         return optimizer
 
+
 class DiffusionWrapper(pl.LightningModule):
     def __init__(self, diff_model_config, conditioning_key):
         super().__init__()
-        
-        if isinstance(diff_model_config, dict) or isinstance(diff_model_config, DictConfig):
+
+        if isinstance(diff_model_config, dict) or isinstance(
+            diff_model_config, DictConfig
+        ):
             self.diffusion_model = instantiate_from_config(diff_model_config)
         elif isinstance(diff_model_config, nn.Module):
             self.diffusion_model = diff_model_config
         else:
             raise ValueError("diff_model_config should be a dict or a nn.Module")
-        
+
         self.conditioning_key = conditioning_key
 
     def forward(

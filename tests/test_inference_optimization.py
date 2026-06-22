@@ -8,17 +8,17 @@ from unittest import mock
 
 import pytest
 
-from videotuna.utils.inference_cli import (
-    add_standard_inference_flags,
-    apply_compile_env,
-    resolve_offload_mode,
-)
+from videotuna.utils.common_utils import monitor_resources, save_metrics
 from videotuna.utils.fp8_utils import (
     fp8_map_path,
     precision_from_dtype_flag,
     validate_fp8_inference,
 )
-from videotuna.utils.common_utils import monitor_resources, save_metrics
+from videotuna.utils.inference_cli import (
+    add_standard_inference_flags,
+    apply_compile_env,
+    resolve_offload_mode,
+)
 
 
 def test_add_standard_inference_flags():
@@ -113,8 +113,9 @@ def test_hyvideo_cfgdistill_no_duplicate_guidance_embed():
 
 
 def test_require_nvidia_cuda_raises_without_gpu():
-    from videotuna.utils.device_utils import require_nvidia_cuda_for_flow
     import torch
+
+    from videotuna.utils.device_utils import require_nvidia_cuda_for_flow
 
     if torch.cuda.is_available():
         require_nvidia_cuda_for_flow("videotuna.flow.wanvideo.WanVideoModelFlow")

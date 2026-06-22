@@ -98,7 +98,11 @@ def _sdpa_context():
         from torch.nn.attention import SDPBackend, sdpa_kernel
 
         with sdpa_kernel(
-            [SDPBackend.FLASH_ATTENTION, SDPBackend.EFFICIENT_ATTENTION, SDPBackend.MATH]
+            [
+                SDPBackend.FLASH_ATTENTION,
+                SDPBackend.EFFICIENT_ATTENTION,
+                SDPBackend.MATH,
+            ]
         ):
             yield
     except (ImportError, AttributeError):
@@ -125,9 +129,9 @@ def attention_eager(
     attn_bias = torch.zeros(b, q.size(1), s, s1, dtype=q.dtype, device=q.device)
     if causal:
         assert attn_mask is None, "Causal mask and attn_mask cannot be used together"
-        temp_mask = torch.ones(b, q.size(1), s, s, dtype=torch.bool, device=q.device).tril(
-            diagonal=0
-        )
+        temp_mask = torch.ones(
+            b, q.size(1), s, s, dtype=torch.bool, device=q.device
+        ).tril(diagonal=0)
         attn_bias.masked_fill_(temp_mask.logical_not(), float("-inf"))
 
     if attn_mask is not None:

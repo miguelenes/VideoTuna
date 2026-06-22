@@ -1,9 +1,7 @@
 import argparse
+
 import torch
-from transformers import (
-    AutoProcessor,
-    LlavaForConditionalGeneration,
-)
+from transformers import AutoProcessor, LlavaForConditionalGeneration
 
 
 def preprocess_text_encoder_tokenizer(args):

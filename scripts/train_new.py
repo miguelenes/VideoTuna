@@ -5,7 +5,7 @@ import sys
 
 import pytorch_lightning as pl
 import torch
-from omegaconf import OmegaConf, DictConfig
+from omegaconf import DictConfig, OmegaConf
 from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.cli import LightningCLI
 from transformers import logging as transf_logging
@@ -14,7 +14,7 @@ from transformers import logging as transf_logging
 sys.path.insert(0, os.getcwd())
 from videotuna.base.generation_base import GenerationBase
 from videotuna.utils.args_utils import prepare_train_args
-from videotuna.utils.common_utils import instantiate_from_config, get_dist_info
+from videotuna.utils.common_utils import get_dist_info, instantiate_from_config
 from videotuna.utils.lightning_utils import add_trainer_args_to_parser
 from videotuna.utils.train_utils import (
     check_config_attribute,
@@ -84,8 +84,8 @@ def setup_logger(config: DictConfig):
     local_rank, global_rank, num_rank = get_dist_info()
 
     ## 2. config
-    train_config : DictConfig = config.get("train", OmegaConf.create())
-    lightning_config : DictConfig = train_config.get("lightning", OmegaConf.create())
+    train_config: DictConfig = config.get("train", OmegaConf.create())
+    lightning_config: DictConfig = train_config.get("lightning", OmegaConf.create())
 
     ## 3. init logger
     seed_everything(train_config.seed)
@@ -97,24 +97,27 @@ def setup_logger(config: DictConfig):
     logger = set_logger(
         logfile=os.path.join(loginfo, "log_%d:%s.txt" % (global_rank, now))
     )
-    train_config['workdir'] = workdir
-    train_config['ckptdir'] = ckptdir
+    train_config["workdir"] = workdir
+    train_config["ckptdir"] = ckptdir
     return logger
+
 
 if __name__ == "__main__":
     ## prepare args and logger
     local_rank, global_rank, num_rank = get_dist_info()
     parser = get_parser()
     config = prepare_train_args(parser)
-    logger = setup_logger(config)   
+    logger = setup_logger(config)
 
     ## load flow
     logger.info("@lightning version: %s [>=2.0 required]" % pl.__version__)
     logger.info("***** Configuring Model *****")
-    train_config: DictConfig = config['train']
-    flow_config: DictConfig = config['flow']
-    flow : GenerationBase = instantiate_from_config(flow_config, resolve=True)
-    flow.from_pretrained(train_config['ckpt'], train_config['trained_ckpt'], train_config['lorackpt'])
+    train_config: DictConfig = config["train"]
+    flow_config: DictConfig = config["flow"]
+    flow: GenerationBase = instantiate_from_config(flow_config, resolve=True)
+    flow.from_pretrained(
+        train_config["ckpt"], train_config["trained_ckpt"], train_config["lorackpt"]
+    )
 
     ## load trainer
     flow.init_trainer(train_config)
@@ -125,7 +128,7 @@ if __name__ == "__main__":
     logger.info("***** Running the Loop *****")
     try:
         logger.info(f"<Training in {trainer.strategy.__class__.__name__} Mode>")
-        if trainer.strategy.__class__.__name__  == "DeepSpeedStrategy":
+        if trainer.strategy.__class__.__name__ == "DeepSpeedStrategy":
             logger.info("deepspeed needs autocast")
             with torch.cuda.amp.autocast():
                 trainer.fit(flow, data, ckpt_path=train_config.resume_ckpt)

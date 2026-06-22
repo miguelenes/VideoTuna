@@ -1,22 +1,23 @@
-from typing import Tuple, List
-from decord import VideoReader
-import urllib
-import io
-import os
 import csv
+import io
+import json
+import os
+import sys
+import urllib
+from pathlib import Path
+from typing import List, Tuple
+
 import numpy as np
 import torch
-from torch.utils.data import Dataset, IterableDataset
 import torchvision.transforms as transforms
+from decord import VideoReader
+from torch.utils.data import Dataset, IterableDataset
 from torchvision.transforms.functional import crop
-from pathlib import Path
-import sys
-import json
 
 
 def split_video_urls(meta_files: str, global_rank: int, world_size: int):
     meta_paths = []
-    meta_paths.extend([line.strip() for line in open(meta_files, 'r').readlines()])
+    meta_paths.extend([line.strip() for line in open(meta_files, "r").readlines()])
     num_videos = len(meta_paths)
     num_videos_per_rank = num_videos // world_size
     remainder = num_videos % world_size
@@ -27,18 +28,21 @@ def split_video_urls(meta_files: str, global_rank: int, world_size: int):
 
     return start, end, meta_paths[start:end]
 
+
 class MultiBucketDataset(IterableDataset):
-    def __init__(self, source: Dataset, batch_size: int, max_buf = 64):
+    def __init__(self, source: Dataset, batch_size: int, max_buf=64):
         super().__init__()
         self.source = source
         self.batch_size = batch_size
-        self.buffer = {}   
+        self.buffer = {}
         self.max_buf = max_buf
         self.size = 0
 
     @staticmethod
     def collate_fn(samples):
-        pixel_values = torch.stack([sample["pixel_values"] for sample in samples]).contiguous()
+        pixel_values = torch.stack(
+            [sample["pixel_values"] for sample in samples]
+        ).contiguous()
         videoid = [sample["videoid"] for sample in samples]
         valid = [sample["valid"] for sample in samples]
         batch = {"pixel_values": pixel_values, "videoid": videoid, "valid": valid}
@@ -53,14 +57,18 @@ class MultiBucketDataset(IterableDataset):
         else:
             worker_id = int(worker_info.id)
             per_worker = len(self.source) // int(worker_info.num_workers)
-            per_worker += int(worker_id < len(self.source) % int(worker_info.num_workers))
+            per_worker += int(
+                worker_id < len(self.source) % int(worker_info.num_workers)
+            )
             if worker_id >= len(self.source) % int(worker_info.num_workers):
-                iter_start = worker_id * per_worker + len(self.source) % int(worker_info.num_workers)  
-            else:          
+                iter_start = worker_id * per_worker + len(self.source) % int(
+                    worker_info.num_workers
+                )
+            else:
                 iter_start = worker_id * per_worker
             iter_end = iter_start + per_worker
-       
-       # bucketing
+
+        # bucketing
         for i in range(iter_start, iter_end):
             sample = self.source[i]
             if sample["valid"] is False:
@@ -82,6 +90,7 @@ class MultiBucketDataset(IterableDataset):
         for bucket, samples in self.buffer.items():
             if len(samples) > 0:
                 yield samples
+
 
 class VideoDataset(Dataset):
     def __init__(
@@ -112,14 +121,24 @@ class VideoDataset(Dataset):
         if enable_multi_aspect_ratio:
             assert self.sample_size[0] == self.sample_size[1]
             if self.sample_size[0] < 540:
-                self.buckets = self.generate_crop_size_list(base_size=self.sample_size[0])
+                self.buckets = self.generate_crop_size_list(
+                    base_size=self.sample_size[0]
+                )
             else:
-                self.buckets = self.generate_crop_size_list(base_size=self.sample_size[0], patch_size=32)
-            self.aspect_ratios = np.array([float(w) / float(h) for w, h in self.buckets])
+                self.buckets = self.generate_crop_size_list(
+                    base_size=self.sample_size[0], patch_size=32
+                )
+            self.aspect_ratios = np.array(
+                [float(w) / float(h) for w, h in self.buckets]
+            )
             print(f"Multi-aspect-ratio bucket num: {len(self.buckets)}")
         # image preprocess
         if not enable_multi_aspect_ratio:
-            self.train_crop = transforms.CenterCrop(self.sample_size) if self.is_center_crop else transforms.RandomCrop(self.sample_size)
+            self.train_crop = (
+                transforms.CenterCrop(self.sample_size)
+                if self.is_center_crop
+                else transforms.RandomCrop(self.sample_size)
+            )
 
     def request_ceph_data(self, path):
         try:
@@ -133,9 +152,9 @@ class VideoDataset(Dataset):
         with open(data_json_path, "r") as f:
             data_dict = json.load(f)
 
-        video_path = data_dict['video_path']
-        video_id = video_path.split('/')[-1].split('.')[0]
-        prompt = data_dict['raw_caption']["long caption"]
+        video_path = data_dict["video_path"]
+        video_id = video_path.split("/")[-1].split(".")[0]
+        prompt = data_dict["raw_caption"]["long caption"]
 
         item = {"video_path": video_path, "videoid": video_id, "prompt": prompt}
         return item
@@ -163,12 +182,14 @@ class VideoDataset(Dataset):
                 stride = 1
         else:
             stride = 1
-            
+
         video_length = len(video_reader)
-        if video_length < self.sample_n_frames*stride:
-            sample_n_frames = video_length - (video_length - 1) % (self.vae_time_compression_ratio*stride)  # 4n+1/8n+1
+        if video_length < self.sample_n_frames * stride:
+            sample_n_frames = video_length - (video_length - 1) % (
+                self.vae_time_compression_ratio * stride
+            )  # 4n+1/8n+1
         else:
-            sample_n_frames = self.sample_n_frames*stride  
+            sample_n_frames = self.sample_n_frames * stride
 
         start_idx = 0
         batch_index = list(range(start_idx, start_idx + sample_n_frames, stride))
@@ -176,7 +197,13 @@ class VideoDataset(Dataset):
         # 20250322 pftq: fixed to return 5 values for consistency and "not enough values to unpack" error
         if len(batch_index) == 0:
             print(f"get video len=0, skip for {video_item['video_path']}")
-            return None, video_item["videoid"], video_item["video_path"], video_item["prompt"], False
+            return (
+                None,
+                video_item["videoid"],
+                video_item["video_path"],
+                video_item["prompt"],
+                False,
+            )
 
         # Read frames
         try:
@@ -187,22 +214,41 @@ class VideoDataset(Dataset):
         pixel_values = torch.from_numpy(video_images).permute(0, 3, 1, 2).contiguous()
         del video_reader
 
-        return pixel_values, video_item["videoid"], video_item["video_path"], video_item["prompt"], True
+        return (
+            pixel_values,
+            video_item["videoid"],
+            video_item["video_path"],
+            video_item["prompt"],
+            True,
+        )
 
     def preprocess_train(self, frames):
         height, width = frames.shape[-2:]
         # Resize & Crop
         if self.enable_multi_aspect_ratio:
-            bw, bh = self.get_closest_ratio(width=width, height=height, ratios=self.aspect_ratios, buckets=self.buckets)
+            bw, bh = self.get_closest_ratio(
+                width=width,
+                height=height,
+                ratios=self.aspect_ratios,
+                buckets=self.buckets,
+            )
             sample_size = bh, bw
             target_size = self.get_target_size(frames, sample_size)
-            train_crop = transforms.CenterCrop(sample_size) if self.is_center_crop else transforms.RandomCrop(sample_size)
+            train_crop = (
+                transforms.CenterCrop(sample_size)
+                if self.is_center_crop
+                else transforms.RandomCrop(sample_size)
+            )
         else:
             sample_size = self.sample_size
             target_size = self.get_target_size(frames, sample_size)
             train_crop = self.train_crop
 
-        frames = transforms.Resize(target_size, interpolation=transforms.InterpolationMode.BILINEAR, antialias=True)(frames)
+        frames = transforms.Resize(
+            target_size,
+            interpolation=transforms.InterpolationMode.BILINEAR,
+            antialias=True,
+        )(frames)
         if self.is_center_crop:
             y1 = max(0, int(round((height - sample_size[0]) / 2.0)))
             x1 = max(0, int(round((width - sample_size[1]) / 2.0)))
@@ -221,7 +267,7 @@ class VideoDataset(Dataset):
     @staticmethod
     def generate_crop_size_list(base_size=256, patch_size=16, max_ratio=4.0):
         num_patches = round((base_size / patch_size) ** 2)
-        assert max_ratio >= 1.
+        assert max_ratio >= 1.0
         crop_size_list = []
         wp, hp = num_patches, 1
         while wp > 0:
@@ -248,8 +294,20 @@ class VideoDataset(Dataset):
             pixel, videoid, video_path, prompt, valid = self.get_item(idx)
             if pixel is not None and valid:
                 pixel = self.preprocess_train(pixel)
-            sample = dict(pixel_values=pixel, videoid=videoid, video_path=video_path, prompt=prompt,valid=valid)
+            sample = dict(
+                pixel_values=pixel,
+                videoid=videoid,
+                video_path=video_path,
+                prompt=prompt,
+                valid=valid,
+            )
             return sample
         except Exception as e:
             print(e)
-            return dict(pixel_values=None, videoid=None, video_path=None, prompt=None, valid=False)
+            return dict(
+                pixel_values=None,
+                videoid=None,
+                video_path=None,
+                prompt=None,
+                valid=False,
+            )

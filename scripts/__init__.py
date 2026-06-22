@@ -14,33 +14,59 @@ current_time = datetime.now().strftime("%Y%m%d%H%M%S")
 def install_deepspeed():
     """
     Install DeepSpeed with CUDA 12.6 toolkit support (rebuilds against the active torch).
-    """
-    command_install_cuda_toolkit = [
-        "conda",
-        "install",
-        "cuda-toolkit=12.6",
-        "-c",
-        "conda-forge",
-        "-c",
-        "nvidia",
-        "-y",
-    ] + sys.argv[1:]
-    command_uninstall_deepspeed = ["pip", "uninstall", "deepspeed", "-y"]
-    command_install_deepspeed = ["pip", "install", "deepspeed==0.19.2"]
-    result_cuda_toolkit = subprocess.run(command_install_cuda_toolkit, check=False)
-    if result_cuda_toolkit.returncode != 0:
-        exit(result_cuda_toolkit.returncode)
 
-    result_uninstall_deepspeed = subprocess.run(
-        command_uninstall_deepspeed, check=False
-    )
-    if result_uninstall_deepspeed.returncode != 0:
-        exit(result_uninstall_deepspeed.returncode)
+    When conda is unavailable, skips the CUDA toolkit step and installs via pip.
+    If deepspeed>=0.19.2 is already importable, exits successfully without rebuilding.
+    """
+    try:
+        import deepspeed
+        from packaging.version import Version
+
+        if Version(deepspeed.__version__) >= Version("0.19.2"):
+            print(
+                f"deepspeed {deepspeed.__version__} already installed "
+                "(>= 0.19.2); skipping rebuild."
+            )
+            return
+    except ImportError:
+        pass
+
+    if shutil.which("conda"):
+        command_install_cuda_toolkit = [
+            "conda",
+            "install",
+            "cuda-toolkit=12.6",
+            "-c",
+            "conda-forge",
+            "-c",
+            "nvidia",
+            "-y",
+        ] + sys.argv[1:]
+        result_cuda_toolkit = subprocess.run(command_install_cuda_toolkit, check=False)
+        if result_cuda_toolkit.returncode != 0:
+            print(
+                "conda cuda-toolkit install failed; continuing with pip-only "
+                "deepspeed install.",
+                file=sys.stderr,
+            )
+    else:
+        print(
+            "conda not found; skipping cuda-toolkit install. "
+            "If the pip build fails, install CUDA/nvcc or use conda.",
+            file=sys.stderr,
+        )
+
+    pip = [sys.executable, "-m", "pip"]
+    subprocess.run([*pip, "uninstall", "deepspeed", "-y"], check=False)
 
     env = os.environ.copy()
     env["DS_BUILD_CPU_ADAM"] = "1"
     env["BUILD_UTILS"] = "1"
-    result_deepspeed = subprocess.run(command_install_deepspeed, check=False, env=env)
+    result_deepspeed = subprocess.run(
+        [*pip, "install", "deepspeed==0.19.2"],
+        check=False,
+        env=env,
+    )
     exit(result_deepspeed.returncode)
 
 
@@ -56,9 +82,7 @@ def install_flash_attn():
     Tries a prebuilt wheel first (no compiler or conda required). Falls back to a
     source build only when the wheel is unavailable.
     """
-    subprocess.run(
-        [sys.executable, "-m", "pip", "install", "ninja"], check=False
-    )
+    subprocess.run([sys.executable, "-m", "pip", "install", "ninja"], check=False)
 
     wheel_tag = _python_wheel_tag()
     flash_attn_wheel = (

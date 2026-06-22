@@ -1,5 +1,6 @@
 import argparse
 
+
 def parse_args(namespace=None):
     parser = argparse.ArgumentParser(description="StepVideo inference script")
 
@@ -13,7 +14,6 @@ def parse_args(namespace=None):
     return args
 
 
-
 def add_extra_models_args(parser: argparse.ArgumentParser):
     group = parser.add_argument_group(
         title="Extra models args, including vae, text encoders and tokenizers)"
@@ -22,19 +22,19 @@ def add_extra_models_args(parser: argparse.ArgumentParser):
     group.add_argument(
         "--vae_dir",
         type=str,
-        default='var',
+        default="var",
         help="vae dir.",
     )
     group.add_argument(
         "--llm_dir",
         type=str,
-        default='step_llm',
+        default="step_llm",
         help="llm encoder dir",
     )
     group.add_argument(
         "--clip_dir",
         type=str,
-        default='hunyuan_clip',
+        default="hunyuan_clip",
         help="clip encoder dir",
     )
 
@@ -150,15 +150,20 @@ def add_inference_args(parser: argparse.ArgumentParser):
 
     # Classifier-Free Guidance
     group.add_argument(
-        "--pos_magic", type=str, default="超高清、HDR 视频、环境光、杜比全景声、画面稳定、流畅动作、逼真的细节、专业级构图、超现实主义、自然、生动、超细节、清晰。", help="Positive magic prompt for sampling."
+        "--pos_magic",
+        type=str,
+        default="超高清、HDR 视频、环境光、杜比全景声、画面稳定、流畅动作、逼真的细节、专业级构图、超现实主义、自然、生动、超细节、清晰。",
+        help="Positive magic prompt for sampling.",
     )
     group.add_argument(
-        "--neg_magic", type=str, default="画面暗、低分辨率、不良手、文本、缺少手指、多余的手指、裁剪、低质量、颗粒状、签名、水印、用户名、模糊。", help="Negative magic prompt for sampling."
+        "--neg_magic",
+        type=str,
+        default="画面暗、低分辨率、不良手、文本、缺少手指、多余的手指、裁剪、低质量、颗粒状、签名、水印、用户名、模糊。",
+        help="Negative magic prompt for sampling.",
     )
     group.add_argument(
         "--cfg_scale", type=float, default=9.0, help="Classifier free guidance scale."
     )
-
 
     return parser
 

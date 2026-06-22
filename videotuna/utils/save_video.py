@@ -163,9 +163,9 @@ def log_local(batch_logs, save_dir, filename, save_fps=10, rescale=True):
 
     for key in batch_logs:
         value = batch_logs[key]
-        
+
         if isinstance(value, torch.Tensor) and (value.ndim == 6):
-            assert(value.size()[0] == 1)
+            assert value.size()[0] == 1
             value = value[0]
 
         if isinstance(value, list) and isinstance(value[0], str):
@@ -216,7 +216,9 @@ def log_local(batch_logs, save_dir, filename, save_fps=10, rescale=True):
             path = os.path.join(save_dir, "%s-%s.jpg" % (key, filename))
             save_img_grid(grid, path, rescale)
         else:
-            raise ValueError(f"The value of type [{type(value)}[] and key [{key}] does not supported!")
+            raise ValueError(
+                f"The value of type [{type(value)}[] and key [{key}] does not supported!"
+            )
 
 
 def prepare_to_log(batch_logs, max_images=100000, clamp=True):

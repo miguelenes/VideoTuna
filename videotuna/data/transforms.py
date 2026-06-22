@@ -215,18 +215,26 @@ def hflip(clip):
     return clip.flip(-1)
 
 
-def get_transforms_video(resolution=(256, 256), num_frames=16, frame_interval=1):
-    transform_video = torch_transforms.Compose(
-        [
-            TemporalRandomCrop(num_frames, frame_interval),
-            ToTensorVideo(),  # TCHW
-            RandomHorizontalFlipVideo(),
-            ResizeCenterCropVideo(resolution),
-            torch_transforms.Normalize(
-                mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5], inplace=True
-            ),
-        ]
-    )
+def get_transforms_video(
+    resolution=(256, 256),
+    num_frames=16,
+    frame_interval=1,
+    temporal_crop: bool = True,
+):
+    spatial_transforms = [
+        ToTensorVideo(),  # TCHW
+        RandomHorizontalFlipVideo(),
+        ResizeCenterCropVideo(resolution),
+        torch_transforms.Normalize(
+            mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5], inplace=True
+        ),
+    ]
+    if temporal_crop:
+        transform_video = torch_transforms.Compose(
+            [TemporalRandomCrop(num_frames, frame_interval)] + spatial_transforms
+        )
+    else:
+        transform_video = torch_transforms.Compose(spatial_transforms)
     return transform_video
 
 
@@ -600,18 +608,13 @@ class TemporalRandomCrop(object):
         self.sample_length = num_frames * frame_interval
 
     def __call__(self, frames):
+        from videotuna.utils.video_io import sample_frame_indices
+
         total_frames = len(frames)
-        rand_end = max(0, total_frames - self.sample_length - 1)
-        begin_index = random.randint(0, rand_end)
-        end_index = min(begin_index + self.sample_length, total_frames)
-        assert (
-            end_index - begin_index >= self.num_frames
-        ), f"The video has not enough frames. Current frames: {len(vframes)}"
-        frame_indice = np.linspace(
-            begin_index, end_index - 1, self.num_frames, dtype=int
+        frame_indice = sample_frame_indices(
+            total_frames, self.num_frames, self.frame_interval
         )
-        sample_frames = frames[frame_indice]
-        return sample_frames
+        return frames[frame_indice]
 
 
 class LoadDummyVideo:

@@ -1,19 +1,20 @@
 flow:
   target: videotuna.flow.wanvideo.WanVideoModelFlow
   params:
-    task: "t2v-14B"                   
-    ckpt_path: "checkpoints/wan/Wan2.1-T2V-14B"                    
-    offload_model: true               
-    ulysses_size: 1          
-    ring_size: 1                      
-    t5_fsdp: false                   
-    t5_cpu: false                     
-    dit_fsdp: false                   
-    use_prompt_extend: false          
+    task: "t2v-14B"
+    ckpt_path: "checkpoints/wan/Wan2.1-T2V-14B"
+    offload_model: true
+    ulysses_size: 1
+    ring_size: 1
+    t5_fsdp: false
+    t5_cpu: false
+    dit_fsdp: false
+    use_prompt_extend: false
     prompt_extend_method: "local_qwen"
-    prompt_extend_model: null         
-    prompt_extend_target_lang: "zh"  
-    seed: 42       
+    prompt_extend_model: null
+    prompt_extend_target_lang: "zh"
+    seed: 42
+    gradient_checkpointing: true
 
     denoiser_config:
       target: videotuna.models.wan.wan.modules.model.WanModel
@@ -44,12 +45,12 @@ flow:
         dropout: 0.1
         vocab: 256384
         num_layers: 24
-      
-    lora_config: 
+
+    lora_config:
       target: peft.LoraConfig
       params:
         r: 16
-        lora_alpha: 16.0 
+        lora_alpha: 16.0
         init_lora_weights: True
         target_modules: [q, k, v, o, ffn.0, ffn.2]
 
@@ -58,12 +59,12 @@ train:
   name: train_wan_t2v_lora
   logdir: results/train
   seed: 42
-  debug: false         
+  debug: false
   first_stage_key: video
   cond_stage_key: caption
   mapping:
-    train.ckpt : flow.params.ckpt_path
-    
+    train.ckpt: flow.params.ckpt_path
+
   lr_config:
     base_learning_rate: 1e-4
     scale_lr: False
@@ -72,7 +73,10 @@ train:
     target: videotuna.data.lightningdata.DataModuleFromConfig
     params:
       batch_size: 1
-      num_workers: 16
+      num_workers: 4
+      pin_memory: true
+      persistent_workers: true
+      prefetch_factor: 2
       wrap: false
       train:
         target: videotuna.data.datasets.DatasetFromCSV
@@ -121,12 +125,12 @@ inference:
   seed: 42
   height: 480
   width: 832
-  image: null                       
-  prompt_file: 'Two anthropomorphic cats in comfy boxing gear and bright gloves fight intensely on a spotlighted stage.'                     
-  solver: "unipc"           
-  num_inference_steps: 50                
-  time_shift: 3.0                
-  unconditional_guidance_scale: 5.0                        
+  image: null
+  prompt_file: "Two anthropomorphic cats in comfy boxing gear and bright gloves fight intensely on a spotlighted stage."
+  solver: "unipc"
+  num_inference_steps: 50
+  time_shift: 3.0
+  unconditional_guidance_scale: 5.0
   frames: 81
   n_samples_prompt: 1
   bs: 1
@@ -134,7 +138,6 @@ inference:
   enable_model_cpu_offload: true
 
   mapping:
-    inference.ckpt_path : flow.params.ckpt_path
-    inference.seed : flow.params.seed
-    inference.enable_model_cpu_offload : flow.params.offload_model
-    
+    inference.ckpt_path: flow.params.ckpt_path
+    inference.seed: flow.params.seed
+    inference.enable_model_cpu_offload: flow.params.offload_model
