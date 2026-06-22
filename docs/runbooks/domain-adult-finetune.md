@@ -161,6 +161,8 @@ poetry run python scripts/inference_new.py \
 
 See also `shscripts/inference_wanvideo_t2v_lora.sh`.
 
+For **Wan 2.2 Diffusers 720p** production inference (rental GPU), see [wan2.2-inference-profile.md](wan2.2-inference-profile.md).
+
 ---
 
 ## CPU stub (no GPU)

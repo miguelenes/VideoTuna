@@ -206,6 +206,58 @@ def _run_backend(
     return result
 
 
+def _run_benchmark_matrix(
+    *,
+    backends: List[str],
+    heights: List[int | None],
+    pipeline_kind: PipelineKind,
+    model_path: str,
+    prompt: str,
+    num_inference_steps: int,
+    seed: int,
+    compute_backend: str,
+    num_frames: int,
+    enable_offload: bool,
+) -> List[Dict[str, Any]]:
+    results: List[Dict[str, Any]] = []
+    for height in heights:
+        width = int(height * 16 / 9) if height else None
+        for backend in backends:
+            label = backend if height is None else f"{backend}@{height}p"
+            print(
+                f"Running pipeline={pipeline_kind} backend={label} "
+                f"({compute_backend}) ...",
+                file=sys.stderr,
+            )
+            try:
+                results.append(
+                    _run_backend(
+                        backend=backend,
+                        model_path=model_path,
+                        prompt=prompt,
+                        num_inference_steps=num_inference_steps,
+                        seed=seed,
+                        compute_backend=compute_backend,
+                        pipeline_kind=pipeline_kind,
+                        height=height,
+                        width=width,
+                        num_frames=num_frames,
+                        enable_offload=enable_offload,
+                    )
+                )
+            except Exception as exc:
+                results.append(
+                    {
+                        "backend": backend,
+                        "compute_backend": compute_backend,
+                        "pipeline": pipeline_kind,
+                        "height": height,
+                        "error": str(exc),
+                    }
+                )
+    return results
+
+
 def main(argv: List[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Benchmark VideoTuna attention backends."
@@ -253,7 +305,10 @@ def main(argv: List[str] | None = None) -> int:
     parser.add_argument(
         "--resolutions",
         default=None,
-        help="Comma-separated heights for a resolution matrix (width keeps 16:9 aspect).",
+        help=(
+            "Comma-separated heights for a resolution matrix "
+            "(width keeps 16:9 aspect)."
+        ),
     )
     parser.add_argument(
         "--json-out",
@@ -291,42 +346,18 @@ def main(argv: List[str] | None = None) -> int:
     else:
         heights = list(pipeline_defaults["default_heights"])
 
-    results: List[Dict[str, Any]] = []
-    for height in heights:
-        width = int(height * 16 / 9) if height else None
-        for backend in backends:
-            label = backend if height is None else f"{backend}@{height}p"
-            print(
-                f"Running pipeline={pipeline_kind} backend={label} "
-                f"({compute_backend}) ...",
-                file=sys.stderr,
-            )
-            try:
-                results.append(
-                    _run_backend(
-                        backend=backend,
-                        model_path=model_path,
-                        prompt=args.prompt,
-                        num_inference_steps=args.num_inference_steps,
-                        seed=args.seed,
-                        compute_backend=compute_backend,
-                        pipeline_kind=pipeline_kind,
-                        height=height,
-                        width=width,
-                        num_frames=num_frames,
-                        enable_offload=args.enable_offload,
-                    )
-                )
-            except Exception as exc:
-                results.append(
-                    {
-                        "backend": backend,
-                        "compute_backend": compute_backend,
-                        "pipeline": pipeline_kind,
-                        "height": height,
-                        "error": str(exc),
-                    }
-                )
+    results = _run_benchmark_matrix(
+        backends=backends,
+        heights=heights,
+        pipeline_kind=pipeline_kind,
+        model_path=model_path,
+        prompt=args.prompt,
+        num_inference_steps=args.num_inference_steps,
+        seed=args.seed,
+        compute_backend=compute_backend,
+        num_frames=num_frames,
+        enable_offload=args.enable_offload,
+    )
 
     if args.json_out:
         out_path = Path(args.json_out)

@@ -16,6 +16,41 @@ from videotuna.utils.device_utils import gpu_is_available, resolve_inference_dev
 from videotuna.utils.inference_cli import resolve_offload_mode
 
 
+def _maybe_compile_pipeline_transformer(pipe: Any, offload: str) -> None:
+    """Compile the transformer when full-GPU inference is requested."""
+    if offload != "none":
+        return
+    transformer = getattr(pipe, "transformer", None)
+    if transformer is None:
+        return
+    compiled = maybe_compile_denoiser(transformer)
+    if compiled is not transformer:
+        pipe.transformer = compiled
+
+
+def _apply_vae_memory_opts(pipe: Any, args: Any) -> None:
+    if getattr(args, "enable_vae_slicing", False) and hasattr(pipe, "vae"):
+        pipe.vae.enable_slicing()
+    if getattr(args, "enable_vae_tiling", False):
+        if hasattr(pipe, "enable_vae_tiling"):
+            pipe.enable_vae_tiling()
+        elif hasattr(pipe, "vae") and hasattr(pipe.vae, "enable_tiling"):
+            pipe.vae.enable_tiling()
+
+
+def _apply_attention_cache_opts(pipe: Any, args: Any) -> None:
+    transformer = getattr(pipe, "transformer", None)
+    if transformer is None or not getattr(args, "enable_attention_cache", False):
+        return
+    if hasattr(transformer, "enable_cache"):
+        transformer.enable_cache()
+        logger.info("Enabled transformer attention cache")
+    else:
+        logger.warning(
+            "enable_attention_cache requested but transformer has no enable_cache()"
+        )
+
+
 def apply_diffusers_optimizations(
     pipe: Any,
     args: Any,
@@ -24,7 +59,7 @@ def apply_diffusers_optimizations(
     disable_progress_bar: bool = False,
     device: Optional[torch.device] = None,
 ) -> None:
-    """Apply offload, VAE tiling/slicing, QKV fusion, attention backend, and cache APIs."""
+    """Apply offload, VAE tiling/slicing, QKV fusion, attention, and cache APIs."""
     offload = resolve_offload_mode(args)
     target_device = device or resolve_inference_device(
         getattr(args, "device", None)
@@ -40,13 +75,7 @@ def apply_diffusers_optimizations(
     elif hasattr(pipe, "to"):
         pipe.to(target_device)
 
-    if getattr(args, "enable_vae_slicing", False) and hasattr(pipe, "vae"):
-        pipe.vae.enable_slicing()
-    if getattr(args, "enable_vae_tiling", False):
-        if hasattr(pipe, "enable_vae_tiling"):
-            pipe.enable_vae_tiling()
-        elif hasattr(pipe, "vae") and hasattr(pipe.vae, "enable_tiling"):
-            pipe.vae.enable_tiling()
+    _apply_vae_memory_opts(pipe, args)
 
     if getattr(args, "fuse_qkv", False) and hasattr(pipe, "fuse_qkv_projections"):
         pipe.fuse_qkv_projections()
@@ -57,20 +86,8 @@ def apply_diffusers_optimizations(
     if hasattr(pipe, "set_progress_bar_config"):
         pipe.set_progress_bar_config(disable=disable_progress_bar)
 
-    transformer = getattr(pipe, "transformer", None)
-    if transformer is not None and offload == "none":
-        compiled = maybe_compile_denoiser(transformer)
-        if compiled is not transformer:
-            pipe.transformer = compiled
-            transformer = compiled
-    if transformer is not None and getattr(args, "enable_attention_cache", False):
-        if hasattr(transformer, "enable_cache"):
-            transformer.enable_cache()
-            logger.info("Enabled transformer attention cache")
-        else:
-            logger.warning(
-                "enable_attention_cache requested but transformer has no enable_cache()"
-            )
+    _maybe_compile_pipeline_transformer(pipe, offload)
+    _apply_attention_cache_opts(pipe, args)
 
 
 def _apply_device_map(pipe: Any, device: torch.device) -> None:
@@ -111,7 +128,10 @@ def _apply_device_map(pipe: Any, device: torch.device) -> None:
         pipe.transformer = dispatched
     elif hasattr(pipe, "unet"):
         pipe.unet = dispatched
-    logger.info("Applied accelerate device_map=auto across {} GPUs", torch.cuda.device_count())
+    logger.info(
+        "Applied accelerate device_map=auto across {} GPUs",
+        torch.cuda.device_count(),
+    )
 
 
 def apply_flow_memory_config(flow: Any, inference_config: Any) -> None:
@@ -150,7 +170,9 @@ def apply_flow_memory_config(flow: Any, inference_config: Any) -> None:
         )
 
 
-def _apply_hunyuan_pipeline_offload(flow: Any, pipeline: Any, inference_config: Any) -> None:
+def _apply_hunyuan_pipeline_offload(
+    flow: Any, pipeline: Any, inference_config: Any
+) -> None:
     device = resolve_inference_device(getattr(inference_config, "device", None))
     if getattr(flow, "use_cpu_offload", False) or getattr(
         inference_config, "enable_sequential_cpu_offload", False
