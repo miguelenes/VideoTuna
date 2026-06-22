@@ -36,8 +36,8 @@ from diffusers import (
 sys.path.insert(0, os.getcwd())
 from diffusers.utils import export_to_video, load_image, load_video
 
-from videotuna.utils.inference_utils import get_target_filelist, load_prompts_from_txt
 from videotuna.utils.common_utils import monitor_resources, save_metrics
+from videotuna.utils.inference_utils import get_target_filelist, load_prompts_from_txt
 
 
 def generate_video(
@@ -58,7 +58,7 @@ def generate_video(
     enable_sequential_cpu_offload: bool = False,
     enable_model_cpu_offload: bool = False,
     enable_vae_slicing: bool = False,
-    enable_vae_tiling: bool = False
+    enable_vae_tiling: bool = False,
 ):
     """
     Generates a video based on the given input and saves it to the specified path.
@@ -110,15 +110,11 @@ def generate_video(
     # function to use Multi GPUs.
 
     if generate_type == "i2v":
-        pipe = CogVideoXImageToVideoPipeline.from_pretrained(
-            model_path, torch_dtype=dtype
-        )
+        pipe = CogVideoXImageToVideoPipeline.from_pretrained(model_path, dtype=dtype)
     elif generate_type == "t2v":
-        pipe = CogVideoXPipeline.from_pretrained(model_path, torch_dtype=dtype)
+        pipe = CogVideoXPipeline.from_pretrained(model_path, dtype=dtype)
     else:
-        pipe = CogVideoXVideoToVideoPipeline.from_pretrained(
-            model_path, torch_dtype=dtype
-        )
+        pipe = CogVideoXVideoToVideoPipeline.from_pretrained(model_path, dtype=dtype)
 
     # If you're using with lora, add this code
     if lora_path:
@@ -169,10 +165,19 @@ def generate_video(
             if os.path.isdir(output_path)
             else output_path
         )
-        result_with_metrics = inference(image_or_video_path, num_inference_steps, guidance_scale, num_videos_per_prompt, generate_type, seed, pipe, prompt)
-        video_generate = result_with_metrics['result']
-        gpu_metrics.append(result_with_metrics.get('gpu', -1.0))
-        time_metrics.append(result_with_metrics.get('time', -1.0))
+        result_with_metrics = inference(
+            image_or_video_path,
+            num_inference_steps,
+            guidance_scale,
+            num_videos_per_prompt,
+            generate_type,
+            seed,
+            pipe,
+            prompt,
+        )
+        video_generate = result_with_metrics["result"]
+        gpu_metrics.append(result_with_metrics.get("gpu", -1.0))
+        time_metrics.append(result_with_metrics.get("time", -1.0))
         # 5. Export the generated frames to a video file. fps must be 8 for original video.
         export_to_video(video_generate, output_path_, fps=8)
     save_metrics(gpu=gpu_metrics, time=time_metrics, config=None, savedir=output_path)
@@ -181,48 +186,58 @@ def generate_video(
     avg_time = (time.time() - start_time) / len(prompts) / num_videos_per_prompt
     print(f"Average time taken per prompt: {avg_time:.2f}s")
 
+
 @monitor_resources(return_metrics=True)
-def inference(image_or_video_path, num_inference_steps, guidance_scale, num_videos_per_prompt, generate_type, seed, pipe, prompt):
+def inference(
+    image_or_video_path,
+    num_inference_steps,
+    guidance_scale,
+    num_videos_per_prompt,
+    generate_type,
+    seed,
+    pipe,
+    prompt,
+):
     if generate_type == "i2v":
         image = load_image(image=image_or_video_path)
         video_generate = pipe(
-                prompt=prompt,
-                image=image,  # The path of the image to be used as the background of the video
-                num_videos_per_prompt=num_videos_per_prompt,  # Number of videos to generate per prompt
-                num_inference_steps=num_inference_steps,  # Number of inference steps
-                num_frames=49,  # Number of frames to generate，changed to 49 for diffusers version `0.30.3` and after.
-                use_dynamic_cfg=True,  # This id used for DPM Sechduler, for DDIM scheduler, it should be False
-                guidance_scale=guidance_scale,
-                generator=torch.Generator().manual_seed(
-                    seed
-                ),  # Set the seed for reproducibility
-            ).frames[0]
+            prompt=prompt,
+            image=image,  # The path of the image to be used as the background of the video
+            num_videos_per_prompt=num_videos_per_prompt,  # Number of videos to generate per prompt
+            num_inference_steps=num_inference_steps,  # Number of inference steps
+            num_frames=49,  # Number of frames to generate，changed to 49 for diffusers version `0.30.3` and after.
+            use_dynamic_cfg=True,  # This id used for DPM Sechduler, for DDIM scheduler, it should be False
+            guidance_scale=guidance_scale,
+            generator=torch.Generator().manual_seed(
+                seed
+            ),  # Set the seed for reproducibility
+        ).frames[0]
     elif generate_type == "t2v":
         video_generate = pipe(
-                prompt=prompt,
-                num_videos_per_prompt=num_videos_per_prompt,
-                num_inference_steps=num_inference_steps,
-                num_frames=49,
-                use_dynamic_cfg=True,
-                guidance_scale=guidance_scale,
-                generator=torch.Generator().manual_seed(seed),
-            ).frames[0]
+            prompt=prompt,
+            num_videos_per_prompt=num_videos_per_prompt,
+            num_inference_steps=num_inference_steps,
+            num_frames=49,
+            use_dynamic_cfg=True,
+            guidance_scale=guidance_scale,
+            generator=torch.Generator().manual_seed(seed),
+        ).frames[0]
     else:
-            # v2v
+        # v2v
         video = load_video(image_or_video_path)
         video_generate = pipe(
-                prompt=prompt,
-                video=video,  # The path of the video to be used as the background of the video
-                num_videos_per_prompt=num_videos_per_prompt,
-                num_inference_steps=num_inference_steps,
-                # num_frames=49,
-                use_dynamic_cfg=True,
-                guidance_scale=guidance_scale,
-                generator=torch.Generator().manual_seed(
-                    seed
-                ),  # Set the seed for reproducibility
-            ).frames[0]
-        
+            prompt=prompt,
+            video=video,  # The path of the video to be used as the background of the video
+            num_videos_per_prompt=num_videos_per_prompt,
+            num_inference_steps=num_inference_steps,
+            # num_frames=49,
+            use_dynamic_cfg=True,
+            guidance_scale=guidance_scale,
+            generator=torch.Generator().manual_seed(
+                seed
+            ),  # Set the seed for reproducibility
+        ).frames[0]
+
     return video_generate
 
 
@@ -304,12 +319,15 @@ if __name__ == "__main__":
         "--enable_vae_slicing", action="store_true", help="enable vae slicing"
     )
     parser.add_argument(
-        "--enable_sequential_cpu_offload", action="store_true", help="enable sequential cpu offload"
+        "--enable_sequential_cpu_offload",
+        action="store_true",
+        help="enable sequential cpu offload",
     )
     parser.add_argument(
-        "--enable_model_cpu_offload", action="store_true", help="enable model cpu offload"
+        "--enable_model_cpu_offload",
+        action="store_true",
+        help="enable model cpu offload",
     )
-
 
     args = parser.parse_args()
     dtype = torch.float16 if args.dtype == "float16" else torch.bfloat16

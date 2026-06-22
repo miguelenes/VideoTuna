@@ -42,7 +42,7 @@
 
 #### (1) If you use Linux and Conda (Recommend)
 ``` shell
-conda create -n videotuna python=3.10 -y
+conda create -n videotuna python=3.11 -y
 conda activate videotuna
 pip install poetry
 poetry install
@@ -75,7 +75,7 @@ poetry run pip install "modelscope[cv]" -f https://modelscope.oss-cn-beijing.ali
   ``` shell
   poetry config virtualenvs.in-project true # optional but recommended, will ensure the virtual env is created in the project root
   poetry config virtualenvs.create true # enable this argument to ensure the virtual env is created in the project root
-  poetry env use python3.10 # will create the virtual env, check with `ls -l .venv`.
+  poetry env use python3.11 # will create the virtual env, check with `ls -l .venv`.
   poetry env activate # optional because Poetry commands (e.g. `poetry install` or `poetry run <command>`) will always automatically load the virtual env.
   poetry install
   ```
@@ -309,6 +309,42 @@ We thank the following repos for sharing their awesome models and codes!
 <a href="https://github.com/VideoVerses/VideoTuna/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=VideoVerses/VideoTuna" />
 </a>
+
+## Upgrade notes
+
+VideoTuna v0.1.0+ targets **Python 3.11**, **PyTorch 2.6 (CUDA 12.6)**, and **diffusers ≥ 0.35.2**. Key changes when upgrading from older installs:
+
+| Area | Before | After |
+|------|--------|-------|
+| Python | 3.10 | **3.11** (`decord==0.6.0` has no reliable 3.12 wheels) |
+| PyTorch / torchvision | 2.2.2 / 0.17.2 | **2.6.0+cu126 / 0.21.0+cu126** (via Poetry `pytorch-cu126` source) |
+| diffusers / transformers | 0.32 / 4.46 | **≥ 0.35.2 / ≥ 4.48** |
+| accelerate / peft | 0.33 / 0.12 | **≥ 1.2 / ≥ 0.17** |
+| deepspeed / xformers | 0.16.5 / 0.0.25 | **0.19.x / 0.0.29.post3** |
+| flash-attn (optional) | 2.7.3 + CUDA 12.1 | **2.7.4.post1 + CUDA 12.6** (`cxx11abiTRUE` wheel) |
+
+**CUDA driver:** PyTorch `cu126` wheels require an NVIDIA driver compatible with CUDA 12.6+.
+
+**Poetry install on Linux:** `torch`, `torchvision`, and `xformers` resolve from the explicit `pytorch-cu126` index; NVIDIA CUDA runtime packages and `triton` are listed in `pyproject.toml` so `poetry install` is self-contained on Linux x86_64.
+
+**Diffusers API:** prefer `dtype=` over deprecated `torch_dtype=` in `from_pretrained()` calls (both still work in diffusers 0.35).
+
+**Optional install helpers** (Conda + NVIDIA GPU recommended):
+
+```shell
+poetry run install-flash-attn   # flash-attn 2.7.4.post1, CUDA 12.6
+poetry run install-deepspeed    # deepspeed 0.19.2, CUDA 12.6
+```
+
+**Useful environment variables:**
+
+- `TOKENIZERS_PARALLELISM=false` — set automatically by training scripts; avoids HF tokenizer fork warnings.
+- `CUDA_HOME` — required for building flash-attn or DeepSpeed ops from source.
+- `TORCH_CUDA_ARCH_LIST` — GPU architectures when compiling CUDA extensions (e.g. `8.0;8.6;9.0`).
+- `DS_BUILD_CPU_ADAM=1` — enables CPU Adam op when building DeepSpeed (set by `install-deepspeed`).
+- `DS_BUILD_OPS=0` — skip optional DeepSpeed CUDA op builds for faster install.
+
+**OpenSora / ColossalAI:** `colossalai` remains pinned at **0.3.6** because newer releases declare incompatible `diffusers`/`transformers` pins. OpenSora training still uses ColossalAI; other backends use the upgraded HF stack.
 
 ## 📋 License
 Please follow [CC-BY-NC-ND](./LICENSE). If you want a license authorization, please contact the project leads Yingqing He (yhebm@connect.ust.hk) and Yazhou Xing (yxingag@connect.ust.hk).

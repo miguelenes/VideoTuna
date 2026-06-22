@@ -1,11 +1,14 @@
-FROM python:3.10-bookworm
+FROM python:3.11-bookworm
 
 ARG UID=1000
 ARG GID=1000
 
 WORKDIR /opt/VideoTuna/
 
-RUN groupadd -g "${GID}" videotuna \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential ninja-build \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd -g "${GID}" videotuna \
     && useradd -m -u "${UID}" -s /usr/bin/bash -g videotuna videotuna \
     && chown -R videotuna:videotuna /opt/VideoTuna/ \
     && chmod -R 755 /opt/VideoTuna/ \

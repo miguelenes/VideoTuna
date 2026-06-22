@@ -9,14 +9,27 @@ import videotuna.data.transforms as transforms
 from videotuna.data.datasets import DatasetFromCSV
 
 
+def _use_dummy_video(transform_video):
+    if not os.path.exists("videotuna/data/toy_videos"):
+        transform_video.transforms[0] = transforms.LoadDummyVideo(
+            (100, 100), probs_fail=0.5
+        )
+
+
+def _use_dummy_image(transform_image):
+    if not os.path.exists("videotuna/data/toy_images"):
+        transform_image.transforms[0] = transforms.LoadDummyImage(probs_fail=0.5)
+
+
+def _has_toy_images():
+    return os.path.isfile("videotuna/data/anno_files/toy_image_dataset.csv")
+
+
 class TestDatasets(unittest.TestCase):
 
     def test_video_dataset_from_csv(self):
         transform_video = transforms.get_transforms_video()
-        if not os.path.exists("videotuna/data/toy_videos"):
-            transform_video.transforms[0] = transforms.LoadDummyVideo(
-                (100, 100), probs_fail=0.5
-            )
+        _use_dummy_video(transform_video)
         dataset = DatasetFromCSV(
             "videotuna/data/anno_files/toy_video_dataset.csv",
             "videotuna/data/toy_videos",
@@ -35,6 +48,7 @@ class TestDatasets(unittest.TestCase):
         transform_video.transforms[0] = transforms.LoadDummyVideo(probs_fail=0.4)
         dataset = DatasetFromCSV(
             "videotuna/data/anno_files/toy_video_dataset.csv",
+            "videotuna/data/toy_videos",
             transform={"video": transform_video},
         )
         for i in range(min(5, len(dataset))):
@@ -65,10 +79,10 @@ class TestDatasets(unittest.TestCase):
         self.assertEqual(len(dataset), 128)
         self.assertEqual(dataset[0]["video"].shape[2], 256)
 
+    @unittest.skipUnless(_has_toy_images(), "toy image annotations not available")
     def test_image_dataset_from_csv(self):
         transform_image = transforms.get_transforms_image()
-        if not os.path.exists("videotuna/data/toy_images"):
-            transform_image.transforms[0] = transforms.LoadDummyImage(probs_fail=0.5)
+        _use_dummy_image(transform_image)
         dataset = DatasetFromCSV(
             "videotuna/data/anno_files/toy_image_dataset.csv",
             "videotuna/data/toy_images",
@@ -84,11 +98,11 @@ class TestDatasets(unittest.TestCase):
         self.assertEqual(len(dataset), 16)
         self.assertEqual(dataset[0]["video"].shape[2], 256)
 
+    @unittest.skipUnless(_has_toy_images(), "toy image annotations not available")
     def test_multi_res(self):
         # Test Video
         transform_video = transforms.get_transforms_video()
-        if not os.path.exists("videotuna/data/toy_videos"):
-            transform_video.transforms[0] = transforms.LoadDummyVideo(probs_fail=0.5)
+        _use_dummy_video(transform_video)
         dataset = DatasetFromCSV(
             "videotuna/data/anno_files/toy_video_dataset.csv",
             "videotuna/data/toy_videos",
@@ -107,8 +121,7 @@ class TestDatasets(unittest.TestCase):
 
         # Test Image
         transform_image = transforms.get_transforms_image()
-        if not os.path.exists("videotuna/data/toy_images"):
-            transform_image.transforms[0] = transforms.LoadDummyImage(probs_fail=0.5)
+        _use_dummy_image(transform_image)
         dataset = DatasetFromCSV(
             "videotuna/data/anno_files/toy_image_dataset.csv",
             "videotuna/data/toy_images",
@@ -125,14 +138,13 @@ class TestDatasets(unittest.TestCase):
         self.assertEqual(len(dataset), 16)
         self.assertEqual(dataset[0]["video"].shape[2], 256)
 
+    @unittest.skipUnless(_has_toy_images(), "toy image annotations not available")
     def test_concat_dataset_from_csv(self):
         transform_video = transforms.get_transforms_video()
-        if not os.path.exists("videotuna/data/toy_videos"):
-            transform_video.transforms[0] = transforms.LoadDummyVideo(probs_fail=0.5)
+        _use_dummy_video(transform_video)
 
         transform_image = transforms.get_transforms_image()
-        if not os.path.exists("videotuna/data/toy_images"):
-            transform_image.transforms[0] = transforms.LoadDummyImage(probs_fail=0.5)
+        _use_dummy_image(transform_image)
         dataset = DatasetFromCSV(
             [
                 "videotuna/data/anno_files/toy_video_dataset.csv",
@@ -153,8 +165,7 @@ class TestDatasets(unittest.TestCase):
 
     def test_anno_wo_meta_info(self):
         transform_video = transforms.get_transforms_video()
-        if not os.path.exists("videotuna/data/toy_videos"):
-            transform_video.transforms[0] = transforms.LoadDummyVideo(probs_fail=0.5)
+        _use_dummy_video(transform_video)
         dataset = DatasetFromCSV(
             "videotuna/data/anno_files/toy_video_dataset.csv",
             "videotuna/data/toy_videos",
@@ -178,8 +189,7 @@ class TestDatasets(unittest.TestCase):
 
     def test_anno_wo_meta_info_wo_multi_res(self):
         transform_video = transforms.get_transforms_video()
-        if not os.path.exists("videotuna/data/toy_videos"):
-            transform_video.transforms[0] = transforms.LoadDummyVideo(probs_fail=0.5)
+        _use_dummy_video(transform_video)
         dataset = DatasetFromCSV(
             "videotuna/data/anno_files/toy_video_dataset.csv",
             "videotuna/data/toy_videos",
@@ -203,8 +213,7 @@ class TestDatasets(unittest.TestCase):
 
     def test_video_dataset_from_csv_with_split(self):
         transform_video = transforms.get_transforms_video()
-        if not os.path.exists("videotuna/data/toy_videos"):
-            transform_video.transforms[0] = transforms.LoadDummyVideo(probs_fail=0.5)
+        _use_dummy_video(transform_video)
 
         # Test Training Dataset
         train_dataset = DatasetFromCSV(

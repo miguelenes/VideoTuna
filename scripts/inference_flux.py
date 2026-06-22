@@ -4,17 +4,18 @@ import os
 import torch
 from diffusers import FluxPipeline
 
-from videotuna.utils.inference_utils import load_prompts_from_txt
 from videotuna.utils.common_utils import monitor_resources, save_metrics
+from videotuna.utils.inference_utils import load_prompts_from_txt
+
 
 def inference(args):
     if args.model_type == "dev":
         pipe = FluxPipeline.from_pretrained(
-            "black-forest-labs/FLUX.1-dev", torch_dtype=torch.bfloat16
+            "black-forest-labs/FLUX.1-dev", dtype=torch.bfloat16
         )
     elif args.model_type == "schnell":
         pipe = FluxPipeline.from_pretrained(
-            "black-forest-labs/FLUX.1-schnell", torch_dtype=torch.bfloat16
+            "black-forest-labs/FLUX.1-schnell", dtype=torch.bfloat16
         )
     else:
         raise ValueError("model_type must be either 'dev' or 'schnell'")
@@ -46,22 +47,23 @@ def inference(args):
     time_metrics = []
     for prompt, out_path in zip(prompts, out_paths):
         result_with_metrics = generate(args, pipe, prompt)
-        out = result_with_metrics['result']
-        gpu_metrics.append(result_with_metrics.get('gpu', -1.0))
-        time_metrics.append(result_with_metrics.get('time', -1.0))
+        out = result_with_metrics["result"]
+        gpu_metrics.append(result_with_metrics.get("gpu", -1.0))
+        time_metrics.append(result_with_metrics.get("time", -1.0))
         out.save(out_path)
     save_metrics(gpu=gpu_metrics, time=time_metrics, config=args, savedir=args.out_path)
+
 
 @monitor_resources(return_metrics=True)
 def generate(args, pipe, prompt):
     out = pipe(
-            prompt=prompt,
-            guidance_scale=args.guidance_scale,
-            height=args.height,
-            width=args.width,
-            num_inference_steps=args.num_inference_steps,
-            max_sequence_length=256,
-        ).images[0]
+        prompt=prompt,
+        guidance_scale=args.guidance_scale,
+        height=args.height,
+        width=args.width,
+        num_inference_steps=args.num_inference_steps,
+        max_sequence_length=256,
+    ).images[0]
     return out
 
 
@@ -85,10 +87,14 @@ if __name__ == "__main__":
         "--enable_vae_slicing", action="store_true", help="enable vae slicing"
     )
     parser.add_argument(
-        "--enable_sequential_cpu_offload", action="store_true", help="enable sequential cpu offload"
+        "--enable_sequential_cpu_offload",
+        action="store_true",
+        help="enable sequential cpu offload",
     )
     parser.add_argument(
-        "--enable_model_cpu_offload", action="store_true", help="enable model cpu offload"
+        "--enable_model_cpu_offload",
+        action="store_true",
+        help="enable model cpu offload",
     )
     args = parser.parse_args()
     inference(args)
