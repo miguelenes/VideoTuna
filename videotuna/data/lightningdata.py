@@ -1,5 +1,3 @@
-import os
-import sys
 from abc import abstractmethod
 from functools import partial
 
@@ -7,9 +5,6 @@ import numpy as np
 import pytorch_lightning as pl
 import torch
 from torch.utils.data import DataLoader, Dataset, IterableDataset
-
-os.chdir(sys.path[0])
-sys.path.append("..")
 
 from videotuna.utils.common_utils import instantiate_from_config
 from videotuna.utils.video_io import init_video_worker

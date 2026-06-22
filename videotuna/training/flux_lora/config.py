@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -113,9 +112,8 @@ def _parse_local_backend(backends: list[dict[str, Any]]) -> FluxLoraDataConfig:
         b.get("type") == "local" and b.get("dataset_type") == "text_embeds"
         for b in backends
     ):
-        warnings.warn(
-            "text_embeds cache backend is ignored; prompts are encoded on-the-fly.",
-            stacklevel=2,
+        logger.info(
+            "text_embeds cache backend is ignored; prompts are encoded on-the-fly."
         )
     return FluxLoraDataConfig(
         instance_data_dir=image_backend["instance_data_dir"],

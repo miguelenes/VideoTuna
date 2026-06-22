@@ -141,6 +141,20 @@ poetry run benchmark-attn-backends \
 
 **Interpretation:** on NVIDIA, expect `flash` ≈ `sdpa` > `eager`. On ROCm, use `sdpa`. When using `--compile` in production, run twice and discard the first timed iteration.
 
+## Domain LoRA validation (Wan 2.1 → 2.2 bridge)
+
+After Phase 2 training, validate the native Lightning LoRA on Wan 2.2 Diffusers:
+
+```bash
+poetry run inference-wan2.2-t2v-720p \
+  --config configs/inference/presets/balanced_wan2_2_720p.yaml \
+  --trained_ckpt results/train/train_wan_domain_t2v_lora_<ts>/checkpoints/only_trained_model/denoiser-000-000000025.ckpt \
+  --prompt "sks_style, slow camera push-in, soft lighting" \
+  --enable_model_cpu_offload
+```
+
+The bridge is implemented in `videotuna/utils/wan_lora_bridge.py`. Run `poetry run test tests/test_wan_lora_bridge.py -q` on CPU; full visual QA requires a rental GPU.
+
 ## Multi-GPU (2× A100)
 
 Wan 2.2 via `inference-wan2.2-t2v-720p` uses **Diffusers** (`DiffusersVideoFlow`).

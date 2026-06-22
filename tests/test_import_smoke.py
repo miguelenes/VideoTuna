@@ -6,18 +6,15 @@ from packaging.version import Version
 
 INFERENCE_BACKENDS = [
     "videotuna.flow.diffusers_video",
-    "videotuna.flow.hunyuanvideo",
-    "videotuna.flow.videocrafter",
+    "videotuna.flow.wanvideo",
 ]
 
 TRAINING_BACKENDS = [
-    ("videotuna.models.opensora.acceleration.plugin", "colossalai"),
     ("videotuna.training.flux_lora.config", None),
 ]
 
 GPU_BACKENDS = [
     "videotuna.flow.wanvideo",
-    "videotuna.flow.stepvideo",
 ]
 
 
@@ -40,20 +37,11 @@ def test_inference_backend_import(module):
 def test_training_backend_import(module, extra):
     if extra is not None:
         pytest.importorskip(extra)
-    try:
-        importlib.import_module(module)
-    except ValueError as exc:
-        if module == "videotuna.models.opensora.acceleration.plugin":
-            pytest.skip(f"colossalai plugin import skipped: {exc}")
-        raise
+    importlib.import_module(module)
 
 
 @pytest.mark.parametrize("module", GPU_BACKENDS)
 def test_gpu_backend_import(module):
-    from videotuna.utils.device_utils import gpu_is_available
-
-    if not gpu_is_available():
-        pytest.skip("GPU accelerator required for module-level GPU initialization")
     importlib.import_module(module)
 
 

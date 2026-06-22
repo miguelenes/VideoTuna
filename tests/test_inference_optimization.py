@@ -154,12 +154,14 @@ def test_attn_flash_strict_raises():
                 attention.get_attn_backend()
 
 
-@pytest.mark.gpu
-def test_attn_auto_resolves_on_cuda():
+def test_attn_auto_resolves():
     from videotuna.utils.attention import get_attn_backend
 
     backend = get_attn_backend()
-    assert backend in ("flash", "sdpa", "eager")
+    if torch.cuda.is_available():
+        assert backend in ("flash", "sdpa", "eager")
+    else:
+        assert backend in ("sdpa", "eager")
 
 
 def test_resolve_offload_mode():

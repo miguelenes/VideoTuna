@@ -1,12 +1,13 @@
 [tool.poetry]
-name = "videotuna"
-version = "0.1.0"
-description = "Videotuna is a useful codebase for text-to-video applications"
+name = "privtune"
+version = "0.2.0"
+description = "PrivTune is a private-domain LoRA training platform for still-image and short-video generation — Flux T2I style training, Wan 2.1 T2V LoRA training, and Wan 2.2 Diffusers validation inference."
 authors = [
     "Yingqing He <yhebm@connect.ust.hk>",
     "Yazhou Xing <yxingag@connect.ust.hk>",
 ]
 readme = "README.md"
+packages = [{ include = "videotuna" }]
 
 [build-system]
 requires = ["poetry-core"]
@@ -17,7 +18,6 @@ build-backend = "poetry.core.masonry.api"
 # CPU dev:  `poetry install -E cpu` then `poetry run install-cpu-torch` (see docs/install-cpu.md)
 # Note: `cpu` extra is a marker; CPU torch wheels come from `install-cpu-torch`.
 # Training: `poetry install -E cuda --with training`
-# Eval:     `poetry install --with eval`
 # Dev:      `poetry install --with dev`
 
 [tool.poetry.dependencies]
@@ -80,6 +80,7 @@ backports-tarfile = "^1.2.0"
 pydantic-settings = "^2.8.0"
 dashscope = "^1.23.0"
 easydict = "^1.13"
+librosa = "^0.11.0"
 
 [tool.poetry.extras]
 cuda = [
@@ -121,15 +122,6 @@ scikit-learn = "^1.6.1"
 pyramid = "1.5"
 hpsv2 = { git = "https://github.com/tgxs002/HPSv2.git" }
 
-[tool.poetry.group.eval]
-optional = true
-
-[tool.poetry.group.eval.dependencies]
-pyiqa = "0.1.10"
-scikit-image = "^0.24.0"
-lvis = "^0.5.3"
-fairscale = "^0.4.13"
-
 [tool.poetry.group.dev]
 optional = true
 
@@ -161,12 +153,6 @@ training = [
     "scikit-learn>=1.6.1",
     "pyramid==1.5",
     "hpsv2 @ git+https://github.com/tgxs002/HPSv2.git",
-]
-eval = [
-    "pyiqa==0.1.10",
-    "scikit-image>=0.24.0",
-    "lvis>=0.5.3",
-    "fairscale>=0.4.13",
 ]
 dev = [
     "black>=24.0.0",
@@ -222,51 +208,10 @@ verify-cuda-extras = 'scripts.verify_cuda_extras:main'
 verify-cpu-torch = 'scripts.verify_cpu_torch:main'
 test = 'scripts:test'
 type-check = 'scripts:type_check'
-inference-stepvideo-t2v-544x992 = 'scripts:inference_stepvideo_t2v_544x992'
-inference-wanvideo-i2v-720p = 'scripts:inference_wanvideo_i2v_720p'
-inference-wanvideo-t2v-720p = 'scripts:inference_wanvideo_t2v_720p'
-inference-hunyuan-i2v-720p = 'scripts:inference_hunyuan_i2v_720p'
-inference-cogvideo-i2v-diffusers = 'scripts:inference_cogvideo_i2v_diffusers'
-inference-cogvideo-i2v-lora = 'scripts:inference_cogvideo_i2v_lora'
-inference-cogvideo-lora = 'scripts:inference_cogvideo_lora'
-inference-cogvideo-t2v-diffusers = 'scripts:inference_cogvideo_t2v_diffusers'
-"inference-cogvideox1.5-t2v" = 'scripts:inference_cogvideox1_5_t2v'
-"inference-cogvideox1.5-i2v" = 'scripts:inference_cogvideox1_5_i2v'
-inference-dc-i2v-576x1024 = 'scripts:inference_dc_i2v_576x1024'
-inference-flux-schnell = 'scripts:inference_flux_schnell'
-inference-flux-dev = 'scripts:inference_flux_dev'
-inference-flux2-dev = 'scripts:inference_flux2_dev'
-inference-flux2-klein-9b = 'scripts:inference_flux2_klein_9b'
 inference-flux-lora = 'scripts:inference_flux_lora'
-inference-hunyuan-t2v = 'scripts:inference_hunyuan_t2v'
-inference-hunyuan-t2v-diffusers = 'scripts:inference_hunyuan_t2v_diffusers'
-"inference-hunyuan1.5-t2v" = 'scripts:inference_hunyuan1_5_t2v'
-"inference-hunyuan1.5-i2v" = 'scripts:inference_hunyuan1_5_i2v'
-inference-mochi = 'scripts:inference_mochi'
-inference-opensora-v10-16x256x256 = 'scripts:inference_opensora_v10_16x256x256'
-inference-opensora-v2 = 'scripts:inference_opensora_v2'
-inference-ltx-t2v = 'scripts:inference_ltx_t2v'
 "inference-wan2.2-t2v-720p" = 'scripts:inference_wan2_2_t2v_720p'
-"inference-wan2.2-i2v-720p" = 'scripts:inference_wan2_2_i2v_720p'
-inference-v2v-ms = 'scripts:inference_v2v_ms'
-inference-vc1-i2v-320x512 = 'scripts:inference_vc1_i2v_320x512'
-inference-vc1-t2v-576x1024 = 'scripts:inference_vc1_t2v_576x1024'
-inference-vc2-t2v-320x512 = 'scripts:inference_vc2_t2v_320x512'
-inference-vc2-t2v-320x512-lora = 'scripts:inference_vc2_t2v_320x512_lora'
-train-cogvideox-i2v-lora = 'scripts:train_cogvideox_i2v_lora'
-train-cogvideox-i2v-fullft = 'scripts:train_cogvideox_i2v_fullft'
-train-cogvideox-t2v-lora = 'scripts:train_cogvideox_t2v_lora'
-train-cogvideox-t2v-fullft = 'scripts:train_cogvideox_t2v_fullft'
-train-dynamicrafter = 'scripts:train_dynamicrafter'
 train-flux-lora = 'scripts:train_flux_lora'
-train-opensorav10 = 'scripts:train_opensorav10'
-train-videocrafter-lora = 'scripts:train_videocrafter_lora'
-train-videocrafter-v2 = 'scripts:train_videocrafter_v2'
-train-hunyuan-t2v-lora = 'scripts:train_hunyuan_t2v_lora'
-train-wan2-1-i2v-lora = 'scripts:train_wan2_1_i2v_lora'
-train-wan2-1-i2v-fullft = 'scripts:train_wan2_1_i2v_fullft'
 train-wan2-1-t2v-lora = 'scripts:train_wan2_1_t2v_lora'
-train-wan2-1-t2v-fullft = 'scripts:train_wan2_1_t2v_fullft'
 
 [tool.pytest.ini_options]
 markers = [
@@ -293,9 +238,9 @@ mypy_path = "typings"
 [tool.ruff]
 select = ["E", "F", "C90"]
 ignore = []
-exclude = ["videotuna/vendor/simpletuner"]
+exclude = []
 
 [tool.pyrefly]
 search-path = ["typings"]
 project-includes = ["videotuna/**", "scripts/**", "tests/**"]
-project-excludes = ["videotuna/vendor/simpletuner/**"]
+project-excludes = []

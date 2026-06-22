@@ -81,7 +81,7 @@ def test_provisioning_yaml_structure():
     data = yaml.safe_load(prov_path.read_text(encoding="utf-8"))
     assert data["version"] == 1
     assert "git_repos" in data
-    assert any("VideoTuna" in r.get("dest", "") for r in data["git_repos"])
+    assert any("PrivTune" in r.get("dest", "") or "VideoTuna" in r.get("dest", "") for r in data["git_repos"])
     assert "post_commands" in data
     assert any("bootstrap.sh" in c for c in data["post_commands"])
 

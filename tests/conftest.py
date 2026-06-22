@@ -25,6 +25,38 @@ def _suppress_third_party_import_warnings():
             category=UserWarning,
             module=r"colossalai\..*",
         )
+        warnings.filterwarnings(
+            "ignore",
+            message="builtin type SwigPyPacked has no __module__ attribute",
+            category=DeprecationWarning,
+        )
+        warnings.filterwarnings(
+            "ignore",
+            message="builtin type SwigPyObject has no __module__ attribute",
+            category=DeprecationWarning,
+        )
+        warnings.filterwarnings(
+            "ignore",
+            message="User provided device_type of 'cuda', but CUDA is not available",
+            category=UserWarning,
+        )
+        warnings.filterwarnings(
+            "ignore",
+            message="`torch.cuda.amp.autocast",
+            category=FutureWarning,
+        )
+        warnings.filterwarnings(
+            "ignore",
+            message="`torch.utils._pytree._register_pytree_node` is deprecated",
+            category=FutureWarning,
+            module=r"colossalai\..*",
+        )
+        warnings.filterwarnings(
+            "ignore",
+            message="is already registered as pytree node",
+            category=UserWarning,
+            module=r"torch\..*",
+        )
         yield
 
 

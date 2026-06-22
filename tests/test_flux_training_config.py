@@ -5,8 +5,8 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-FLUX_CONFIG = REPO_ROOT / "configs" / "006_flux" / "config.json"
-FLUX_DATA = REPO_ROOT / "configs" / "006_flux" / "multidatabackend.json"
+FLUX_CONFIG = REPO_ROOT / "configs" / "006_flux" / "domain_adult_t2i.json"
+FLUX_DATA = REPO_ROOT / "configs" / "006_flux" / "domain_adult_t2i_data.json"
 
 
 def test_flux_training_config_json_loads():
@@ -14,7 +14,7 @@ def test_flux_training_config_json_loads():
         config = json.load(f)
     assert config["--model_family"] == "flux"
     assert config["--pretrained_model_name_or_path"] == "black-forest-labs/FLUX.1-dev"
-    assert config["--data_backend_config"] == "configs/006_flux/multidatabackend.json"
+    assert config["--data_backend_config"] == "configs/006_flux/domain_adult_t2i_data.json"
 
 
 def test_flux_multidatabackend_json_loads():
@@ -31,7 +31,7 @@ def test_flux_training_config_loader():
     train_cfg, data_cfg = load_train_config(FLUX_CONFIG, FLUX_DATA)
     assert train_cfg.model_family == "flux"
     assert train_cfg.lora_rank == 4
-    assert train_cfg.max_train_steps == 12000
+    assert train_cfg.max_train_steps == 2000
     assert data_cfg.caption_strategy == "filename"
 
 

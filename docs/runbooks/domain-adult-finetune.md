@@ -7,7 +7,7 @@ All training data must be rights-cleared and consented. Never commit datasets, w
 ## Prerequisites
 
 ```bash
-cd /home/menes/Projects/VideoTuna
+cd /path/to/PrivTune
 poetry install -E cuda --with training   # or: poetry install -E rocm --with training
 poetry run install-deepspeed             # required for Wan LoRA (ZeRO-3 offload)
 huggingface-cli login                    # FLUX.1-dev is gated on Hugging Face
@@ -23,9 +23,7 @@ huggingface-cli login                    # FLUX.1-dev is gated on Hugging Face
 | Phase | Model | Peak VRAM | GPUs | Rough time | Limitation |
 |-------|-------|-----------|------|------------|------------|
 | 1 — T2I | Flux LoRA @ 512px | ~24–40 GB | 1 | 2000 steps ≈ hours on A100-class | Trains **FLUX.1-dev**; use `flux1_dev.yaml` / `inference-flux-lora`, not FLUX.2 |
-| 2 — T2V | Wan 2.1 T2V LoRA @ 480×832×81 | ~38 GB | 1 + DeepSpeed | ~41 s/epoch on H800 | Trains **Wan 2.1**; Wan 2.2 is inference-only upgrade |
-
-**Fallback (video, if Wan VRAM unavailable):** CogVideoX 5B T2V LoRA (`poetry run train-cogvideox-t2v-lora`) — legacy 5B, not CogVideoX 1.5.
+| 2 — T2V | Wan 2.1 T2V LoRA @ 480×832×81 | ~38 GB | 1 + DeepSpeed | ~41 s/epoch on H800 | Trains **Wan 2.1**; validate on **Wan 2.2 Diffusers** (Phase 3) |
 
 ---
 
@@ -159,9 +157,17 @@ poetry run python scripts/inference_new.py \
   --enable_model_cpu_offload
 ```
 
-See also `shscripts/inference_wanvideo_t2v_lora.sh`.
+For **Wan 2.2 Diffusers 720p** production validation (rental GPU), pass the Phase 2 checkpoint:
 
-For **Wan 2.2 Diffusers 720p** production inference (rental GPU), see [wan2.2-inference-profile.md](wan2.2-inference-profile.md).
+```bash
+poetry run inference-wan2.2-t2v-720p \
+  --config configs/inference/presets/balanced_wan2_2_720p.yaml \
+  --trained_ckpt results/train/train_wan_domain_t2v_lora_<ts>/checkpoints/only_trained_model/denoiser-000-000000025.ckpt \
+  --prompt "sks_style, cinematic lighting" \
+  --enable_model_cpu_offload
+```
+
+See [wan2.2-inference-profile.md](wan2.2-inference-profile.md).
 
 ---
 
@@ -194,10 +200,8 @@ poetry run test tests/test_import_smoke.py -q
 
 ## Known limitations
 
-- **FLUX.1 vs FLUX.2:** Training uses FLUX.1-dev only; FLUX.2 is inference upgrade ([`docs/MODEL_VERSIONS.md`](../MODEL_VERSIONS.md)).
-- **Wan 2.1 vs 2.2:** LoRA trains on Wan 2.1; Wan 2.2 Diffusers presets do not load 2.1 Lightning checkpoints.
-- **CogVideoX 1.5:** No 1.5 training path; CogVideoX LoRA uses legacy 5B weights.
-- **Hunyuan:** Not used here — requires 2 GPUs and checkpoint conversion.
+- **FLUX.1 only:** Training uses FLUX.1-dev; see [`docs/MODEL_VERSIONS.md`](../MODEL_VERSIONS.md).
+- **Wan 2.1 → 2.2:** LoRA trains on Wan 2.1 native; Wan 2.2 Diffusers validation uses `videotuna/utils/wan_lora_bridge.py`. GPU validation required before production.
 
 ## Related docs
 

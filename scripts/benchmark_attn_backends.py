@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Benchmark attention backends on a small Diffusers inference smoke run.
+Benchmark attention backends on Wan 2.2 Diffusers inference smoke runs.
 
 Example:
     poetry run benchmark-attn-backends
     poetry run benchmark-attn-backends --json-out results/bench_attn.json
-    poetry run benchmark-attn-backends --pipeline wan --resolutions 480
+    poetry run benchmark-attn-backends --resolutions 480
     VIDEOTUNA_ATTN_BACKEND=sdpa poetry run benchmark-attn-backends --json
 """
 
@@ -17,10 +17,10 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Type
+from typing import Any, Dict, List
 
 import torch
-from diffusers import CogVideoXPipeline, WanPipeline
+from diffusers import WanPipeline
 
 from videotuna.utils.attention import (
     apply_diffusers_attention_backend,
@@ -34,27 +34,12 @@ from videotuna.utils.device_utils import (
     synchronize_accelerator,
 )
 
-PipelineKind = Literal["cogvideox", "wan"]
-
-_PIPELINE_DEFAULTS: Dict[PipelineKind, Dict[str, Any]] = {
-    "cogvideox": {
-        "model_path": "THUDM/CogVideoX-2b",
-        "pipeline_cls": CogVideoXPipeline,
-        "default_heights": [None],
-        "default_num_frames": 49,
-    },
-    "wan": {
-        "model_path": "Wan-AI/Wan2.2-T2V-A14B-Diffusers",
-        "pipeline_cls": WanPipeline,
-        "default_heights": [480],
-        "default_num_frames": 17,
-    },
-}
+DEFAULT_MODEL = "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
+DEFAULT_HEIGHTS = [480]
+DEFAULT_NUM_FRAMES = 17
 
 
 def _verify_torch_vision_stack() -> None:
-    """Fail fast when torch and torchvision are from different accelerator builds."""
-    import torch
     import torch.version
     import torchvision
 
@@ -66,11 +51,6 @@ def _verify_torch_vision_stack() -> None:
             f"torch/torchvision build mismatch: torch={torch_build} (ROCm), "
             f"torchvision={tv_build} (CUDA). Run: poetry run install-rocm"
         )
-    if hip is None and "+rocm" in torch_build.lower():
-        raise RuntimeError(
-            f"torch reports ROCm build ({torch_build}) but HIP is unavailable. "
-            "Run: poetry run install-rocm"
-        )
 
 
 def _compute_capability() -> str | None:
@@ -80,27 +60,8 @@ def _compute_capability() -> str | None:
     return f"{major}.{minor}"
 
 
-def _resolve_pipeline_kind(name: str) -> PipelineKind:
-    kind = name.strip().lower()
-    if kind not in _PIPELINE_DEFAULTS:
-        raise ValueError(
-            f"Unknown pipeline {name!r}. Expected cogvideox or wan."
-        )
-    return kind  # type: ignore[return-value]
-
-
-def _load_pipeline(
-    pipeline_kind: PipelineKind,
-    model_path: str,
-    *,
-    enable_offload: bool,
-) -> Any:
-    pipeline_cls: Type[Any] = _PIPELINE_DEFAULTS[pipeline_kind]["pipeline_cls"]
-    loaded = pipeline_cls.from_pretrained(
-        model_path,
-        torch_dtype=torch.bfloat16,
-    )
-    assert loaded is not None
+def _load_pipeline(model_path: str, *, enable_offload: bool) -> WanPipeline:
+    loaded = WanPipeline.from_pretrained(model_path, torch_dtype=torch.bfloat16)
     if enable_offload:
         loaded.enable_model_cpu_offload()
         return loaded
@@ -115,10 +76,9 @@ def _run_backend(
     num_inference_steps: int,
     seed: int,
     compute_backend: str,
-    pipeline_kind: PipelineKind,
     height: int | None = None,
     width: int | None = None,
-    num_frames: int = 49,
+    num_frames: int = DEFAULT_NUM_FRAMES,
     enable_offload: bool = False,
 ) -> Dict[str, Any]:
     os.environ["VIDEOTUNA_ATTN_BACKEND"] = backend
@@ -132,11 +92,7 @@ def _run_backend(
     empty_accelerator_cache()
     torch.cuda.reset_peak_memory_stats()
 
-    pipe = _load_pipeline(
-        pipeline_kind,
-        model_path,
-        enable_offload=enable_offload,
-    )
+    pipe = _load_pipeline(model_path, enable_offload=enable_offload)
 
     transformer = getattr(pipe, "transformer", None)
     if transformer is not None:
@@ -153,12 +109,9 @@ def _run_backend(
     }
     if height is not None:
         pipe_kwargs["height"] = height
-    if width is not None:
         pipe_kwargs["width"] = width
-    if height is not None:
         pipe_kwargs["num_frames"] = num_frames
 
-    # Warm-up (excludes compile / first-kernel overhead from timed region).
     _ = pipe(**pipe_kwargs)
 
     synchronize_accelerator()
@@ -190,7 +143,7 @@ def _run_backend(
     result: Dict[str, Any] = {
         "backend": backend,
         "compute_backend": compute_backend,
-        "pipeline": pipeline_kind,
+        "pipeline": "wan",
         "seconds": round(elapsed, 3),
         "peak_vram_gb": round(peak_vram_gb, 3),
         "num_inference_steps": num_inference_steps,
@@ -206,72 +159,14 @@ def _run_backend(
     return result
 
 
-def _run_benchmark_matrix(
-    *,
-    backends: List[str],
-    heights: List[int | None],
-    pipeline_kind: PipelineKind,
-    model_path: str,
-    prompt: str,
-    num_inference_steps: int,
-    seed: int,
-    compute_backend: str,
-    num_frames: int,
-    enable_offload: bool,
-) -> List[Dict[str, Any]]:
-    results: List[Dict[str, Any]] = []
-    for height in heights:
-        width = int(height * 16 / 9) if height else None
-        for backend in backends:
-            label = backend if height is None else f"{backend}@{height}p"
-            print(
-                f"Running pipeline={pipeline_kind} backend={label} "
-                f"({compute_backend}) ...",
-                file=sys.stderr,
-            )
-            try:
-                results.append(
-                    _run_backend(
-                        backend=backend,
-                        model_path=model_path,
-                        prompt=prompt,
-                        num_inference_steps=num_inference_steps,
-                        seed=seed,
-                        compute_backend=compute_backend,
-                        pipeline_kind=pipeline_kind,
-                        height=height,
-                        width=width,
-                        num_frames=num_frames,
-                        enable_offload=enable_offload,
-                    )
-                )
-            except Exception as exc:
-                results.append(
-                    {
-                        "backend": backend,
-                        "compute_backend": compute_backend,
-                        "pipeline": pipeline_kind,
-                        "height": height,
-                        "error": str(exc),
-                    }
-                )
-    return results
-
-
 def main(argv: List[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Benchmark VideoTuna attention backends."
-    )
-    parser.add_argument(
-        "--pipeline",
-        choices=["cogvideox", "wan"],
-        default="cogvideox",
-        help="Diffusers pipeline family to benchmark (default: cogvideox).",
+        description="Benchmark PrivTune attention backends on Wan 2.2 Diffusers."
     )
     parser.add_argument(
         "--model-path",
         default=None,
-        help="Hugging Face model id or local path (default per --pipeline).",
+        help="Hugging Face model id or local path.",
     )
     parser.add_argument(
         "--prompt",
@@ -287,7 +182,7 @@ def main(argv: List[str] | None = None) -> int:
     parser.add_argument(
         "--num-frames",
         type=int,
-        default=None,
+        default=DEFAULT_NUM_FRAMES,
         help="Frame count when benchmarking with explicit resolution.",
     )
     parser.add_argument(
@@ -305,10 +200,7 @@ def main(argv: List[str] | None = None) -> int:
     parser.add_argument(
         "--resolutions",
         default=None,
-        help=(
-            "Comma-separated heights for a resolution matrix "
-            "(width keeps 16:9 aspect)."
-        ),
+        help="Comma-separated heights (width keeps 16:9 aspect).",
     )
     parser.add_argument(
         "--json-out",
@@ -321,14 +213,9 @@ def main(argv: List[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     _verify_torch_vision_stack()
-    pipeline_kind = _resolve_pipeline_kind(args.pipeline)
-    pipeline_defaults = _PIPELINE_DEFAULTS[pipeline_kind]
-    model_path = (
-        args.model_path
-        or os.environ.get("VIDEOTUNA_BENCH_MODEL")
-        or pipeline_defaults["model_path"]
+    model_path = args.model_path or os.environ.get(
+        "VIDEOTUNA_BENCH_MODEL", DEFAULT_MODEL
     )
-    num_frames = args.num_frames or pipeline_defaults["default_num_frames"]
 
     compute_backend = detect_compute_backend()
     backends = args.backends or ["eager", "sdpa"]
@@ -344,20 +231,39 @@ def main(argv: List[str] | None = None) -> int:
             int(h.strip()) for h in args.resolutions.split(",") if h.strip()
         ]
     else:
-        heights = list(pipeline_defaults["default_heights"])
+        heights = list(DEFAULT_HEIGHTS)
 
-    results = _run_benchmark_matrix(
-        backends=backends,
-        heights=heights,
-        pipeline_kind=pipeline_kind,
-        model_path=model_path,
-        prompt=args.prompt,
-        num_inference_steps=args.num_inference_steps,
-        seed=args.seed,
-        compute_backend=compute_backend,
-        num_frames=num_frames,
-        enable_offload=args.enable_offload,
-    )
+    results: List[Dict[str, Any]] = []
+    for height in heights:
+        width = int(height * 16 / 9) if height else None
+        for backend in backends:
+            label = backend if height is None else f"{backend}@{height}p"
+            print(f"Running wan backend={label} ({compute_backend}) ...", file=sys.stderr)
+            try:
+                results.append(
+                    _run_backend(
+                        backend=backend,
+                        model_path=model_path,
+                        prompt=args.prompt,
+                        num_inference_steps=args.num_inference_steps,
+                        seed=args.seed,
+                        compute_backend=compute_backend,
+                        height=height,
+                        width=width,
+                        num_frames=args.num_frames,
+                        enable_offload=args.enable_offload,
+                    )
+                )
+            except Exception as exc:
+                results.append(
+                    {
+                        "backend": backend,
+                        "compute_backend": compute_backend,
+                        "pipeline": "wan",
+                        "height": height,
+                        "error": str(exc),
+                    }
+                )
 
     if args.json_out:
         out_path = Path(args.json_out)
@@ -367,7 +273,7 @@ def main(argv: List[str] | None = None) -> int:
     if args.json:
         print(json.dumps(results, indent=2))
     else:
-        print(f"\nCompute backend: {compute_backend}  pipeline: {pipeline_kind}\n")
+        print(f"\nCompute backend: {compute_backend}  pipeline: wan\n")
         print("| Backend | Seconds | Peak VRAM (GB) | Frames/s |")
         print("| --- | ---: | ---: | ---: |")
         for row in results:
@@ -375,13 +281,14 @@ def main(argv: List[str] | None = None) -> int:
                 print(f"| {row['backend']} | ERROR | {row['error']} | |")
             else:
                 vram = row["peak_vram_gb"]
-                vram_str = f"{vram:.3f}" if vram is not None else "n/a"
                 fps = row.get("frames_per_sec")
-                fps_str = f"{fps:.3f}" if fps is not None else "n/a"
                 label = row["backend"]
                 if row.get("height"):
                     label = f"{label} ({row['height']}p)"
-                print(f"| {label} | {row['seconds']:.3f} | {vram_str} | {fps_str} |")
+                fps_str = f"{fps:.3f}" if fps is not None else "n/a"
+                print(
+                    f"| {label} | {row['seconds']:.3f} | {vram:.3f} | {fps_str} |"
+                )
 
     return 0
 
