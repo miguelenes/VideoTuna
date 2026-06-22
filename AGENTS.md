@@ -87,6 +87,7 @@ poetry run inference-wan2.2-t2v-720p   # Phase 3 — deferred
 poetry run test -q
 poetry run lint
 poetry run format-check
+poetry run type-check   # mypy on typed allowlist only (see pyproject.toml)
 ```
 
 ## Environment variables

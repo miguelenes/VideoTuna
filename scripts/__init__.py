@@ -441,11 +441,16 @@ def coverage_report():
     exit(result.returncode)
 
 
+TYPED_MYPY_PATHS = [
+    "videotuna/training/flux_lora",
+    "videotuna/utils/device_utils.py",
+    "videotuna/utils/wan_lora_bridge.py",
+]
+
+
 def type_check():
-    """
-    Run the type checking
-    """
-    result = subprocess.run(["mypy", "videotuna", "tests"], check=False)
+    """Run mypy on the gradual typed-module allowlist."""
+    result = subprocess.run(["mypy", *TYPED_MYPY_PATHS], check=False)
     exit(result.returncode)
 
 
