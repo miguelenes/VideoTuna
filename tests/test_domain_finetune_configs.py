@@ -7,6 +7,7 @@ import yaml
 from omegaconf import OmegaConf
 
 from videotuna.training.flux_lora.config import load_train_config
+from videotuna.training.wan_lora.config import load_wan_lora_config
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -45,23 +46,23 @@ def test_flux_domain_data_backend_json():
 
 
 def test_wan_domain_yaml_parses():
-    cfg = OmegaConf.load(WAN_DOMAIN_CONFIG)
+    cfg = load_wan_lora_config(WAN_DOMAIN_CONFIG)
     assert cfg.train.name == "train_wan_domain_t2v_lora"
-    csv_path = cfg.train.data.params.train.params.csv_path
+    csv_path = cfg.train.data.params["train"]["params"]["csv_path"]
     assert csv_path == "data/t2v/domain/metadata.csv"
     assert cfg.train.lightning.trainer.max_epochs == 50
     ckpt_cb = cfg.train.lightning.callbacks.model_checkpoint.params
-    assert ckpt_cb.every_n_train_steps == 25
+    assert ckpt_cb["every_n_train_steps"] == 25
     assert cfg.flow.params.ckpt_path == "checkpoints/wan/Wan2.1-T2V-14B"
 
 
 def test_wan_i2v_domain_yaml_parses():
-    cfg = OmegaConf.load(WAN_I2V_DOMAIN_CONFIG)
+    cfg = load_wan_lora_config(WAN_I2V_DOMAIN_CONFIG)
     assert cfg.train.name == "train_wan_domain_i2v_lora"
     assert cfg.flow.params.task == "i2v-14B"
-    csv_path = cfg.train.data.params.train.params.csv_path
+    csv_path = cfg.train.data.params["train"]["params"]["csv_path"]
     assert csv_path == "data/i2v/domain/metadata.csv"
-    assert cfg.train.data.params.train.params.image_to_video is False
+    assert cfg.train.data.params["train"]["params"]["image_to_video"] is False
     assert cfg.inference.mode == "i2v"
     assert cfg.flow.params.ckpt_path == "checkpoints/wan/Wan2.1-I2V-14B-480P"
 
