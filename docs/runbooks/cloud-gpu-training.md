@@ -25,7 +25,6 @@ Never commit datasets, weights, API keys, or `results/` to git.
 | `WORKSPACE` | `/workspace` |
 | `PROVISIONING_MANIFEST` | `https://raw.githubusercontent.com/miguelenes/VideoTuna/main/cloud/vast/provisioning.yaml` |
 | `HF_TOKEN` | `hf_...` (required for FLUX.1-dev; accept license on Hugging Face first) |
-| `WANDB_API_KEY` | optional |
 | `VIDEOTUNA_ATTN_BACKEND` | `auto` or `sdpa` if flash-attn not installed |
 
 ### Fast model downloads (opt-in)
@@ -105,7 +104,12 @@ supervisorctl status videotuna-train
 nvidia-smi -l 5
 ```
 
-Optional **Weights & Biases:** set `WANDB_API_KEY` and `WANDB_PROJECT` in `.env` (training dependency group includes `wandb`).
+**TensorBoard (training metrics):** event files live under each run directory (Flux: `{output_dir}/tensorboard/`; Wan: `{workdir}/tensorboard/`). View locally with SSH port-forward:
+
+```bash
+tensorboard --logdir /workspace/PrivTune/results/train --bind_all --port 6006
+# then open http://<instance-ip>:6006 from your laptop
+```
 
 Smoke run logs: `/workspace/results/smoke-train.log`.
 

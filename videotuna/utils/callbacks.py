@@ -463,6 +463,14 @@ class TrainingMetricsCallback(Callback):
             f"Epoch {trainer.current_epoch}: time={entry['epoch_time_s']}s "
             f"peak_vram={entry['peak_vram_gb']}GB"
         )
+        if trainer.logger is not None:
+            trainer.logger.log_metrics(
+                {
+                    "epoch_time_s": entry["epoch_time_s"],
+                    "peak_vram_gb": entry["peak_vram_gb"],
+                },
+                step=trainer.global_step,
+            )
         save_dir = self.save_dir or getattr(pl_module, "logdir", None)
         if save_dir and trainer.global_rank == 0:
             import json

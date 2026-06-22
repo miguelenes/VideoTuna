@@ -28,6 +28,32 @@ huggingface-cli login                    # FLUX.1-dev is gated on Hugging Face
 
 ---
 
+## Training metrics
+
+PrivTune uses **TensorBoard only** for training experiment tracking (no wandb, no Trackio). Console logs (stdlib / loguru / tqdm) are for tailing only — not the canonical metrics store.
+
+| Phase | Canonical metrics path | Logged scalars | Other artifacts (not loggers) |
+|-------|------------------------|----------------|-------------------------------|
+| **1 — Flux T2I** | `{output_dir}/tensorboard/` | `train/loss`, `train/lr` | LoRA checkpoints, `training_config.json` |
+| **2 — Wan T2V** | `{workdir}/tensorboard/` | `train/loss`, LR monitor, `epoch_time_s`, `peak_vram_gb` | `metrics.json` (epoch summary export), `images/train/` previews, `loginfo/*.txt` |
+| **2.5 — Wan I2V** | Same as T2V | Same | Same |
+
+View locally:
+
+```bash
+# Flux (single run)
+tensorboard --logdir results/train/flux-domain-adult
+
+# Wan (all runs under logdir)
+tensorboard --logdir results/train
+```
+
+On cloud GPUs, see [cloud-gpu-training.md](cloud-gpu-training.md) for SSH port-forward to TensorBoard.
+
+**Note:** Wan `ImageLogger` previews require a non-stub `log_images` implementation in `wanvideo.py`; until then, rely on smoke inference for visual QA.
+
+---
+
 ## Phase 1 — Flux T2I LoRA
 
 ### Dataset layout

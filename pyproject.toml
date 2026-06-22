@@ -112,7 +112,6 @@ optional = true
 [tool.poetry.group.training.dependencies]
 deepspeed = "0.19.2"
 pytorch-lightning = "2.4.0"
-wandb = "0.17.8"
 tensorboard = "^2.19.0"
 pandas = "2.2.2"
 scikit-learn = "^1.6.1"
@@ -138,7 +137,6 @@ package = true
 training = [
     "deepspeed==0.19.2",
     "pytorch-lightning==2.4.0",
-    "wandb==0.17.8",
     "tensorboard>=2.19.0",
     "pandas==2.2.2",
     "scikit-learn>=1.6.1",

@@ -76,13 +76,6 @@ EOF
       echo "HF_TOKEN=${HF_TOKEN}" >>"${env_file}"
     fi
   fi
-  if [[ -n "${WANDB_API_KEY:-}" ]]; then
-    if grep -q '^WANDB_API_KEY=' "${env_file}"; then
-      sed -i "s|^WANDB_API_KEY=.*|WANDB_API_KEY=${WANDB_API_KEY}|" "${env_file}"
-    else
-      echo "WANDB_API_KEY=${WANDB_API_KEY}" >>"${env_file}"
-    fi
-  fi
   if [[ -n "${VIDEOTUNA_ATTN_BACKEND:-}" ]]; then
     sed -i "s|^VIDEOTUNA_ATTN_BACKEND=.*|VIDEOTUNA_ATTN_BACKEND=${VIDEOTUNA_ATTN_BACKEND}|" \
       "${env_file}" || echo "VIDEOTUNA_ATTN_BACKEND=${VIDEOTUNA_ATTN_BACKEND}" >>"${env_file}"

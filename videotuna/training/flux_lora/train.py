@@ -11,7 +11,7 @@ from typing import Any
 import torch
 import torch.nn.functional as F
 from accelerate import Accelerator
-from accelerate.utils import set_seed
+from accelerate.utils import ProjectConfiguration, set_seed
 from diffusers import FlowMatchEulerDiscreteScheduler, FluxPipeline
 from diffusers.optimization import get_scheduler
 from torch.utils.data import DataLoader
@@ -27,6 +27,35 @@ from videotuna.training.flux_lora.dataset import FluxLoraImageDataset
 from videotuna.training.flux_lora.model_utils import load_flux_training_models
 
 logger = logging.getLogger(__name__)
+
+
+def create_flux_accelerator(
+    output_dir: Path,
+    *,
+    mixed_precision: str,
+    gradient_accumulation_steps: int = 1,
+) -> Accelerator:
+    """Build an Accelerate instance with local TensorBoard experiment tracking."""
+    project_config = ProjectConfiguration(
+        project_dir=str(output_dir),
+        logging_dir=str(output_dir / "tensorboard"),
+    )
+    return Accelerator(
+        gradient_accumulation_steps=gradient_accumulation_steps,
+        mixed_precision=mixed_precision,
+        log_with="tensorboard",
+        project_config=project_config,
+    )
+
+
+def _flux_tracker_config(config: FluxLoraTrainConfig) -> dict[str, Any]:
+    return {
+        "lora_rank": config.lora_rank,
+        "learning_rate": config.learning_rate,
+        "max_train_steps": config.max_train_steps,
+        "resolution": config.resolution,
+        "pretrained_model_name_or_path": config.pretrained_model_name_or_path,
+    }
 
 
 def _prepare_batch_latents(vae, pixel_values, weight_dtype):
@@ -102,8 +131,8 @@ def train(config: FluxLoraTrainConfig, data_config) -> None:
     output_dir = Path(config.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    accelerator = Accelerator(
-        gradient_accumulation_steps=1,
+    accelerator = create_flux_accelerator(
+        output_dir,
         mixed_precision=config.mixed_precision,
     )
     if accelerator.is_main_process:
@@ -166,6 +195,7 @@ def train(config: FluxLoraTrainConfig, data_config) -> None:
         transformer, optimizer, dataloader, lr_scheduler
     )
     pipeline.transformer = accelerator.unwrap_model(transformer)
+    accelerator.init_trackers("flux-domain-lora", config=_flux_tracker_config(config))
 
     progress = tqdm(
         range(max_train_steps),
@@ -194,6 +224,13 @@ def train(config: FluxLoraTrainConfig, data_config) -> None:
                 global_step += 1
                 progress.update(1)
                 progress.set_postfix(loss=f"{loss.item():.4f}", step=global_step)
+                accelerator.log(
+                    {
+                        "train/loss": loss.item(),
+                        "train/lr": lr_scheduler.get_last_lr()[0],
+                    },
+                    step=global_step,
+                )
 
                 if (
                     global_step % config.checkpointing_steps == 0
@@ -207,6 +244,7 @@ def train(config: FluxLoraTrainConfig, data_config) -> None:
                 if global_step >= max_train_steps:
                     break
 
+    accelerator.end_training()
     if accelerator.is_main_process:
         with open(output_dir / "training_config.json", "w") as f:
             json.dump(

@@ -94,3 +94,24 @@ def test_checkpoint_save_with_mock_transformer(tmp_path):
     path = save_lora_checkpoint(transformer, tmp_path, step=1)
     assert path.is_dir()
     assert any(path.iterdir())
+
+
+def test_create_flux_accelerator_uses_tensorboard(tmp_path, monkeypatch):
+    from unittest import mock
+
+    from videotuna.training.flux_lora.train import create_flux_accelerator
+
+    captured: dict = {}
+
+    def fake_accelerator(**kwargs):
+        captured.update(kwargs)
+        return mock.MagicMock()
+
+    monkeypatch.setattr(
+        "videotuna.training.flux_lora.train.Accelerator",
+        fake_accelerator,
+    )
+    create_flux_accelerator(tmp_path, mixed_precision="bf16")
+    assert captured["log_with"] == "tensorboard"
+    assert captured["project_config"].logging_dir == str(tmp_path / "tensorboard")
+    assert captured["project_config"].project_dir == str(tmp_path)
