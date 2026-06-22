@@ -32,7 +32,6 @@ from videotuna.utils.distributions import DiagonalGaussianDistribution
 from videotuna.utils.ema import LitEma
 
 from videotuna.models.lvdm.models.rlhf_utils.batch_ddim import batch_ddim_sampling
-from videotuna.models.lvdm.models.rlhf_utils.reward_fn import aesthetic_loss_fn
 from videotuna.models.lvdm.modules.encoders.ip_resampler import ImageProjModel, Resampler
 from videotuna.models.lvdm.modules.utils import (
     default,
@@ -1209,6 +1208,8 @@ class RewardLVDMTrainer(LVDMFlow):
             loss_type = self.reward_loss_type
 
         if loss_type == "aesthetic":
+            from videotuna.models.lvdm.models.rlhf_utils.reward_fn import aesthetic_loss_fn
+
             self.loss_fn = aesthetic_loss_fn(
                 grad_scale=0.1,
                 aesthetic_target=10,

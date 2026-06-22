@@ -6,8 +6,8 @@ import torch.distributed as dist
 import torch.nn as nn
 from einops import rearrange
 from rotary_embedding_torch import RotaryEmbedding
-from timm.models.layers import DropPath
-from timm.models.vision_transformer import Mlp
+from timm.layers import DropPath
+from timm.layers import Mlp
 from transformers import PretrainedConfig, PreTrainedModel
 
 from videotuna.models.opensora.acceleration.checkpoint import auto_grad_checkpoint

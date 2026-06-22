@@ -21,7 +21,7 @@ import torch.nn.functional as F
 import torch.utils.checkpoint
 import xformers.ops
 from einops import rearrange
-from timm.models.vision_transformer import Mlp
+from timm.layers import Mlp
 
 from videotuna.models.opensora.acceleration.communications import (
     all_to_all,
