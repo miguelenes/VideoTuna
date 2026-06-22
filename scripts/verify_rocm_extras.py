@@ -36,12 +36,6 @@ def main() -> int:
         if pkg in CUDA_ONLY_IN_ROCM or pkg.startswith(CUDA_ONLY_PREFIXES):
             errors.append(f"CUDA-only package {pkg!r} listed in rocm extra")
 
-    deps = poetry.get("dependencies", {})
-    rocm_sources = {
-        name
-        for name, spec in deps.items()
-        if isinstance(spec, dict) and spec.get("source") == "pytorch-rocm642"
-    }
     # torch uses install-rocm script; rocm extra is intentionally empty
     if "pytorch-rocm642" not in {
         s["name"] for s in data.get("tool", {}).get("poetry", {}).get("source", [])

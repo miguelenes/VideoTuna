@@ -35,7 +35,8 @@ def _require_cuda_backend(installer_name: str) -> None:
 
 def install_deepspeed():
     """
-    Install DeepSpeed with CUDA 12.6 toolkit support (rebuilds against the active torch).
+    Install DeepSpeed with CUDA 12.6 toolkit support
+    (rebuilds against the active torch).
 
     When conda is unavailable, skips the CUDA toolkit step and installs via pip.
     If deepspeed>=0.19.2 is already importable, exits successfully without rebuilding.
@@ -368,7 +369,7 @@ def install_flash_attn_rocm():
 
 
 _FORMAT_TARGETS = ["."]
-_LINT_TARGETS = ["videotuna", "tests"]
+_LINT_TARGETS = ["videotuna", "tests", "scripts", "tools"]
 
 
 def code_format(check=False):
@@ -410,7 +411,7 @@ def lint():
     Run the linter
     """
     result = subprocess.run(
-        ["ruff", "check", "videotuna", "tests"] + sys.argv[1:], check=False
+        ["ruff", "check", *_LINT_TARGETS] + sys.argv[1:], check=False
     )
     exit(result.returncode)
 

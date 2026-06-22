@@ -32,7 +32,8 @@ def get_parser(**parser_kwargs):
         nargs="*",
         metavar="base_config.yaml",
         help="paths to base configs. Loaded from left-to-right. "
-        "Parameters can be overwritten or added with command-line options of the form `--key value`.",
+        "Parameters can be overwritten or added with command-line options "
+        "of the form `--key value`.",
         default=list(),
     )
     parser.add_argument(

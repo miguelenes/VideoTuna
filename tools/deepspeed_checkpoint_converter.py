@@ -6,7 +6,7 @@ from deepspeed.utils.zero_to_fp32 import get_fp32_state_dict_from_zero_checkpoin
 # Example: results/train/train_wan_domain_t2v_lora/checkpoints/epoch=161.ckpt
 checkpoint_dir = "path/to/your/checkpoint_dir"
 
-# Path to save your converted checkpoint. The checkpoint can be directly loaded with "torch.load" function
+# Path to save your converted checkpoint. Load with torch.load().
 save_path = "path/to/save/your/checkpoint_dir"
 
 

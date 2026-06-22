@@ -220,6 +220,7 @@ mypy_path = "typings"
 [tool.ruff]
 line-length = 88
 target-version = "py311"
+exclude = ["tools/data_process"]
 
 [tool.ruff.lint]
 select = ["E", "F", "C90", "I"]

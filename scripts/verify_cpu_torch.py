@@ -29,7 +29,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Verify CPU-only PyTorch install for VideoTuna."
     )
-    args = parser.parse_args(argv)
+    parser.parse_args(argv)
 
     errors: list[str] = []
     backend = detect_compute_backend()

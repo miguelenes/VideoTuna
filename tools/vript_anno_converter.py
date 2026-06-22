@@ -77,7 +77,6 @@ def main(input_path: str, output_path: str, video_root: str):
         caption_data = data["caption"]
         caption = ""
         for caption_keys in caption_data.keys():
-            caption_id = caption_keys
             caption_text = caption_data[caption_keys]
             if not caption_text.endswith("."):
                 caption_text += "."
@@ -93,5 +92,7 @@ def main(input_path: str, output_path: str, video_root: str):
 
 
 if __name__ == "__main__":
-    # python vript_anno_converter.py --input-path {ROOT}/Vript/vript_captions/vript_short_videos_captions.jsonl --output-path ./test.csv --video-root {ROOT}/Vript/vript_short_videos_clips
+    # Example:
+    # python vript_anno_converter.py --input-path {ROOT}/Vript/...jsonl
+    #   --output-path ./test.csv --video-root {ROOT}/Vript/...clips
     app()
