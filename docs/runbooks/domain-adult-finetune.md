@@ -139,7 +139,7 @@ hf download Wan-AI/Wan2.1-T2V-14B --local-dir checkpoints/wan/Wan2.1-T2V-14B
 
 ```bash
 poetry run train-wan2-1-t2v-lora \
-  --config configs/008_wanvideo/wan2_1_t2v_14B_lora_domain.yaml
+  --base configs/008_wanvideo/wan2_1_t2v_14B_lora_domain.yaml
 ```
 
 Checkpoint example:
@@ -201,6 +201,7 @@ poetry run test tests/test_import_smoke.py -q
 
 ## Related docs
 
+- [`docs/runbooks/cloud-gpu-training.md`](cloud-gpu-training.md) — Vast.ai / rented GPU provisioning and Syncthing workflow
 - [`docs/finetune_flux.md`](../finetune_flux.md)
 - [`docs/finetune_wan.md`](../finetune_wan.md)
 - [`docs/checkpoints.md`](../checkpoints.md)

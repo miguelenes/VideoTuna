@@ -22,6 +22,8 @@ outputs/
 data/t2i/domain/
 data/t2v/domain/
 
+cloud/vast/.env
+
 HPSv2/
 SwissArmyTransformer/
 
