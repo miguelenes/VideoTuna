@@ -122,7 +122,7 @@ optional = true
 
 [tool.poetry.group.dev.dependencies]
 mypy = "^1.11.2"
-pytest = "7.2.0"
+pytest = "^9.1"
 pre-commit = "^4.1.0"
 coverage = "^7.6.1"
 ruff = "^0.6.8"
@@ -145,7 +145,7 @@ training = [
 ]
 dev = [
     "mypy>=1.11.2",
-    "pytest==7.2.0",
+    "pytest>=9.1,<10",
     "pre-commit>=4.1.0",
     "coverage>=7.6.1",
     "ruff>=0.6.8",
@@ -204,6 +204,7 @@ validate-domain-i2v = 'videotuna.cli.inference_app:validate_domain_i2v_entry'
 "inference-wan2.2-i2v-720p" = 'videotuna.cli.inference_app:inference_wan2_2_i2v_720p_entry'
 
 [tool.pytest.ini_options]
+testpaths = ["tests"]
 markers = [
     "gpu: tests that require an NVIDIA/ROCm GPU (skipped when torch.cuda.is_available() is False)",
     "rocm: tests that require an AMD ROCm GPU",
