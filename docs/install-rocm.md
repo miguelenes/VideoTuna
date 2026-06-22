@@ -46,25 +46,19 @@ poetry run python -c "from videotuna.utils.device_utils import describe_compute_
 ```bash
 export VIDEOTUNA_ATTN_BACKEND=sdpa
 poetry run benchmark-attn-backends --num-inference-steps 2
-poetry run inference-cogvideo-t2v-diffusers --num_inference_steps 2
-poetry run inference-flux-schnell \
-  --config configs/inference/presets/flux_schnell_cpu_smoke.yaml --cpu-smoke
 poetry run inference-wan2.2-t2v-720p \
   --config configs/inference/presets/wan2_2_cpu_smoke.yaml \
   --num_inference_steps 2 --enable_model_cpu_offload
 ```
 
-Per-model presets and attention defaults: [capability-matrix.md](capability-matrix.md).
+Per-model presets: [capability-matrix.md](capability-matrix.md).
 
 ## Model tiers on ROCm
 
 | Tier | Models | Status |
 |------|--------|--------|
-| **A** | CogVideoX, Flux, Mochi, LTX, Hunyuan 1.5 Diffusers, Wan 2.2 Diffusers | Expected to work with `sdpa` + CPU offload |
-| **B** | Native Hunyuan/Wan, Open-Sora, VideoCrafter | Experimental; no flash/xfuser/FP8 |
-| **C** | StepVideo, CogVideo SAT (removed; use Diffusers 1.5), multi-GPU xfuser training | Unsupported |
-
-See [checkpoints.md](checkpoints.md) for download links.
+| **Supported** | Flux T2I, Wan 2.2 Diffusers | Use `sdpa` + CPU offload |
+| **Experimental** | Wan 2.1 native train/infer | No flash/xfuser |
 
 ## NVIDIA install (default)
 
@@ -103,7 +97,7 @@ poetry run install-rocm
 **Out of memory**
 
 - Use `--enable_sequential_cpu_offload`, `--enable_vae_tiling`, `--dtype bf16`
-- Prefer Tier-A diffusers presets over native 720p flows
+- Prefer Wan 2.2 Diffusers presets with `--memory-preset low_vram`
 
 **flash-attn / xformers errors**
 

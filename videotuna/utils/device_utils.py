@@ -21,26 +21,13 @@ _COMPUTE_BACKEND_ENV = "VIDEOTUNA_COMPUTE_BACKEND"
 _CPU_MODE_ENV = "VIDEOTUNA_CPU_MODE"
 _LEGACY_ALLOW_CPU_ENV = "VIDEOTUNA_ALLOW_CPU_INFERENCE"
 
-_STEPVIDEO_FLOW = "videotuna.flow.stepvideo.StepVideoModelFlow"
 _DIFFUSERS_FLOW = "videotuna.flow.diffusers_video.DiffusersVideoFlow"
-_HUNYUAN_FLOW = "videotuna.flow.hunyuanvideo.HunyuanVideoFlow"
 _WAN_FLOW = "videotuna.flow.wanvideo.WanVideoModelFlow"
-_VIDEOCRAFTER_FLOW = "videotuna.flow.videocrafter.VideocrafterFlow"
 
 FLOW_TIERS: dict[str, FlowCapabilityTier] = {
     _DIFFUSERS_FLOW: "cpu_smoke",
-    _HUNYUAN_FLOW: "gpu_required",
     _WAN_FLOW: "gpu_required",
-    _STEPVIDEO_FLOW: "gpu_required",
-    _VIDEOCRAFTER_FLOW: "cpu_smoke",
 }
-
-# Flows that need a GPU for practical 720p video generation (legacy alias).
-_GPU_REQUIRED_FLOW_TARGETS = (
-    _HUNYUAN_FLOW,
-    _WAN_FLOW,
-    _STEPVIDEO_FLOW,
-)
 
 
 @dataclass(frozen=True)
@@ -174,7 +161,7 @@ def _is_production_video_resolution(
     height: int | None,
     width: int | None,
 ) -> bool:
-    """True when H×W matches Tier-A production video presets (720p-class)."""
+    """True when H×W matches production video presets (720p-class)."""
     if height is None or width is None:
         return False
     return (height >= 720 or width >= 1280) or (height >= 480 and width >= 720)
@@ -204,24 +191,13 @@ def _diffusers_flow_tier(
     base: FlowCapabilityTier,
 ) -> FlowCapabilityTier:
     """CPU tier for DiffusersVideoFlow from model family and resolution."""
-    if family == "cogvideox" and variant in ("2b", "2"):
-        return "cpu_smoke"
     if family == "flux" and variant in ("schnell", "1-schnell"):
         return "cpu_smoke"
-    if family == "flux" and variant in (
-        "2-dev",
-        "2-klein-9b",
-        "1-dev",
-        "dev",
-    ):
+    if family == "flux" and variant in ("1-dev", "dev"):
         if height is not None and height >= 512:
             return "gpu_required"
         return "cpu_smoke"
-    if family == "cogvideox" and variant in ("1.5", "5b", "5b-i2v", "1.5-i2v"):
-        if _is_production_video_resolution(height, width):
-            return "gpu_required"
-        return "cpu_smoke"
-    if family in ("mochi", "ltx", "wan", "hunyuan"):
+    if family == "wan":
         if _is_production_video_resolution(height, width):
             return "gpu_required"
         return "cpu_smoke"
@@ -497,7 +473,7 @@ def _tiered_cpu_error_message(
         "  - AMD ROCm: poetry install --extras rocm (see docs/install-rocm.md)\n",
         "What you can do without a GPU:\n"
         "  - Unit tests: poetry run pytest tests/ -m 'not gpu'\n"
-        "  - Tier-A CPU smoke presets: configs/inference/presets/*_cpu_smoke.yaml\n"
+        "  - CPU smoke presets: configs/inference/presets/*_cpu_smoke.yaml\n"
         "  - Full matrix: docs/capability-matrix.md\n",
     ]
     if tier == "gpu_required":
@@ -551,19 +527,6 @@ def require_accelerator_for_flow(
 
     backend = detect_compute_backend()
 
-    if flow_target == _STEPVIDEO_FLOW and backend == "rocm":
-        raise RuntimeError(
-            "StepVideo inference is not supported on AMD ROCm.\n"
-            + _format_hardware_context(f"Flow: {flow_target}")
-            + "StepVideo depends on proprietary CUDA liboptimus libraries and xfuser "
-            "tensor parallel.\n"
-            "Next steps:\n"
-            "  - Low VRAM on NVIDIA: --memory-preset low_vram\n"
-            "  - Flash attention: poetry run install-flash-attn\n"
-            "  - ROCm alternative: poetry run inference-wan2.2-t2v-720p\n"
-            "  - See docs/install-rocm.md for Tier-A/B model compatibility."
-        )
-
     if gpu_is_available() and backend != "cpu":
         logger.info("Inference device: {}", describe_compute_environment())
         if min_vram_gb is not None:
@@ -597,7 +560,7 @@ def require_accelerator_for_flow(
     if (
         mode == "smoke"
         and resolved_tier == "gpu_required"
-        and flow_target in (_HUNYUAN_FLOW, _WAN_FLOW)
+        and flow_target == _WAN_FLOW
         and _is_init_smoke_resolution(height, width, frames=frames)
     ):
         logger.warning(

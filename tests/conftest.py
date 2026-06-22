@@ -15,18 +15,6 @@ def _suppress_third_party_import_warnings():
         warnings.filterwarnings("ignore", category=SentryHubDeprecationWarning)
         warnings.filterwarnings(
             "ignore",
-            message="Please install the latest tensornvme",
-            category=UserWarning,
-            module=r"colossalai\..*",
-        )
-        warnings.filterwarnings(
-            "ignore",
-            message="Please install apex from source",
-            category=UserWarning,
-            module=r"colossalai\..*",
-        )
-        warnings.filterwarnings(
-            "ignore",
             message="builtin type SwigPyPacked has no __module__ attribute",
             category=DeprecationWarning,
         )

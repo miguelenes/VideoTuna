@@ -209,7 +209,7 @@ def get_parser():
         "--dit_weight",
         type=str,
         default=None,
-        help="hunyuan dit weight",
+        help="denoiser weight path for FP8 validation",
     )
     parser.add_argument(
         "--i2v_resolution",
@@ -221,7 +221,7 @@ def get_parser():
         "--lora_rank",
         type=int,
         default=None,
-        help="LoRA rank for CogVideoX adapter scaling (default: 128).",
+        help="LoRA rank override for Diffusers adapter loading (default: 128).",
     )
     add_standard_inference_flags(parser)
     return parser

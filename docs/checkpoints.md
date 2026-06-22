@@ -1,234 +1,54 @@
-
 # Prepare checkpoints
 
-This document contains commands for preparing model checkpoints and the final checkpoint organization structure.
+PrivTune domain training and validation use Hugging Face hub weights (downloaded on first run) or local clones under `checkpoints/`.
 
+## Supported models
 
-### 1. Supported Models
+| Phase | Model | Hub ID | Local path (optional) |
+|-------|-------|--------|----------------------|
+| T2I LoRA | FLUX.1-dev | `black-forest-labs/FLUX.1-dev` | — (HF cache) |
+| T2V LoRA train | Wan 2.1 T2V 14B | `Wan-AI/Wan2.1-T2V-14B` | `checkpoints/wan/Wan2.1-T2V-14B` |
+| T2V validate | Wan 2.2 Diffusers | `Wan-AI/Wan2.2-T2V-A14B-Diffusers` | — (HF cache) |
 
-|T2V-Models|HxWxL|Checkpoints|
-|:---------|:---------|:--------|
-|HunyuanVideo|720x1280x129|[Hugging Face](https://huggingface.co/tencent/HunyuanVideo)
-|Mochi|848x480, 3s|[Hugging Face](https://huggingface.co/genmo/mochi-1-preview)
-|CogVideoX-2B|480x720x49|[Hugging Face](https://huggingface.co/THUDM/CogVideoX-2b)
-|CogVideoX-5B|480x720x49|[Hugging Face](https://huggingface.co/THUDM/CogVideoX-5b)
-|CogVideoX1.5-5B|768x1360x81|[Hugging Face](https://huggingface.co/THUDM/CogVideoX1.5-5B)
-|HunyuanVideo-1.5|720x1280x121|[Hugging Face](https://huggingface.co/hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-720p_t2v)
-|Wan2.2-T2V-A14B|720x1280x81|[Hugging Face](https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B-Diffusers)
-|FLUX.2-dev|T2I 768x1360|[Hugging Face](https://huggingface.co/black-forest-labs/FLUX.2-dev)
-|LTX-Video|512x768x121|[Hugging Face](https://huggingface.co/Lightricks/LTX-Video)
-|Open-Sora 1.0|512×512x16|[Hugging Face](https://huggingface.co/hpcai-tech/Open-Sora/blob/main/OpenSora-v1-HQ-16x512x512.pth)
-|Open-Sora 1.0|256×256x16|[Hugging Face](https://huggingface.co/hpcai-tech/Open-Sora/blob/main/OpenSora-v1-HQ-16x256x256.pth)
-|Open-Sora 1.0|256×256x16|[Hugging Face](https://huggingface.co/hpcai-tech/Open-Sora/blob/main/OpenSora-v1-16x256x256.pth)
-|VideoCrafter2|320x512x16|[Hugging Face](https://huggingface.co/VideoCrafter/VideoCrafter2/blob/main/model.ckpt)
-|VideoCrafter1|576x1024x16|[Hugging Face](https://huggingface.co/VideoCrafter/Text2Video-1024/blob/main/model.ckpt)
-|VideoCrafter1|320x512x16|[Hugging Face](https://huggingface.co/VideoCrafter/Text2Video-512/blob/main/model.ckpt)
+## Compute compatibility
 
-|I2V-Models|HxWxL|Checkpoints|
-|:---------|:---------|:--------|
-|CogVideoX-5B-I2V|480x720x49|[Hugging Face](https://huggingface.co/THUDM/CogVideoX-5b-I2V)
-|CogVideoX1.5-5B-I2V|768x1360x81|[Hugging Face](https://huggingface.co/THUDM/CogVideoX1.5-5B-I2V)
-|Wan2.2-I2V-A14B|720x1280x81|[Hugging Face](https://huggingface.co/Wan-AI/Wan2.2-I2V-A14B-Diffusers)
-|HunyuanVideo-1.5-I2V|720x1280x121|[Hugging Face](https://huggingface.co/hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-720p_i2v)
-|DynamiCrafter|576x1024x16|[Hugging Face](https://huggingface.co/Doubiiu/DynamiCrafter_1024/blob/main/model.ckpt)|
-|VideoCrafter1|320x512x16|[Hugging Face](https://huggingface.co/VideoCrafter/Image2Video-512/blob/main/model.ckpt)|
+| Backend | Flux T2I | Wan 2.1 train | Wan 2.2 infer |
+|---------|----------|---------------|---------------|
+| NVIDIA CUDA | Yes | Yes (+ DeepSpeed) | Yes |
+| AMD ROCm | Yes (`sdpa`) | Experimental | Yes (`sdpa` + offload) |
+| CPU | Config/smoke only | Config validation only | Tiny smoke preset only |
 
-* Note: H: height; W: width; L: length
+Install: NVIDIA `poetry install -E cuda --with training` · AMD [`docs/install-rocm.md`](install-rocm.md) · CPU [`docs/install-cpu.md`](install-cpu.md)
 
-### Compute compatibility (CUDA / ROCm / CPU)
+See [`docs/capability-matrix.md`](capability-matrix.md) for commands and presets.
 
-| Tier | Models | CUDA | ROCm | CPU |
-|------|--------|------|------|-----|
-| A | CogVideoX, Flux, Mochi, LTX, Hunyuan 1.5 Diffusers, Wan 2.2 Diffusers | Yes | Yes (`sdpa`) | Smoke only |
-| B | Native Hunyuan/Wan, Open-Sora, VideoCrafter | Yes | Experimental | Init smoke |
-| C | StepVideo, CogVideo SAT (removed — use Diffusers `inference-cogvideox1.5-*`) | Yes | No | No |
+## Download (offline / air-gapped)
 
-Install: NVIDIA `poetry install -E cuda` · AMD [`docs/install-rocm.md`](install-rocm.md) · CPU `poetry install -E cpu`
+```bash
+mkdir -p checkpoints/wan
+cd checkpoints/wan
+hf download Wan-AI/Wan2.1-T2V-14B --local-dir ./Wan2.1-T2V-14B
+```
 
-**Full matrix** (preset × backend × attention): [`docs/capability-matrix.md`](capability-matrix.md)
+Flux and Wan 2.2 Diffusers weights are pulled from the hub on first `train-flux-lora` or `inference-wan2.2-t2v-720p` run unless you set `HF_HOME` or pass `--ckpt_path` / config overrides.
 
-### 1.1 Diffusers hub vs local checkpoints
-
-CogVideoX, Flux, Mochi, Wan, Hunyuan 1.5, and LTX **inference presets** in [`configs/inference/`](../configs/inference/) default to Hugging Face hub IDs. Diffusers downloads weights into the HF cache on first run — you do not need to clone into `checkpoints/` unless you want fully offline runs.
-
-See [MODEL_VERSIONS.md](MODEL_VERSIONS.md) for the full upgrade matrix.
+## Commands
 
 | Use case | Command |
 |----------|---------|
-| CogVideoX 1.5 T2V (default) | `poetry run inference-cogvideox1.5-t2v` |
-| CogVideoX 2b smoke / CI | `poetry run inference-cogvideo-t2v-diffusers` |
-| FLUX.2 T2I (default) | `poetry run inference-flux2-dev` |
-| FLUX.1 legacy | `poetry run inference-flux-dev` |
-| Wan 2.2 Diffusers | `poetry run inference-wan2.2-t2v-720p` |
-| HunyuanVideo 1.5 | `poetry run inference-hunyuan1.5-t2v` |
-| Local / offline override | `--ckpt_path /path/to/hub-clone` on `inference_new.py` |
-| LoRA (CogVideoX / Flux) | Add `--lorackpt /path/to/lora` to `inference_new.py` |
+| Flux LoRA train | `poetry run train-flux-lora` |
+| Flux LoRA smoke | `poetry run inference-flux-lora` |
+| Wan LoRA train | `poetry run train-wan2-1-t2v-lora` |
+| Wan native smoke | `poetry run python scripts/inference_new.py --config configs/inference/presets/wan_domain_lora_smoke.yaml` |
+| Wan 2.2 validation | `poetry run inference-wan2.2-t2v-720p` |
 
-For CogVideoX 1.5, use Diffusers hub IDs (`THUDM/CogVideoX1.5-5B`, `THUDM/CogVideoX1.5-5B-I2V`) via `inference-cogvideox1.5-*`.
-
-
-### 2. Download checkpoints
-Please run the following commands in your terminal to download the checkpoints for each model.
-```
-mkdir checkpoints
-
-# ---------------------------- T2V ----------------------------
-
-# ---- CogVideo (diffusers) ----
-mkdir -p checkpoints/cogvideo; cd checkpoints/cogvideo
-git clone https://huggingface.co/THUDM/CogVideoX-2b         # This are checkpoints for CogVideoX T2V-2B
-git clone https://huggingface.co/THUDM/CogVideoX-5b         # This are checkpoints for CogVideoX T2V-5B
-git clone https://huggingface.co/THUDM/CogVideoX-5b-I2V     # This are checkpoints for CogVideoX I2V-5B
-git clone https://huggingface.co/THUDM/CogVideoX1.5-5B      # CogVideoX 1.5 T2V (Diffusers)
-git clone https://huggingface.co/THUDM/CogVideoX1.5-5B-I2V  # CogVideoX 1.5 I2V (Diffusers)
-
-# ---- HunyuanVideo (diffusers) ----
-cd VideoTuna   # Make sure you are under the root path of VideoTuna
-mkdir checkpoints/hunyuanvideo
-cd checkpoints/hunyuanvideo
-git lfs install
-git clone https://huggingface.co/hunyuanvideo-community/HunyuanVideo
-
-
-# ---- Open-Sora ----
-mkdir -p checkpoints/open-sora/t2v_v10
-wget https://huggingface.co/hpcai-tech/Open-Sora/resolve/main/OpenSora-v1-HQ-16x512x512.pth -P checkpoints/open-sora/t2v_v10/
-wget https://huggingface.co/hpcai-tech/Open-Sora/resolve/main/OpenSora-v1-HQ-16x256x256.pth -P checkpoints/open-sora/t2v_v10/
-wget https://huggingface.co/hpcai-tech/Open-Sora/resolve/main/OpenSora-v1-16x256x256.pth -P checkpoints/open-sora/t2v_v10/
-#
-mkdir -p checkpoints/open-sora/t2v_v11
-cd checkpoints/open-sora/t2v_v11
-git clone https://huggingface.co/hpcai-tech/OpenSora-STDiT-v2-stage2
-git clone https://huggingface.co/hpcai-tech/OpenSora-STDiT-v2-stage3
-cd ../../..
-#
-mkdir -p checkpoints/open-sora/t2v_v12/OpenSora-STDiT-v3
-mkdir -p checkpoints/open-sora/t2v_v12/OpenSora-VAE-v1.2
-wget https://huggingface.co/hpcai-tech/OpenSora-VAE-v1.2/resolve/main/model.safetensors -P checkpoints/open-sora/t2v_v12/OpenSora-VAE-v1.2
-wget https://huggingface.co/hpcai-tech/OpenSora-STDiT-v3/resolve/main/model.safetensors -P checkpoints/open-sora/t2v_v12/OpenSora-STDiT-v3
-
-
-# ---- Videocrafter ----
-mkdir checkpoints/videocrafter/
-
-mkdir checkpoints/videocrafter/t2v_v2_512
-wget https://huggingface.co/VideoCrafter/VideoCrafter2/resolve/main/model.ckpt -P checkpoints/videocrafter/t2v_v2_512  # videocrafter2-t2v-512
-python tools/videocrafter_checkpoint_converter.py
-
-mkdir checkpoints/videocrafter/t2v_v1_1024
-wget https://huggingface.co/VideoCrafter/Text2Video-1024/resolve/main/model.ckpt -P checkpoints/videocrafter/t2v_v1_1024 # videocrafter1-t2v-1024
-
-
-# ---- StepVideo ----
-mkdir checkpoints/stepvideo/
-cd checkpoints/stepvideo
-huggingface-cli download stepfun-ai/stepvideo-t2v --local-dir ./stepvideo-t2v
-cd ../..
-
-# ---- Wan ----
-mkdir -p checkpoints/wan/
-cd checkpoints/wan
-hf download Wan-AI/Wan2.2-T2V-A14B --local-dir ./Wan2.2-T2V-A14B
-hf download Wan-AI/Wan2.2-I2V-A14B --local-dir ./Wan2.2-I2V-A14B
-hf download Wan-AI/Wan2.1-T2V-14B --local-dir ./Wan2.1-T2V-14B
-hf download Wan-AI/Wan2.1-I2V-14B-720P --local-dir ./Wan2.1-I2V-14B-720P
-cd ../..
-
-# ---- Open-Sora 2.0 ----
-mkdir -p checkpoints/open-sora/v2
-hf download hpcai-tech/Open-Sora-v2 --local-dir checkpoints/open-sora/v2
-
-
-# ---- HunyuanVideo ----
-mkdir -p checkpoints/hunyuanvideo/
-huggingface-cli download tencent/HunyuanVideo-I2V --local-dir ./checkpoints/hunyuanvideo/HunyuanVideo-I2V
-cd checkpoints/hunyuanvideo/HunyuanVideo-I2V
-huggingface-cli download xtuner/llava-llama-3-8b-v1_1-transformers --local-dir ./text_encoder_i2v
-huggingface-cli download openai/clip-vit-large-patch14 --local-dir ./text_encoder_2
-cd ../..
-
-
-# ---------------------------- I2V ----------------------------
-# ---- Dynamicrafter ----
-mkdir checkpoints/dynamicrafter/
-mkdir checkpoints/dynamicrafter/i2v_576x1024
-
-wget https://huggingface.co/Doubiiu/DynamiCrafter_1024/resolve/main/model.ckpt -P checkpoints/dynamicrafter/i2v_576x1024  # dynamicrafter-i2v-1024
-
-# ---- Videocrafter ----
-mkdir -p checkpoints/videocrafter/i2v_v1_512
-
-wget https://huggingface.co/VideoCrafter/Image2Video-512/resolve/main/model.ckpt -P checkpoints/videocrafter/i2v_v1_512 # videocrafter1-i2v-512
-
-# ---- Stable Diffusion checkpoint for VC2 Training ----
-mkdir -p checkpoints/stablediffusion/v2-1_512-ema
-wget https://huggingface.co/stabilityai/stable-diffusion-2-1-base/resolve/main/v2-1_512-ema-pruned.ckpt -P checkpoints/stablediffusion/v2-1_512-ema
-
-# ---- Wan ----
-mkdir -p checkpoints/wan/
-cd checkpoints/wan
-hf download Wan-AI/Wan2.1-I2V-14B-720P --local-dir ./Wan2.1-I2V-14B-720P
-cd ../..
-
-# ---------------------------- V2V ----------------------------
-# ---- ModelScope Video-to-Video ----
-cd checkpoints
-# please ensure that you have installed lfs. If not, you can install it by running the following command:
-git lfs install
-# after installing lfs, you can clone the Video-to-Video checkpoints
-git clone https://www.modelscope.cn/iic/Video-to-Video.git
-
-```
-
-
-### 3. Checkpoint Orgnization Structure
-After downloading, the model checkpoints should be placed as follows:
+## Checkpoint layout
 
 ```
 VideoTuna/
     └── checkpoints/
-        ├── cogvideo/
-        │   └── CogVideoX-2b/
-        │   └── CogVideoX-5b/
-        │   └── CogVideoX-5b-I2V/
-        ├── hunyuanvideo/
-        │   ├── HunyuanVideo-I2V/
-        │   │   └── hunyuan-video-i2v-720p/
-        │   │   └── text_encoder_2
-        │   │   └── text_encoder_i2v
-        │   └── HunyuanVideo/
-        │       └── scheduler/
-        │       └── text_encoder/
-        │       └── text_encoder_2/
-        │       └── tokenizer/
-        │       └── tokenizer_2/
-        │       └── transformer/
-        │       └── vae/
-        ├── dynamicrafter/
-        │   └── i2v_576x1024/
-        │       └── model.ckpt
-        ├── videocrafter/
-        │   ├── t2v_v2_512/
-        │   │   └── model.ckpt
-        │   ├── t2v_v2_512_split/
-        │   │   └── cond_stage.ckpt
-        │   │   └── denoiser.ckpt
-        │   │   └── first_stage.ckpt
-        │   │   └── model_new.ckpt
-        │   ├── t2v_v1_1024/
-        │   │   └── model.ckpt
-        │   └── i2v_v1_512/
-        │       └── model.ckpt
-        └── open-sora/
-            ├── t2v_v10/
-            │   ├── OpenSora-v1-16x256x256.pth
-            │   └── OpenSora-v1-HQ-16x512x512.pth
-            ├── t2v_v11/
-            │   ├── OpenSora-STDiT-v2-stage2/
-            │   └── OpenSora-STDiT-v2-stage3/
-            └── t2v_v12/
-                ├── OpenSora-STDiT-v3/
-                └── OpenSora-VAE-v1.2/
+        └── wan/
+            └── Wan2.1-T2V-14B/    # required for Wan 2.1 LoRA training
 ```
 
-If you do not follow these locations, please modify the default checkpoint path argument during training/inference.
+Training outputs go under `results/train/` (not committed).

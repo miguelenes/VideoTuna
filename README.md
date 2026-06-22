@@ -16,6 +16,10 @@ Canonical runbook: [`docs/runbooks/domain-adult-finetune.md`](docs/runbooks/doma
 
 QA is **training callbacks + LoRA smoke inference** — no VBench eval group.
 
+## Removed legacy commands
+
+Legacy inference and training commands for VideoCrafter, DynamiCrafter, Open-Sora, StepVideo, Hunyuan, CogVideoX, Mochi, LTX, and ModelScope V2V are no longer available. VBench evaluation (`eval/`, `poetry install --with eval`) is removed. Use the domain pipeline in [`docs/runbooks/domain-adult-finetune.md`](docs/runbooks/domain-adult-finetune.md): `train-flux-lora`, `train-wan2-1-t2v-lora`, `inference-flux-lora`, and `inference-wan2.2-t2v-720p`.
+
 ## Get started
 
 ### Install

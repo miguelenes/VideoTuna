@@ -112,15 +112,11 @@ optional = true
 
 [tool.poetry.group.training.dependencies]
 deepspeed = "0.19.2"
-colossalai = "0.3.6"
 pytorch-lightning = "2.4.0"
 wandb = "0.17.8"
 tensorboard = "^2.19.0"
-mmengine = "0.10.4"
 pandas = "2.2.2"
 scikit-learn = "^1.6.1"
-pyramid = "1.5"
-hpsv2 = { git = "https://github.com/tgxs002/HPSv2.git" }
 
 [tool.poetry.group.dev]
 optional = true
@@ -144,15 +140,11 @@ package = true
 [dependency-groups]
 training = [
     "deepspeed==0.19.2",
-    "colossalai==0.3.6",
     "pytorch-lightning==2.4.0",
     "wandb==0.17.8",
     "tensorboard>=2.19.0",
-    "mmengine==0.10.4",
     "pandas==2.2.2",
     "scikit-learn>=1.6.1",
-    "pyramid==1.5",
-    "hpsv2 @ git+https://github.com/tgxs002/HPSv2.git",
 ]
 dev = [
     "black>=24.0.0",
@@ -187,11 +179,6 @@ priority = "explicit"
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
 priority = "explicit"
-
-[[tool.poetry.source]]
-name = "modelscope"
-url = "https://modelscope.oss-cn-beijing.aliyuncs.com/releases/repo.html"
-priority = "supplemental"
 
 [tool.poetry.scripts]
 install-deepspeed = 'scripts:install_deepspeed'

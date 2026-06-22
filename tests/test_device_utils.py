@@ -170,62 +170,12 @@ def test_require_accelerator_for_flow_raises_without_gpu():
             )
 
 
-def test_require_accelerator_for_flow_cpu_smoke_diffusers():
-    with mock.patch.object(device_utils, "gpu_is_available", return_value=False):
-        device_utils.require_accelerator_for_flow(
-            device_utils._DIFFUSERS_FLOW,
-            cpu_mode="smoke",
-            model_family="cogvideox",
-            model_variant="2b",
-        )
-
-
-def test_get_flow_tier_cogvideox_2b():
-    tier = device_utils.get_flow_tier(
-        device_utils._DIFFUSERS_FLOW,
-        model_family="cogvideox",
-        model_variant="2b",
-    )
-    assert tier == "cpu_smoke"
-
-
 def test_get_flow_tier_wan_720p_gpu_required():
     tier = device_utils.get_flow_tier(
         device_utils._DIFFUSERS_FLOW,
         model_family="wan",
         height=720,
         width=1280,
-    )
-    assert tier == "gpu_required"
-
-
-def test_get_flow_tier_cogvideox_1_5_gpu_required():
-    tier = device_utils.get_flow_tier(
-        device_utils._DIFFUSERS_FLOW,
-        model_family="cogvideox",
-        model_variant="1.5",
-        height=768,
-        width=1360,
-    )
-    assert tier == "gpu_required"
-
-
-def test_get_flow_tier_mochi_production_gpu_required():
-    tier = device_utils.get_flow_tier(
-        device_utils._DIFFUSERS_FLOW,
-        model_family="mochi",
-        height=480,
-        width=848,
-    )
-    assert tier == "gpu_required"
-
-
-def test_get_flow_tier_ltx_production_gpu_required():
-    tier = device_utils.get_flow_tier(
-        device_utils._DIFFUSERS_FLOW,
-        model_family="ltx",
-        height=512,
-        width=768,
     )
     assert tier == "gpu_required"
 
@@ -241,27 +191,36 @@ def test_get_flow_tier_flux_schnell_cpu_smoke():
     assert tier == "cpu_smoke"
 
 
-def test_require_accelerator_native_hunyuan_init_smoke():
-    with mock.patch.object(device_utils, "gpu_is_available", return_value=False):
-        device_utils.require_accelerator_for_flow(
-            device_utils._HUNYUAN_FLOW,
-            cpu_mode="smoke",
-            height=256,
-            width=256,
-            frames=1,
-        )
+def test_get_flow_tier_flux_dev_cpu_smoke_at_512():
+    tier = device_utils.get_flow_tier(
+        device_utils._DIFFUSERS_FLOW,
+        model_family="flux",
+        model_variant="1-dev",
+        height=256,
+        width=256,
+    )
+    assert tier == "cpu_smoke"
 
 
-def test_require_accelerator_native_hunyuan_720p_blocks_cpu_smoke():
-    with mock.patch.object(device_utils, "gpu_is_available", return_value=False):
-        with pytest.raises(RuntimeError, match="requires a GPU"):
-            device_utils.require_accelerator_for_flow(
-                device_utils._HUNYUAN_FLOW,
-                cpu_mode="smoke",
-                height=720,
-                width=1280,
-                frames=121,
-            )
+def test_get_flow_tier_flux_dev_gpu_required_above_512():
+    tier = device_utils.get_flow_tier(
+        device_utils._DIFFUSERS_FLOW,
+        model_family="flux",
+        model_variant="dev",
+        height=768,
+        width=512,
+    )
+    assert tier == "gpu_required"
+
+
+def test_get_flow_tier_unknown_family_defaults():
+    tier = device_utils.get_flow_tier(
+        device_utils._DIFFUSERS_FLOW,
+        model_family="unknown",
+        height=256,
+        width=256,
+    )
+    assert tier == "cpu_smoke"
 
 
 def test_require_accelerator_wan_native_720p_blocks_cpu_smoke():
@@ -288,18 +247,6 @@ def test_resolve_cpu_mode_legacy_allow_cpu():
         clear=True,
     ):
         assert device_utils.resolve_cpu_mode() == "force"
-
-
-def test_require_accelerator_for_flow_stepvideo_blocked_on_rocm():
-    with mock.patch.object(device_utils, "gpu_is_available", return_value=True):
-        with mock.patch.object(device_utils, "detect_compute_backend", return_value="rocm"):
-            with mock.patch.object(
-                device_utils, "_format_hardware_context", return_value=""
-            ):
-                with pytest.raises(RuntimeError, match="StepVideo inference is not supported"):
-                    device_utils.require_accelerator_for_flow(
-                        "videotuna.flow.stepvideo.StepVideoModelFlow"
-                    )
 
 
 def test_require_accelerator_for_flow_allow_cpu():

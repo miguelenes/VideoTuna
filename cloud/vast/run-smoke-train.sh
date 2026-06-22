@@ -52,21 +52,9 @@ case "${TRAIN_PROFILE}" in
   CONFIG_PATH="${CONFIG_PATH:-configs/008_wanvideo/wan2_1_t2v_14B_lora_cloud_smoke.yaml}"
   run_cmd poetry run train-wan2-1-t2v-lora --base "${CONFIG_PATH}"
   ;;
-  wan-t2v-fullft)
-  CONFIG_PATH="${CONFIG_PATH:-configs/008_wanvideo/wan2_1_t2v_14B_fullft.yaml}"
-  run_cmd poetry run train-wan2-1-t2v-fullft \
-    --base "${CONFIG_PATH}" \
-    train.lightning.trainer.max_epochs=1
-  ;;
-  cogvideox-t2v-lora)
-  CONFIG_PATH="${CONFIG_PATH:-configs/004_cogvideox/cogvideo5b.yaml}"
-  run_cmd poetry run train-cogvideox-t2v-lora \
-    --base "${CONFIG_PATH}" \
-    lightning.trainer.max_epochs=1
-  ;;
   *)
   echo "Unknown TRAIN_PROFILE=${TRAIN_PROFILE}" | tee -a "${LOG_ERR}"
-  echo "Valid: flux-lora, wan-t2v-lora, wan-t2v-fullft, cogvideox-t2v-lora" | tee -a "${LOG_ERR}"
+  echo "Valid: flux-lora, wan-t2v-lora" | tee -a "${LOG_ERR}"
   exit 1
   ;;
 esac

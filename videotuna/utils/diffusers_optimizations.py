@@ -148,42 +148,12 @@ def apply_flow_memory_config(flow: Any, inference_config: Any) -> None:
             )
         return
 
-    if flow_name == "HunyuanVideoFlow":
-        pipeline = getattr(flow, "pipeline", None)
-        if pipeline is not None:
-            _apply_hunyuan_pipeline_offload(flow, pipeline, inference_config)
-        return
-
     if flow_name == "WanVideoModelFlow":
         if getattr(inference_config, "enable_model_cpu_offload", False):
             flow.offload_model = True
         elif getattr(inference_config, "enable_sequential_cpu_offload", False):
             flow.offload_model = True
         return
-
-    if flow_name == "StepVideoModelFlow":
-        flow.enable_sequential_cpu_offload = bool(
-            getattr(inference_config, "enable_sequential_cpu_offload", False)
-        )
-        flow.enable_model_cpu_offload = bool(
-            getattr(inference_config, "enable_model_cpu_offload", True)
-        )
-
-
-def _apply_hunyuan_pipeline_offload(
-    flow: Any, pipeline: Any, inference_config: Any
-) -> None:
-    device = resolve_inference_device(getattr(inference_config, "device", None))
-    if getattr(flow, "use_cpu_offload", False) or getattr(
-        inference_config, "enable_sequential_cpu_offload", False
-    ):
-        pipeline.enable_sequential_cpu_offload()
-    elif getattr(flow, "use_model_cpu_offload", False) or getattr(
-        inference_config, "enable_model_cpu_offload", False
-    ):
-        pipeline.enable_model_cpu_offload()
-    elif gpu_is_available():
-        pipeline.to(device)
 
 
 def transformer_cache_context(pipe: Any):
