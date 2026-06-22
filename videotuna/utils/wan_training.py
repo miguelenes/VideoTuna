@@ -238,14 +238,18 @@ def init_wan_training_denoisers(flow: Any) -> None:
             lora_cfg.target_modules = resolve_lora_target_modules(
                 wan.high_noise_model, lora_cfg.target_modules
             )
-        flow.high_denoiser = get_peft_model(wan.high_noise_model, lora_cfg)
+        flow.high_denoiser = get_peft_model(
+            wan.high_noise_model, lora_cfg, autocast_adapter_dtype=False
+        )
         low_cfg = LoraConfig(
             r=lora_cfg.r,
             lora_alpha=lora_cfg.lora_alpha,
             init_lora_weights=True,
             target_modules=list(lora_cfg.target_modules),
         )
-        flow.low_denoiser = get_peft_model(wan.low_noise_model, low_cfg)
+        flow.low_denoiser = get_peft_model(
+            wan.low_noise_model, low_cfg, autocast_adapter_dtype=False
+        )
         flow.denoiser = flow.high_denoiser
         flow.lora_params = collect_lora_parameter_names(flow.denoiser)
         flow.denoiser.train()

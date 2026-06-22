@@ -60,6 +60,61 @@ Matrix results (ephemeral `pip install --no-deps` where noted):
 
 Debug inventory: `poetry run python tools/spike_wan_lora_bridge.py --synthetic /tmp/synthetic.ckpt`
 
+## Wan training stack pins (DeepSpeed + PyTorch Lightning audit)
+
+PrivTune uses a **dual training stack** by design:
+
+| Phase | Stack | Entry point |
+|-------|-------|-------------|
+| Flux T2I LoRA | Hugging Face **Accelerate** | `poetry run train-domain-t2i` |
+| Wan 2.1 T2V / I2V LoRA | **PyTorch Lightning** + **DeepSpeed ZeRO-3** | `poetry run train-domain-t2v` / `train-domain-i2v` |
+
+Wan domain YAMLs set `train.lightning.strategy: deepspeed_stage_3_offload` with `precision: bf16-mixed`. Training runs through `scripts/train_new.py` (Lightning `Trainer` + DeepSpeed autocast wrapper). Checkpoint export for LoRA uses `deepspeed.utils.zero_to_fp32` in `videotuna/utils/callbacks.py`.
+
+Pinned in `[tool.poetry.group.training]` / `uv` `training` group (`poetry install -E cuda --with training`):
+
+| Package | Pin | Rationale |
+|---------|-----|-----------|
+| `deepspeed` | **0.19.2** | ZeRO-3 CPU offload for 14B LoRA on ~40 GB GPUs; `poetry run install-deepspeed` rebuilds against the active torch/CUDA build. |
+| `pytorch-lightning` | **2.4.0** | Native Wan training path (callbacks, `VideoTunaModelCheckpoint`, DeepSpeed strategy registry). Flux stays on Accelerate — no Lightning upgrade required for Phase 1. |
+| `torch` | **^2.6** (cu126) | Shared base; DeepSpeed ops JIT-built against installed torch. |
+
+### Breaking-change notes (0.19.2 + 2.4.0)
+
+**DeepSpeed 0.19.2 — mixed-dtype ZeRO-3 + PEFT (critical for Wan LoRA)**
+
+PR [#8066](https://github.com/deepspeedai/DeepSpeed/pull/8066) stopped blanket-casting all ZeRO-Init parameters to bf16 (correct for fp32 buffers such as RoPE `inv_freq`). That exposed a latent bug when PEFT’s default `autocast_adapter_dtype=True` keeps LoRA adapters in **fp32** while the frozen base stays **bf16**: the first optimizer step can fail in `_allgather_params_coalesced` ([DeepSpeed #8072](https://github.com/deepspeedai/DeepSpeed/issues/8072)). Upstream fix: [DeepSpeed #8073](https://github.com/deepspeedai/DeepSpeed/pull/8073) (open; no 0.19.3 release yet).
+
+PrivTune mitigates by passing `autocast_adapter_dtype=False` to `get_peft_model()` in `videotuna/base/generation_base.py` and `videotuna/utils/wan_training.py` (same pattern as [TRL #6091](https://github.com/huggingface/trl/pull/6091)).
+
+**PyTorch Lightning 2.4.0 — DeepSpeed integration**
+
+- String strategy `deepspeed_stage_3_offload` maps to `DeepSpeedStrategy` (stage 3, CPU optimizer + param offload).
+- `DeepSpeedOptimizer` import path fix landed in PL 2.3.x; compatible with DeepSpeed ≥ 0.14.1.
+- PL 2.5.x adds `exclude_frozen_parameters` on `DeepSpeedStrategy` (useful for LoRA) but is **not required** for current configs. Defer upgrade; avoid PL 2.6.2+ (upstream supply-chain advisory). Torch 2.6 is ahead of PL 2.4’s original test matrix but works in practice with these pins.
+
+**ZeRO-3 gradients:** use `deepspeed.utils.safe_get_full_grad(param)` if reading partitioned grads in custom code (not used in default Wan loss path).
+
+### GPU training smoke (manual)
+
+Requires NVIDIA GPU (~40 GB for Wan cloud smoke), Wan 14B weights under `checkpoints/wan/Wan2.1-T2V-14B`, and `data/t2v/domain/metadata.csv` + videos.
+
+```bash
+poetry install -E cuda --with training
+poetry run install-deepspeed
+
+# Short cloud smoke preset (1 epoch, checkpoint every 5 steps)
+poetry run train-domain-t2v \
+  --base configs/008_wanvideo/wan2_1_t2v_14B_lora_cloud_smoke.yaml \
+  --devices 0,
+```
+
+On Vast.ai after provisioning: `TRAIN_PROFILE=wan-t2v-lora ./cloud/vast/run-smoke-train.sh` (see [cloud-gpu-training.md](runbooks/cloud-gpu-training.md)).
+
+Success: trainer reports `DeepSpeedStrategy`, completes ≥5 steps, writes `results/train/.../checkpoints/only_trained_model/denoiser-*.ckpt`.
+
+Local dev without GPU: CPU CI covers config YAML and flow-matching helpers only (`tests/test_domain_finetune_configs.py`, `tests/test_wan_training_step.py`); ZeRO-3 behavior is not exercised in CI.
+
 ## CI smoke (CPU config validation)
 
 ```bash
