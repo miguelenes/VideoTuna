@@ -13,6 +13,7 @@ from omegaconf import OmegaConf, DictConfig
 
 from videotuna.base.generation_base import GenerationBase
 from videotuna.utils.common_utils import instantiate_from_config
+from videotuna.utils.attention import maybe_compile_denoiser
 from videotuna.utils.args_utils import VideoMode
 import videotuna.models.wan.wan as wan
 from videotuna.models.wan.wan.configs import WAN_CONFIGS, SIZE_CONFIGS, MAX_AREA_CONFIGS, SUPPORTED_SIZES
@@ -370,9 +371,13 @@ class WanVideoModelFlow(GenerationBase):
             #this is only used to load trained denoiser_ckpt_path, 
             #so we set ignore missing ckpts avoid duplicate loading
             self.load_denoiser(ckpt_path, denoiser_ckpt_path, True)
+            if not self.wan_t2v.use_usp:
+                self.wan_t2v.model = maybe_compile_denoiser(self.wan_t2v.model)
         else:
             self.wan_i2v.load_weight()
             self.load_denoiser(ckpt_path, denoiser_ckpt_path, True)
+            if not self.wan_i2v.use_usp:
+                self.wan_i2v.model = maybe_compile_denoiser(self.wan_i2v.model)
     
     def enable_vram_management(self):
         if "t2v" in self.task or "t2i" in self.task:

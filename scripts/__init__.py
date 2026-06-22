@@ -3,6 +3,7 @@ Poetry commands
 """
 
 import os
+import shutil
 import subprocess
 import sys
 from datetime import datetime
@@ -51,16 +52,13 @@ def _python_wheel_tag() -> str:
 def install_flash_attn():
     """
     Install flash-attn for PyTorch 2.6 + CUDA 12.6 (cxx11 ABI wheels).
+
+    Tries a prebuilt wheel first (no compiler or conda required). Falls back to a
+    source build only when the wheel is unavailable.
     """
-    command_install_cuda_nvcc = [
-        "conda",
-        "install",
-        "-c",
-        "nvidia",
-        "cuda-nvcc=12.6",
-        "-y",
-    ] + sys.argv[1:]
-    subprocess.run(["pip", "install", "ninja"], check=False)
+    subprocess.run(
+        [sys.executable, "-m", "pip", "install", "ninja"], check=False
+    )
 
     wheel_tag = _python_wheel_tag()
     flash_attn_wheel = (
@@ -68,23 +66,55 @@ def install_flash_attn():
         f"v2.7.4.post1/flash_attn-2.7.4.post1+cu12torch2.6cxx11abiTRUE-"
         f"{wheel_tag}-{wheel_tag}-linux_x86_64.whl"
     )
-    command_install_flash_attn = [
-        "pip",
-        "install",
-        flash_attn_wheel,
-        "--no-build-isolation",
-    ]
-    result_nvcc = subprocess.run(command_install_cuda_nvcc, check=False)
-    if result_nvcc.returncode != 0:
-        exit(result_nvcc.returncode)
+    result_wheel = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            flash_attn_wheel,
+            "--no-build-isolation",
+        ],
+        check=False,
+    )
+    if result_wheel.returncode == 0:
+        exit(0)
 
-    result_flash = subprocess.run(command_install_flash_attn, check=False)
-    if result_flash.returncode != 0:
-        fallback = subprocess.run(
-            ["pip", "install", "flash-attn==2.7.4.post1", "--no-build-isolation"],
+    if shutil.which("conda"):
+        result_nvcc = subprocess.run(
+            [
+                "conda",
+                "install",
+                "-c",
+                "nvidia",
+                "cuda-nvcc=12.6",
+                "-y",
+            ]
+            + sys.argv[1:],
             check=False,
         )
-        exit(fallback.returncode)
+        if result_nvcc.returncode != 0:
+            exit(result_nvcc.returncode)
+    elif shutil.which("nvcc") is None:
+        print(
+            "Prebuilt flash-attn wheel install failed and nvcc was not found.\n"
+            "Install the CUDA toolkit (nvcc), or use conda:\n"
+            "  conda install -c nvidia cuda-nvcc=12.6",
+            file=sys.stderr,
+        )
+        exit(result_wheel.returncode)
+
+    result_flash = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "flash-attn==2.7.4.post1",
+            "--no-build-isolation",
+        ],
+        check=False,
+    )
     exit(result_flash.returncode)
 
 
@@ -1340,3 +1370,10 @@ def train_wan2_1_i2v_lora():
         check=False,
     )
     exit(result.returncode)
+
+
+def benchmark_attn_backends():
+    """Benchmark eager vs sdpa vs flash on CogVideoX diffusers inference."""
+    from scripts.benchmark_attn_backends import main
+
+    raise SystemExit(main())

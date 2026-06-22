@@ -1,17 +1,19 @@
-import importlib.metadata
-import math
+import os
 
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
+
+from videotuna.utils.attention import (
+    attention_dense,
+    attention_eager,
+    attention_varlen,
+    get_attn_backend,
+)
 
 try:
     import flash_attn
     from flash_attn.flash_attn_interface import _flash_attn_forward
-    from flash_attn.flash_attn_interface import flash_attn_varlen_func
 except ImportError:
     flash_attn = None
-    flash_attn_varlen_func = None
     _flash_attn_forward = None
 
 
@@ -57,6 +59,17 @@ def get_cu_seqlens(text_mask, img_len):
     return cu_seqlens
 
 
+def _resolve_attention_mode(mode: str, attn_mask) -> str:
+    if os.environ.get("VIDEOTUNA_ATTN_BACKEND", "auto") == "auto":
+        return mode
+    backend = get_attn_backend()
+    if attn_mask is not None:
+        return "torch" if backend == "sdpa" else "vanilla"
+    if mode == "flash" and backend == "eager":
+        return "vanilla"
+    return mode
+
+
 def attention(
     q,
     k,
@@ -93,60 +106,46 @@ def attention(
     Returns:
         torch.Tensor: Output tensor after self attention with shape [b, s, ad]
     """
+    mode = _resolve_attention_mode(mode, attn_mask)
     pre_attn_layout, post_attn_layout = MEMORY_LAYOUT[mode]
     q = pre_attn_layout(q)
     k = pre_attn_layout(k)
     v = pre_attn_layout(v)
 
-    if mode == "torch":
-        if attn_mask is not None and attn_mask.dtype != torch.bool:
-            attn_mask = attn_mask.to(q.dtype)
-        x = F.scaled_dot_product_attention(
-            q, k, v, attn_mask=attn_mask, dropout_p=drop_rate, is_causal=causal
-        )
-    elif mode == "flash":
-        x = flash_attn_varlen_func(
+    if mode == "flash":
+        x = attention_varlen(
             q,
             k,
             v,
-            cu_seqlens_q,
-            cu_seqlens_kv,
-            max_seqlen_q,
-            max_seqlen_kv,
+            cu_seqlens_q=cu_seqlens_q,
+            cu_seqlens_kv=cu_seqlens_kv,
+            max_seqlen_q=max_seqlen_q,
+            max_seqlen_kv=max_seqlen_kv,
+            dropout_p=drop_rate,
+            causal=causal,
+            batch_size=batch_size,
+            prefer_flash3=False,
         )
-        # x with shape [(bxs), a, d]
-        x = x.view(
-            batch_size, max_seqlen_q, x.shape[-2], x.shape[-1]
-        )  # reshape x to [b, s, a, d]
+    elif mode == "torch":
+        x = attention_dense(
+            q,
+            k,
+            v,
+            attn_mask=attn_mask,
+            dropout_p=drop_rate,
+            causal=causal,
+            layout="bhsd",
+        )
     elif mode == "vanilla":
-        scale_factor = 1 / math.sqrt(q.size(-1))
-
-        b, a, s, _ = q.shape
-        s1 = k.size(2)
-        attn_bias = torch.zeros(b, a, s, s1, dtype=q.dtype, device=q.device)
-        if causal:
-            # Only applied to self attention
-            assert (
-                attn_mask is None
-            ), "Causal mask and attn_mask cannot be used together"
-            temp_mask = torch.ones(b, a, s, s, dtype=torch.bool, device=q.device).tril(
-                diagonal=0
-            )
-            attn_bias.masked_fill_(temp_mask.logical_not(), float("-inf"))
-            attn_bias.to(q.dtype)
-
-        if attn_mask is not None:
-            if attn_mask.dtype == torch.bool:
-                attn_bias.masked_fill_(attn_mask.logical_not(), float("-inf"))
-            else:
-                attn_bias += attn_mask
-
-        # TODO: Maybe force q and k to be float32 to avoid numerical overflow
-        attn = (q @ k.transpose(-2, -1)) * scale_factor
-        attn += attn_bias
-        attn = attn.softmax(dim=-1)
-        attn = torch.dropout(attn, p=drop_rate, train=True)
-        x = attn @ v
+        x = attention_eager(
+            q,
+            k,
+            v,
+            attn_mask=attn_mask,
+            dropout_p=drop_rate,
+            causal=causal,
+            layout="bhsd",
+        )
     else:
         raise NotImplementedError(f"Unsupported attention mode: {mode}")
 

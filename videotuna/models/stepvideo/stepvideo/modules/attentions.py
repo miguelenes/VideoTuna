@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 from einops import rearrange
 
+from videotuna.utils.attention import attention_dense
+
 try:
     from xfuser.core.long_ctx_attention import xFuserLongContextAttention
 except ImportError:
@@ -39,8 +41,14 @@ class Attention(nn.Module):
             attn_mask = attn_mask.unsqueeze(1).repeat(1, n_heads, 1, 1)
         
         q, k, v = map(lambda x: rearrange(x, 'b s h d -> b h s d'), (q, k, v))
-        x = torch.nn.functional.scaled_dot_product_attention(
-            q, k, v, attn_mask=attn_mask, dropout_p=drop_rate, is_causal=causal
+        x = attention_dense(
+            q,
+            k,
+            v,
+            attn_mask=attn_mask,
+            dropout_p=drop_rate,
+            causal=causal,
+            layout="bhsd",
         )
         x = rearrange(x, 'b h s d -> b s h d')
         return x        

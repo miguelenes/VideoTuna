@@ -57,6 +57,37 @@ poetry run install-flash-attn
 ```
 - ↑ It takes 1 minitue.
 
+### Performance tuning
+
+VideoTuna routes attention through a unified backend selector in `videotuna/utils/attention.py`. Control it with environment variables:
+
+| Variable | Values | Default | Description |
+|----------|--------|---------|-------------|
+| `VIDEOTUNA_ATTN_BACKEND` | `auto`, `flash`, `sdpa`, `eager` | `auto` | Attention implementation for Hunyuan, OpenSora, Flux, StepVideo, Wan, and diffusers pipelines |
+| `VIDEOTUNA_TORCH_COMPILE` | `0`, `1` | `0` | Compile denoiser/transformer forward with `torch.compile` (not VAE or text encoders) |
+
+**`auto` resolution:** `flash` (when `flash-attn` is installed and CUDA is available) → `sdpa` on CUDA → `eager` on CPU.
+
+```shell
+# Prefer flash-attn varlen (install optional dependency first)
+poetry run install-flash-attn
+export VIDEOTUNA_ATTN_BACKEND=flash
+
+# PyTorch SDPA (no flash-attn build required)
+export VIDEOTUNA_ATTN_BACKEND=sdpa
+
+# Optional: compile denoiser after warm-up
+export VIDEOTUNA_TORCH_COMPILE=1
+```
+
+Compare backends on a short CogVideoX diffusers smoke run (`steps=4`):
+
+```shell
+poetry run benchmark-attn-backends
+```
+
+Sequence parallel (`--ulysses-degree`, `--ring-degree` on Hunyuan/Wan) uses xfuser and is independent of `VIDEOTUNA_ATTN_BACKEND`. The first `torch.compile` iteration is slow; exclude it when timing inference.
+
 **Optional: Video-to-video enhancement**
 ```
 poetry run pip install "modelscope[cv]" -f https://modelscope.oss-cn-beijing.aliyuncs.com/releases/repo.html

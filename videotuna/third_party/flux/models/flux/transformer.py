@@ -35,14 +35,6 @@ from diffusers.utils.torch_utils import maybe_allow_in_graph
 
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
-is_flash_attn_available = False
-try:
-    from flash_attn_interface import flash_attn_func
-
-    is_flash_attn_available = True
-except:
-    pass
-
 from videotuna.third_party.flux.models.flux.attention import (
     FluxAttnProcessor3_0,
     FluxSingleAttnProcessor3_0,
@@ -204,24 +196,7 @@ class FluxSingleTransformerBlock(nn.Module):
         self.act_mlp = nn.GELU(approximate="tanh")
         self.proj_out = nn.Linear(dim + self.mlp_hidden_dim, dim)
 
-        processor = FluxAttnProcessor2_0()
-        if torch.cuda.is_available():
-            rank = (
-                torch.distributed.get_rank()
-                if torch.distributed.is_initialized()
-                else 0
-            )
-            primary_device = torch.cuda.get_device_properties(rank)
-            if primary_device.major == 9 and primary_device.minor == 0:
-                if is_flash_attn_available:
-                    if rank == 0:
-                        print("Using FlashAttention3_0 for H100 GPU (Single block)")
-                    processor = FluxSingleAttnProcessor3_0()
-                else:
-                    if rank == 0:
-                        print(
-                            "FlashAttention3_0 is not available, using FlashAttention2_0 for H100 GPU (Single block). Install flash_attn to make use of it."
-                        )
+        processor = FluxSingleAttnProcessor3_0()
         self.attn = Attention(
             query_dim=dim,
             cross_attention_dim=None,
@@ -291,19 +266,7 @@ class FluxTransformerBlock(nn.Module):
         self.norm1_context = AdaLayerNormZero(dim)
 
         if hasattr(F, "scaled_dot_product_attention"):
-            processor = FluxAttnProcessor2_0()
-            if torch.cuda.is_available():
-                rank = (
-                    torch.distributed.get_rank()
-                    if torch.distributed.is_initialized()
-                    else 0
-                )
-                primary_device = torch.cuda.get_device_properties(rank)
-                if primary_device.major == 9 and primary_device.minor == 0:
-                    if is_flash_attn_available:
-                        if rank == 0:
-                            print("Using FlashAttention3_0 for H100 GPU (Double block)")
-                        processor = FluxAttnProcessor3_0()
+            processor = FluxAttnProcessor3_0()
         else:
             raise ValueError(
                 "The current PyTorch version does not support the `scaled_dot_product_attention` function."

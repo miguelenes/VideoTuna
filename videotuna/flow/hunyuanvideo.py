@@ -23,6 +23,7 @@ from videotuna.models.hunyuan.hyvideo_i2v.diffusion.pipelines import HunyuanVide
 from videotuna.models.hunyuan.hyvideo_i2v.utils.file_utils import save_videos_grid
 from videotuna.base.generation_base import GenerationBase
 from videotuna.utils.common_utils import monitor_resources
+from videotuna.utils.attention import maybe_compile_denoiser
 import torchvision.transforms as transforms
 from PIL import Image
 import numpy as np
@@ -412,7 +413,8 @@ class HunyuanVideoFlow(GenerationBase):
     
         if self.ulysses_degree > 1 or self.ring_degree > 1:
             parallelize_transformer(self.pipeline)
-        
+
+        self.pipeline.transformer = maybe_compile_denoiser(self.pipeline.transformer)
 
     @staticmethod
     def parse_size(size):

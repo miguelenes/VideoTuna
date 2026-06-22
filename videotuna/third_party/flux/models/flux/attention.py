@@ -4,21 +4,7 @@ from einops import rearrange
 from torch import FloatTensor, Tensor
 from torch.nn import functional as F
 
-try:
-    from flash_attn_interface import flash_attn_func
-except:
-    pass
-
-
-def fa3_sdpa(
-    q,
-    k,
-    v,
-):
-    # flash attention 3 sdpa drop-in replacement
-    q, k, v = [x.permute(0, 2, 1, 3) for x in [q, k, v]]
-    out = flash_attn_func(q, k, v)[0]
-    return out.permute(0, 2, 1, 3)
+from videotuna.utils.attention import attention_dense
 
 
 class FluxSingleAttnProcessor3_0:
@@ -79,10 +65,9 @@ class FluxSingleAttnProcessor3_0:
             query = apply_rotary_emb(query, image_rotary_emb)
             key = apply_rotary_emb(key, image_rotary_emb)
 
-        # the output of sdp = (batch, num_heads, seq_len, head_dim)
-        # TODO: add support for attn.scale when we move to Torch 2.1
-        # hidden_states = F.scaled_dot_product_attention(query, key, value, dropout_p=0.0, is_causal=False)
-        hidden_states = fa3_sdpa(query, key, value)
+        hidden_states = attention_dense(
+            query, key, value, attn_mask=attention_mask, layout="bhsd"
+        )
         hidden_states = rearrange(hidden_states, "B H L D -> B L (H D)")
 
         hidden_states = hidden_states.transpose(1, 2).reshape(
@@ -181,8 +166,9 @@ class FluxAttnProcessor3_0:
             query = apply_rotary_emb(query, image_rotary_emb)
             key = apply_rotary_emb(key, image_rotary_emb)
 
-        # hidden_states = F.scaled_dot_product_attention(query, key, value, dropout_p=0.0, is_causal=False)
-        hidden_states = fa3_sdpa(query, key, value)
+        hidden_states = attention_dense(
+            query, key, value, attn_mask=attention_mask, layout="bhsd"
+        )
         hidden_states = rearrange(hidden_states, "B H L D -> B L (H D)")
 
         hidden_states = hidden_states.transpose(1, 2).reshape(

@@ -28,6 +28,7 @@ from videotuna.models.opensora.acceleration.communications import (
     split_forward_gather_backward,
 )
 from videotuna.models.opensora.acceleration.parallel_states import get_sequence_parallel_group
+from videotuna.utils.attention import attention_dense, attention_eager
 
 approx_gelu = lambda: nn.GELU(approximate="tanh")
 
@@ -147,10 +148,13 @@ class Attention(nn.Module):
         proj_drop: float = 0.0,
         norm_layer: nn.Module = LlamaRMSNorm,
         enable_flash_attn: bool = False,
+        enable_flashattn: Optional[bool] = None,
         rope=None,
         qk_norm_legacy: bool = False,
     ) -> None:
         super().__init__()
+        if enable_flashattn is not None:
+            enable_flash_attn = enable_flashattn
         assert dim % num_heads == 0, "dim should be divisible by num_heads"
         self.dim = dim
         self.num_heads = num_heads
@@ -193,32 +197,29 @@ class Attention(nn.Module):
                 k = self.rotary_emb(k)
 
         if enable_flash_attn:
-            from flash_attn import flash_attn_func
-
-            # (B, #heads, N, #dim) -> (B, N, #heads, #dim)
             q = q.permute(0, 2, 1, 3)
             k = k.permute(0, 2, 1, 3)
             v = v.permute(0, 2, 1, 3)
-            x = flash_attn_func(
+            x = attention_dense(
                 q,
                 k,
                 v,
                 dropout_p=self.attn_drop.p if self.training else 0.0,
-                softmax_scale=self.scale,
+                scale=self.scale,
+                layout="bsnd",
             )
         else:
-            dtype = q.dtype
-            q = q * self.scale
-            attn = q @ k.transpose(-2, -1)  # translate attn to float32
-            attn = attn.to(torch.float32)
-            attn = attn.softmax(dim=-1)
-            attn = attn.to(dtype)  # cast back attn to original dtype
-            attn = self.attn_drop(attn)
-            x = attn @ v
+            x = attention_eager(
+                q,
+                k,
+                v,
+                dropout_p=self.attn_drop.p if self.training else 0.0,
+                scale=self.scale,
+                layout="bhsd",
+            )
+            x = x.transpose(1, 2)
 
         x_output_shape = (B, N, C)
-        if not enable_flash_attn:
-            x = x.transpose(1, 2)
         x = x.reshape(x_output_shape)
         x = self.proj(x)
         x = self.proj_drop(x)
@@ -435,24 +436,23 @@ class SeqParallelAttention(Attention):
         q, k, v = qkv.unbind(0)
         q, k = self.q_norm(q), self.k_norm(k)
         if self.enable_flash_attn:
-            from flash_attn import flash_attn_func
-
-            x = flash_attn_func(
+            x = attention_dense(
                 q,
                 k,
                 v,
                 dropout_p=self.attn_drop.p if self.training else 0.0,
-                softmax_scale=self.scale,
+                scale=self.scale,
+                layout="bsnd",
             )
         else:
-            dtype = q.dtype
-            q = q * self.scale
-            attn = q @ k.transpose(-2, -1)  # translate attn to float32
-            attn = attn.to(torch.float32)
-            attn = attn.softmax(dim=-1)
-            attn = attn.to(dtype)  # cast back attn to original dtype
-            attn = self.attn_drop(attn)
-            x = attn @ v
+            x = attention_eager(
+                q,
+                k,
+                v,
+                dropout_p=self.attn_drop.p if self.training else 0.0,
+                scale=self.scale,
+                layout="bhsd",
+            )
 
         if not self.enable_flash_attn:
             x = x.transpose(1, 2)
