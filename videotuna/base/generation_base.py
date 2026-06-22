@@ -1,25 +1,31 @@
+import enum
 import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Union, cast
 
 import torch
 import torch.nn as nn
 from loguru import logger
 from omegaconf import DictConfig, OmegaConf
+from peft import get_peft_model
 from pytorch_lightning import Trainer
 from torch.optim.lr_scheduler import CosineAnnealingLR, LambdaLR
 
-from videotuna.base.checkpoint_mixin import CheckpointMixin
-from videotuna.base.component_loader import Component, ComponentLoader, LoadingMethod
 from videotuna.base.inference_base import InferenceBase
-from videotuna.base.lora_training_mixin import LoraTrainingMixin
 from videotuna.base.train_base import TrainBase
 from videotuna.utils.common_utils import (
     get_dist_info,
     instantiate_from_config,
+    print_green,
+    print_yellow,
 )
 from videotuna.utils.device_utils import (
     empty_accelerator_cache,
     resolve_inference_device,
+)
+from videotuna.utils.lora_utils import (
+    collect_lora_parameter_names,
+    resolve_lora_target_modules,
 )
 from videotuna.utils.train_utils import (
     get_trainer_callbacks,
@@ -27,16 +33,24 @@ from videotuna.utils.train_utils import (
     get_trainer_strategy,
 )
 
-__all__ = ["GenerationBase", "Component", "LoadingMethod", "ComponentLoader"]
+
+class Component(str, enum.Enum):
+    DENOISER = "denoiser"
+    FIRST_STAGE_MODEL = "first_stage_model"
+    COND_STAGE_MODEL = "cond_stage_model"
+    COND_STAGE_2_MODEL = "cond_stage_2_model"
+    SCHEDULER = "scheduler"
+
+    def get_component_path(self) -> str:
+        return f"{self.value}.ckpt"
 
 
-class GenerationBase(
-    TrainBase,
-    InferenceBase,
-    ComponentLoader,
-    LoraTrainingMixin,
-    CheckpointMixin,
-):
+class LoadingMethod(str, enum.Enum):
+    FIXED = "fixed"
+    CONFIG = "config"
+
+
+class GenerationBase(TrainBase, InferenceBase):
     denoiser: nn.Module | None = None
     first_stage_model: nn.Module | None = None
     cond_stage_model: nn.Module | None = None
@@ -120,6 +134,142 @@ class GenerationBase(
         # make sure call it again after loading weight
         self.set_trainable_components(trainable_components)
 
+    def instantiate_scheduler(self, config: Optional[Dict[str, Any]]) -> None:
+        if config is not None:
+            logger.info("creating scheduler")
+            self.diffusion_scheduler = self.scheduler = instantiate_from_config(config)
+            self.components.append(Component.SCHEDULER.value)
+
+    def instantiate_lora(self, config: Optional[Dict[str, Any]]) -> None:
+        self.use_lora = False
+        if config is not None:
+            logger.info("creating lora")
+            transformer_adapter_config = instantiate_from_config(config)
+            assert self.denoiser is not None
+            if transformer_adapter_config is not None and hasattr(
+                transformer_adapter_config, "target_modules"
+            ):
+                transformer_adapter_config.target_modules = resolve_lora_target_modules(
+                    self.denoiser, transformer_adapter_config.target_modules
+                )
+            self.denoiser = get_peft_model(
+                cast(Any, self.denoiser),
+                cast(Any, transformer_adapter_config),
+                autocast_adapter_dtype=False,
+            )
+            self.lora_params = collect_lora_parameter_names(self.denoiser)
+            self.denoiser.requires_grad_(False)
+            for name, param in self.denoiser.named_parameters():
+                if name in self.lora_params:
+                    param.requires_grad_(True)
+            self.use_lora = True
+            self.lora_path = config.get("ckpt_path")
+            logger.info(
+                f"self.use_lora: {self.use_lora} self.lora_path: {self.lora_path} self.lora_params: {self.lora_params}"
+            )
+
+    def instantiate_first_stage(self, config: Optional[Dict[str, Any]]) -> None:
+        """
+        Instantiates the first stage model of the generative process.
+
+        :param config: Dictionary containing configuration for the first stage model.
+        """
+        if config is None:
+            return
+        logger.info("creating first stage")
+        model = instantiate_from_config(config)
+        assert model is not None
+        self.first_stage_model = model.eval()
+        for param in self.first_stage_model.parameters():
+            param.requires_grad = False
+        self.components.append(Component.FIRST_STAGE_MODEL.value)
+        self.first_stage_model_path = config.get(
+            "ckpt_path", f"{Component.FIRST_STAGE_MODEL.value}.ckpt"
+        )
+        logger.info(f"self.first_stage_model_path: {self.first_stage_model_path}")
+
+    def instantiate_cond_stage(self, config: Optional[Dict[str, Any]]) -> None:
+        """
+        Instantiates the conditional stage model of the generative process.
+
+        :param config: Dictionary containing configuration for the conditional stage model.
+        """
+        if config is None:
+            return
+        from videotuna.utils.quantization import apply_quantization_to_config_params
+
+        logger.info("creating cond stage")
+        cfg = config
+        if cfg is not None and isinstance(cfg, dict) and cfg.get("params"):
+            cfg = dict(cfg)
+            cfg["params"] = apply_quantization_to_config_params(dict(cfg["params"]))
+        model = instantiate_from_config(cfg)
+        assert model is not None
+        self.cond_stage_model = model.eval()
+        for param in self.cond_stage_model.parameters():
+            param.requires_grad = False
+        self.components.append(Component.COND_STAGE_MODEL.value)
+        self.cond_stage_model_path = config.get(
+            "ckpt_path", f"{Component.COND_STAGE_MODEL.value}.ckpt"
+        )
+        logger.info(f"self.cond_stage_model_path: {self.cond_stage_model_path}")
+
+    def instantiate_cond_stage_2(self, config: Optional[Dict[str, Any]]) -> None:
+        """
+        Instantiates the conditional stage model of the generative process.
+
+        :param config: Dictionary containing configuration for the conditional stage model.
+        """
+        self.cond_stage_2_model = None
+        if config is not None:
+            logger.info("creating cond stage 2")
+            model = instantiate_from_config(config)
+            assert model is not None
+            self.cond_stage_2_model = model.eval()
+            for param in self.cond_stage_2_model.parameters():
+                param.requires_grad = False
+            self.components.append(Component.COND_STAGE_2_MODEL.value)
+            self.cond_stage_2_model_path = config.get(
+                "ckpt_path", f"{Component.COND_STAGE_2_MODEL.value}.ckpt"
+            )
+            logger.info(f"self.cond_stage_2_model_path: {self.cond_stage_2_model_path}")
+
+    def instantiate_denoiser(self, config: Optional[Dict[str, Any]]) -> None:
+        """
+        Instantiates the denoiser model of the generative process.
+
+        :param config: Dictionary containing configuration for the denoiser model.
+        """
+        if config is None:
+            return
+        logger.info("creating denoiser")
+        model = instantiate_from_config(config)
+        assert model is not None
+        self.denoiser = model.eval()
+        for param in self.denoiser.parameters():
+            param.requires_grad = False
+        self.components.append(Component.DENOISER.value)
+        self.denoiser_path = config.get("ckpt_path", f"{Component.DENOISER.value}.ckpt")
+        logger.info(f"self.denoiser_path: {self.denoiser_path}")
+
+    def apply_denoiser_gradient_checkpointing(self, enabled: bool = True) -> None:
+        """Enable gradient checkpointing on the denoiser only."""
+        denoiser = getattr(self, "denoiser", None)
+        if denoiser is None:
+            return
+        if hasattr(denoiser, "activation_checkpointing"):
+            denoiser.activation_checkpointing = enabled
+            logger.info(f"Wan denoiser activation_checkpointing={enabled}")
+            return
+        base_model = getattr(denoiser, "base_model", denoiser)
+        model = getattr(base_model, "model", base_model)
+        if enabled and hasattr(model, "enable_gradient_checkpointing"):
+            model.enable_gradient_checkpointing()
+            logger.info("Enabled diffusers gradient checkpointing on denoiser")
+        elif not enabled and hasattr(model, "disable_gradient_checkpointing"):
+            model.disable_gradient_checkpointing()
+            logger.info("Disabled diffusers gradient checkpointing on denoiser")
+
     def configure_lr_config(self, lr_config: Dict[str, Any], bs: int, num_rank: int):
         base_lr = lr_config["base_learning_rate"]
         if lr_config.get("scale_lr", True):
@@ -192,6 +342,161 @@ class GenerationBase(
             raise NotImplementedError
         return lr_scheduler
 
+    def set_trainable_components(
+        self,
+        components: Union[str, List[str]] = [],
+    ):
+        """
+        Sets the components of the generative model that should be trainable.
+
+        :param components: The components to be set as trainable.
+        """
+        if isinstance(components, str):
+            components = [components]
+
+        # eval all components
+        for component in self.components:
+            model = getattr(self, component)
+            if model is None or not isinstance(model, nn.Module):
+                logger.info(
+                    f"Skipping eval component {component} since it is not set or not module"
+                )
+                continue
+
+            model.eval()
+            model.requires_grad_(False)
+
+        # train selected components
+        for component in components:
+            model = getattr(self, component)
+            if model is None:
+                raise ValueError(f"Invalid component name: {component}")
+
+            if not isinstance(model, nn.Module):
+                logger.info(
+                    f"Skipping train component {component} since it is not module"
+                )
+                continue
+
+            # if denoiser lora, make sure only lora params require grad
+            if component == Component.DENOISER.value and self.use_lora:
+                ## TODO how to define lora module
+                model.train()
+                for name, param in model.named_parameters():
+                    if name in self.lora_params:
+                        param.requires_grad_(True)
+            else:
+                model.train()
+                model.requires_grad_(True)
+
+        print_green(f"Set the following components as trainable: {components}")
+
+    def load_first_stage(
+        self, ckpt_path: Union[str, Path], ignore_missing_ckpts: bool = False
+    ) -> None:
+        path = os.path.join(str(ckpt_path), self.first_stage_model_path)
+        if os.path.exists(path):
+            assert self.first_stage_model is not None
+            self.first_stage_model = self.load_model(self.first_stage_model, path)
+            print_green("Successfully loaded first_stage_model from checkpoint.")
+        elif ignore_missing_ckpts:
+            print_yellow("Checkpoint of first_stage_model file not found. Ignoring.")
+        else:
+            raise FileNotFoundError("Checkpoint of first_stage_model file not found.")
+
+    def load_cond_stage(
+        self, ckpt_path: Union[str, Path], ignore_missing_ckpts: bool = False
+    ) -> None:
+        path = os.path.join(str(ckpt_path), self.cond_stage_model_path)
+        if os.path.exists(path):
+            assert self.cond_stage_model is not None
+            self.cond_stage_model = self.load_model(self.cond_stage_model, path)
+            print_green("Successfully loaded cond_stage_model from checkpoint.")
+        elif ignore_missing_ckpts:
+            print_yellow("Checkpoint of cond_stage_model file not found. Ignoring.")
+        else:
+            raise FileNotFoundError("Checkpoint of cond_stage_model file not found.")
+
+    def load_cond_stage_2(
+        self, ckpt_path: Union[str, Path], ignore_missing_ckpts: bool = False
+    ) -> None:
+        if self.cond_stage_2_model is None:
+            return
+
+        path = os.path.join(str(ckpt_path), self.cond_stage_2_model_path)
+        if os.path.exists(path):
+            self.cond_stage_2_model = self.load_model(self.cond_stage_2_model, path)
+            print_green("Successfully loaded cond_stage_2_model from checkpoint.")
+        elif ignore_missing_ckpts:
+            print_yellow("Checkpoint of cond_stage_2_model file not found. Ignoring.")
+        else:
+            raise FileNotFoundError("Checkpoint of cond_stage_2_model file not found.")
+
+    def load_denoiser(
+        self,
+        ckpt_path: Optional[Union[str, Path]] = None,
+        denoiser_ckpt_path: Optional[Union[str, Path]] = None,
+        ignore_missing_ckpts: bool = False,
+    ) -> None:
+        if ckpt_path is None and denoiser_ckpt_path is None:
+            return
+        path = os.path.join(str(ckpt_path or ""), self.denoiser_path)
+        if denoiser_ckpt_path is not None:
+            path = str(denoiser_ckpt_path)
+
+        if os.path.exists(path):
+            assert self.denoiser is not None
+            self.denoiser = self.load_model(self.denoiser, path)
+            print_green("Successfully loaded denoiser from checkpoint.")
+        elif ignore_missing_ckpts:
+            print_yellow("Checkpoint of denoiser file not found. Ignoring.")
+        else:
+            raise FileNotFoundError("Checkpoint of denoiser file not found.")
+
+    def load_lora(
+        self,
+        lora_ckpt_path: Optional[Union[str, Path]] = None,
+        ignore_missing_ckpts: bool = False,
+    ) -> None:
+        if not self.use_lora:
+            return
+
+        lora_path = self.lora_path
+        if lora_ckpt_path is not None:
+            lora_path = str(lora_ckpt_path)
+
+        if lora_path is not None and os.path.exists(lora_path):
+            assert self.denoiser is not None
+            self.load_model(self.denoiser, lora_path, strict=False)
+            print_green("Successfully loaded denoiser from checkpoint.")
+        elif ignore_missing_ckpts:
+            print_yellow("Checkpoint of denoiser file not found. Ignoring.")
+        else:
+            raise FileNotFoundError("Checkpoint of denoiser file not found.")
+
+    def from_pretrained(
+        self,
+        ckpt_path: Optional[Union[str, Path]] = None,
+        denoiser_ckpt_path: Optional[Union[str, Path]] = None,
+        lora_ckpt_path: Optional[Union[str, Path]] = None,
+        ignore_missing_ckpts: bool = False,
+        device: Optional[str] = None,
+        **kwargs,
+    ) -> None:
+        assert ckpt_path is not None, "Please provide a valid checkpoint path."
+        ckpt_str = str(ckpt_path)
+        denoiser_path = (
+            str(denoiser_ckpt_path) if denoiser_ckpt_path is not None else None
+        )
+        lora_path = str(lora_ckpt_path) if lora_ckpt_path is not None else None
+
+        # can ovrride following methods
+        self.load_first_stage(ckpt_str, ignore_missing_ckpts)
+        self.load_cond_stage(ckpt_str, ignore_missing_ckpts)
+        self.load_cond_stage_2(ckpt_str, ignore_missing_ckpts)
+        self.load_denoiser(ckpt_str, denoiser_path, ignore_missing_ckpts)
+        self.load_lora(lora_path, ignore_missing_ckpts)
+
     def enable_vram_management(self):
         logger.info("enable_vram_management: default moving to cuda")
         self.cuda()
@@ -245,6 +550,38 @@ class GenerationBase(
                     model.to(device)
         # fresh the accelerator cache
         empty_accelerator_cache()
+
+    @staticmethod
+    def load_model(
+        model: nn.Module, ckpt_path: Optional[Union[str, Path]] = None, strict=True
+    ):
+        """
+        Loads the weights of the model from a checkpoint file.
+
+        :param model: The model to be loaded.
+        :param ckpt_path: Path to the checkpoint file.
+        """
+        assert ckpt_path is not None, "Please provide a valid checkpoint path."
+
+        ckpt_path = Path(ckpt_path)
+        if ckpt_path.exists():
+            ckpt = torch.load(ckpt_path, map_location=torch.device("cpu"))
+            if "state_dict" in ckpt:
+                state_dict = ckpt["state_dict"]
+            else:
+                state_dict = ckpt
+            missing_keys, unexpected_keys = model.load_state_dict(
+                state_dict, strict=strict
+            )
+            all_keys = [i for i, _ in model.named_parameters()]
+            num_updated_keys = len(all_keys) - len(missing_keys)
+            num_unexpected_keys = len(unexpected_keys)
+            logger.info(
+                f"{num_updated_keys} parameters are loaded from {ckpt_path}. {num_unexpected_keys} parameters are unexpected."
+            )
+            return model
+        else:
+            raise FileNotFoundError("Checkpoint of model file not found.")
 
     def init_trainer(self, train_config: DictConfig):
         # 1. basic info setup
