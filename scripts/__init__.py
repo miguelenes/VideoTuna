@@ -528,6 +528,30 @@ def inference_domain_t2i():
     inference_flux_lora()
 
 
+def validate_domain_t2v():
+    """Canonical Wan 2.2 domain LoRA validation after training."""
+    if not any(arg.startswith("--trained_ckpt") for arg in sys.argv[1:]) and not any(
+        arg.startswith("--lorackpt") for arg in sys.argv[1:]
+    ):
+        print(
+            "Error: validate-domain-t2v requires --trained_ckpt <denoiser.ckpt>",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+    result = subprocess.run(
+        [
+            "python",
+            "scripts/inference_new.py",
+            "--config",
+            "configs/inference/presets/wan_domain_lora_smoke_22.yaml",
+            "--enable_model_cpu_offload",
+        ]
+        + sys.argv[1:],
+        check=False,
+    )
+    raise SystemExit(result.returncode)
+
+
 def benchmark_attn_backends():
     """Benchmark eager vs sdpa vs flash on Wan Diffusers inference."""
     from scripts.benchmark_attn_backends import main

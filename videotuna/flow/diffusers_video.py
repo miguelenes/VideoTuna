@@ -173,9 +173,13 @@ class DiffusersVideoFlow(GenerationBase):
             return
         if self.model_family == "wan":
             if is_native_wan_lora_ckpt(self._lora_path):
-                apply_native_wan_lora_to_pipeline(pipeline, self._lora_path)
+                reports = apply_native_wan_lora_to_pipeline(
+                    pipeline, self._lora_path
+                )
                 logger.info(
-                    "Applied native Wan 2.1 LoRA bridge from {}", self._lora_path
+                    "Applied native Wan 2.1 LoRA bridge from {} ({})",
+                    self._lora_path,
+                    [r.as_dict() for r in reports],
                 )
                 return
             pipeline.load_lora_weights(self._lora_path)

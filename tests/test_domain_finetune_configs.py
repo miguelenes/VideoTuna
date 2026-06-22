@@ -19,6 +19,9 @@ FLUX_INFER_SMOKE = (
 WAN_INFER_SMOKE = (
     REPO_ROOT / "configs" / "inference" / "presets" / "wan_domain_lora_smoke.yaml"
 )
+WAN_INFER_SMOKE_22 = (
+    REPO_ROOT / "configs" / "inference" / "presets" / "wan_domain_lora_smoke_22.yaml"
+)
 
 
 def test_flux_domain_train_config_loads():
@@ -66,3 +69,13 @@ def test_wan_domain_inference_smoke_yaml():
     assert cfg.inference.frames == 81
     assert cfg.inference.num_inference_steps == 20
     assert cfg.flow.params.offload_model is True
+
+
+def test_wan_domain_inference_smoke_22_yaml():
+    cfg = OmegaConf.load(WAN_INFER_SMOKE_22)
+    assert cfg.inference.height == 720
+    assert cfg.inference.width == 1280
+    assert cfg.inference.frames == 81
+    assert cfg.inference.num_inference_steps == 4
+    assert cfg.flow.params.model_variant == "2.2"
+    assert "DiffusersVideoFlow" in cfg.flow.target

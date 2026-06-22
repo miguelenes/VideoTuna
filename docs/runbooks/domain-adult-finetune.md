@@ -23,7 +23,7 @@ huggingface-cli login                    # FLUX.1-dev is gated on Hugging Face
 | Phase | Model | Peak VRAM | GPUs | Rough time | Limitation |
 |-------|-------|-----------|------|------------|------------|
 | 1 — T2I | Flux LoRA @ 512px | ~24–40 GB | 1 | 2000 steps ≈ hours on A100-class | Trains **FLUX.1-dev** |
-| 2 — T2V | Wan 2.1 T2V LoRA @ 480×832×81 | ~38 GB | 1 + DeepSpeed | ~41 s/epoch on H800 | Trains **Wan 2.1**; production validation on Wan 2.2 (Phase 3) |
+| 2 — T2V | Wan 2.1 T2V LoRA @ 480×832×81 | ~38 GB | 1 + DeepSpeed | ~41 s/epoch on H800 | Trains **Wan 2.1**; validates on **Wan 2.2** Diffusers 720p |
 
 ---
 
@@ -134,32 +134,51 @@ Checkpoint example:
 
 `results/train/train_wan_domain_t2v_lora_<timestamp>/checkpoints/only_trained_model/denoiser-000-000000025.ckpt`
 
-### Inference smoke (interim — Wan 2.1 native)
+### Validation (Wan 2.2 Diffusers — primary)
 
-Use this for Phase 2 validation until Wan 2.2 bridge work is complete (Prompt 4):
+After training, validate the native Lightning LoRA on Wan 2.2 Diffusers 720p:
+
+```bash
+export VIDEOTUNA_ATTN_BACKEND=auto   # NVIDIA; use sdpa on ROCm
+poetry run validate-domain-t2v \
+  --trained_ckpt results/train/train_wan_domain_t2v_lora_<ts>/checkpoints/only_trained_model/denoiser-000-000000025.ckpt \
+  --prompt_file inputs/t2v/domain_prompt.txt \
+  --num_inference_steps 4
+```
+
+| VRAM | Preset override |
+|------|-----------------|
+| ~24 GB | default (`wan_domain_lora_smoke_22.yaml`) |
+| 12–16 GB | `--config configs/inference/presets/wan_domain_lora_smoke_22_low_vram.yaml` |
+
+Output: `results/t2v/wan-domain-lora-smoke-22/*.mp4` at **720×1280**, **81 frames**, **16 fps**.
+
+For full-quality QA (20–50 steps), use [`balanced_wan2_2_720p.yaml`](../../configs/inference/presets/balanced_wan2_2_720p.yaml) — see [wan2.2-inference-profile.md](wan2.2-inference-profile.md).
+
+**Optional:** export Diffusers safetensors for reuse without runtime PEFT injection:
+
+```bash
+poetry run python tools/convert_wan_lora_21_to_22.py \
+  --input results/train/.../denoiser-000-000000025.ckpt \
+  --output-dir results/lora/wan22-export/
+```
+
+**Bridge debug / spike:** `poetry run python tools/spike_wan_lora_bridge.py --synthetic /tmp/synthetic.ckpt`
+
+<details>
+<summary>Optional fast path — Wan 2.1 native smoke (480p)</summary>
+
+Use only when debugging training checkpoints on the same base model (no 2.1→2.2 bridge):
 
 ```bash
 poetry run python scripts/inference_new.py \
   --config configs/inference/presets/wan_domain_lora_smoke.yaml \
-  --ckpt_path checkpoints/wan/Wan2.1-T2V-14B \
   --trained_ckpt results/train/train_wan_domain_t2v_lora_<ts>/checkpoints/only_trained_model/denoiser-000-000000025.ckpt \
   --prompt "sks_style, slow camera push-in, soft lighting" \
-  --height 480 --width 832 --frames 81 \
-  --num_inference_steps 20 \
   --enable_model_cpu_offload
 ```
 
-### Phase 3 — Wan 2.2 production validation (deferred)
-
-Wan 2.2 Diffusers 720p validation is documented in [wan2.2-inference-profile.md](wan2.2-inference-profile.md). Not required for the training-only milestone.
-
-```bash
-poetry run inference-wan2.2-t2v-720p \
-  --config configs/inference/presets/balanced_wan2_2_720p.yaml \
-  --trained_ckpt results/train/train_wan_domain_t2v_lora_<ts>/checkpoints/only_trained_model/denoiser-000-000000025.ckpt \
-  --prompt "sks_style, cinematic lighting" \
-  --enable_model_cpu_offload
-```
+</details>
 
 ---
 
@@ -173,6 +192,8 @@ When no CUDA/ROCm GPU is available locally:
 ```bash
 poetry run test tests/test_domain_finetune_configs.py -q
 poetry run test tests/test_flux_lora_train_smoke.py -q
+poetry run test tests/test_wan_lora_bridge.py -q
+poetry run test tests/test_wan_domain_lora_smoke_22_config.py -q
 poetry run test tests/test_import_smoke.py -q
 poetry run test tests/test_poetry_scripts.py -q
 ```
@@ -190,15 +211,17 @@ poetry run test tests/test_poetry_scripts.py -q
 | ROCm flash-attn error | `export VIDEOTUNA_ATTN_BACKEND=sdpa` |
 | HF gated model | `huggingface-cli login` and accept FLUX.1-dev license |
 | Wan grey output at inference | Use `unconditional_guidance_scale: 12.0` during training preview (set in YAML `image_logger`) |
+| Wan 2.2 validation OOM | Use `wan_domain_lora_smoke_22_low_vram.yaml` or `--enable_sequential_cpu_offload` |
+| Bridge load warnings | Run `tools/spike_wan_lora_bridge.py --input <ckpt>` for key inventory |
 
 ## Known limitations
 
 - **FLUX.1 only:** Training uses FLUX.1-dev; see [`docs/MODEL_VERSIONS.md`](../MODEL_VERSIONS.md).
-- **Wan 2.1 → 2.2:** LoRA trains on Wan 2.1 native; Wan 2.2 Diffusers validation uses `videotuna/utils/wan_lora_bridge.py` (Prompt 4).
+- **Wan 2.1 → 2.2:** LoRA trains on Wan 2.1 native; Wan 2.2 validation uses `videotuna/utils/wan_lora_bridge.py` (loads onto both `transformer` and `transformer_2`).
 
 ## Related docs
 
 - [`docs/runbooks/cloud-gpu-training.md`](cloud-gpu-training.md) — Vast.ai / rented GPU provisioning and Syncthing workflow
-- [`docs/runbooks/wan2.2-inference-profile.md`](wan2.2-inference-profile.md) — Wan 2.2 production validation (Phase 3)
+- [`docs/runbooks/wan2.2-inference-profile.md`](wan2.2-inference-profile.md) — Wan 2.2 VRAM tiers and benchmarks
 - [`docs/checkpoints.md`](../checkpoints.md)
 - [`docs/datasets.md`](../datasets.md)

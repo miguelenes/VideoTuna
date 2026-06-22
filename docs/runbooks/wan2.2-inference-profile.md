@@ -146,14 +146,21 @@ poetry run benchmark-attn-backends \
 After Phase 2 training, validate the native Lightning LoRA on Wan 2.2 Diffusers:
 
 ```bash
-poetry run inference-wan2.2-t2v-720p \
-  --config configs/inference/presets/balanced_wan2_2_720p.yaml \
+poetry run validate-domain-t2v \
   --trained_ckpt results/train/train_wan_domain_t2v_lora_<ts>/checkpoints/only_trained_model/denoiser-000-000000025.ckpt \
-  --prompt "sks_style, slow camera push-in, soft lighting" \
+  --prompt_file inputs/t2v/domain_prompt.txt \
   --enable_model_cpu_offload
 ```
 
-The bridge is implemented in `videotuna/utils/wan_lora_bridge.py`. Run `poetry run test tests/test_wan_lora_bridge.py -q` on CPU; full visual QA requires a rental GPU.
+Low VRAM (12–16 GB):
+
+```bash
+poetry run validate-domain-t2v \
+  --config configs/inference/presets/wan_domain_lora_smoke_22_low_vram.yaml \
+  --trained_ckpt <denoiser.ckpt>
+```
+
+The bridge loads adapters onto both `transformer` (high-noise) and `transformer_2` (low-noise). Run `poetry run test tests/test_wan_lora_bridge.py -q` on CPU; full visual QA requires a rental GPU.
 
 ## Multi-GPU (2× A100)
 
