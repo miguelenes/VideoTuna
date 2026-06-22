@@ -10,7 +10,8 @@ of `videotuna/third_party/flux/`.
 | **License** | Apache-2.0 |
 | **VideoTuna import** | Pre-2025; last touched in git commit `1100b6a` |
 | **Best-match upstream era** | SimpleTuner flat layout before the `simpletuner` pip package restructure |
-| **Pinned upstream SHA** | Not verified byte-for-byte — snapshot was namespace-rewritten to `videotuna.third_party.flux` |
+| **Pinned upstream SHA** | `34b1fd729fd0fa86e6b085ba0f3dbc44ca8757dc` (2025-01-29; reference submodule at `videotuna/vendor/simpletuner/`) |
+| **Byte-for-byte match** | No — VideoTuna snapshot was namespace-rewritten to `videotuna.third_party.flux` with 2 functional patches |
 
 ## VideoTuna-only patches (2 functional hooks)
 

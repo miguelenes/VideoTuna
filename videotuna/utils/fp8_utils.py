@@ -45,6 +45,12 @@ def validate_fp8_inference(
     Raises:
         RuntimeError: if PyTorch float8 or the FP8 scale map is unavailable.
     """
+    if detect_compute_backend() == "cpu":
+        raise RuntimeError(
+            "FP8 inference (--enable_fp8) is not supported on CPU. "
+            "Use --dtype fp32 or fp16 for CPU smoke runs."
+        )
+
     if detect_compute_backend() == "rocm":
         raise RuntimeError(
             "FP8 inference (--enable_fp8) is not supported on AMD ROCm. "

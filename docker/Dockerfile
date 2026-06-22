@@ -33,7 +33,7 @@ RUN git clone https://github.com/VideoVerses/VideoTuna.git &&\
 # RUN git clone https://huggingface.co/THUDM/CogVideoX-2b         # This are checkpoints for CogVideoX T2V-2B
 # # RUN git clone https://huggingface.co/THUDM/CogVideoX-5b         # This are checkpoints for CogVideoX T2V-5B
 # # RUN git clone https://huggingface.co/THUDM/CogVideoX-5b-I2V     # This are checkpoints for CogVideoX I2V-5B
-# # RUN git clone https://huggingface.co/THUDM/CogVideoX1.5-5B-SAT  # This are checkpoints for CogVideoX 1.5-5B (both T2V and I2V)
+# CogVideoX 1.5: use Diffusers hub IDs (THUDM/CogVideoX1.5-5B, THUDM/CogVideoX1.5-5B-I2V) — SAT checkpoints removed.
 
 
 # # ---- Open-Sora ----

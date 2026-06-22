@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import os
-from contextlib import nullcontext
-from typing import Any, Dict, List, Optional, Tuple
+from contextlib import AbstractContextManager, nullcontext
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 import torch
 from diffusers import (
@@ -190,7 +191,7 @@ def _resolve_flux_pipeline_cls(entry: Dict[str, Any], model_variant: Optional[st
     return entry["pipeline_cls"]
 
 
-def _hunyuan_attention_context(model_family: str):
+def _hunyuan_attention_context(model_family: str) -> AbstractContextManager[None]:
     if model_family != "hunyuan":
         return nullcontext()
     try:
@@ -199,7 +200,7 @@ def _hunyuan_attention_context(model_family: str):
         return nullcontext()
     backend = os.environ.get("VIDEOTUNA_ATTN_BACKEND", "auto")
     if backend == "flash" and detect_compute_backend() != "rocm":
-        return attention_backend("flash_hub")
+        return cast(AbstractContextManager[None], attention_backend("flash_hub"))
     if backend == "flash" and detect_compute_backend() == "rocm":
         logger.warning(
             "VIDEOTUNA_ATTN_BACKEND=flash ignored on ROCm; using default diffusers attention"
@@ -234,24 +235,25 @@ class DiffusersVideoFlow(GenerationBase):
         self.enable_attention_cache = enable_attention_cache
         self._model_id: Optional[str] = None
         self._lora_path: Optional[str] = None
-        self._dtype = torch.bfloat16
+        self._dtype: torch.dtype = torch.bfloat16
 
     def from_pretrained(
         self,
-        ckpt_path: Optional[str] = None,
-        denoiser_ckpt_path: Optional[str] = None,
-        lora_ckpt_path: Optional[str] = None,
+        ckpt_path: Optional[Union[str, Path]] = None,
+        denoiser_ckpt_path: Optional[Union[str, Path]] = None,
+        lora_ckpt_path: Optional[Union[str, Path]] = None,
         ignore_missing_ckpts: bool = False,
         device: Optional[str] = None,
         **kwargs,
-    ):
+    ) -> None:
+        ckpt_str = str(ckpt_path) if ckpt_path is not None else None
         self._model_id = resolve_model_id(
             self.model_family,
             self.mode,
-            ckpt_path or self.pretrained_model_name_or_path,
+            ckpt_str or self.pretrained_model_name_or_path,
             self.model_variant,
         )
-        self._lora_path = lora_ckpt_path
+        self._lora_path = str(lora_ckpt_path) if lora_ckpt_path is not None else None
         self._inference_device = device
         logger.info(
             "DiffusersVideoFlow: model_id={} family={} mode={}",
@@ -263,9 +265,14 @@ class DiffusersVideoFlow(GenerationBase):
     def enable_vram_management(self):
         """No-op; optimizations are applied in inference() from CLI flags."""
 
-    def eval(self):
+    def eval(self) -> DiffusersVideoFlow:
         if self.pipeline is not None:
             self.pipeline.set_progress_bar_config(disable=False)
+        return self
+
+    def _require_pipeline(self) -> Any:
+        assert self.pipeline is not None, "Pipeline is not loaded"
+        return self.pipeline
 
     def _load_pipeline(self, dtype: torch.dtype) -> None:
         key = (self.model_family, self.mode)
@@ -284,36 +291,38 @@ class DiffusersVideoFlow(GenerationBase):
     def _configure_scheduler(self, entry: Dict[str, Any]) -> None:
         if self.model_family != "cogvideox":
             return
+        pipeline = self._require_pipeline()
         scheduler_kind = entry.get("scheduler", "dpm")
         model_id_lower = (self._model_id or "").lower()
         if "2b" in model_id_lower:
             scheduler_kind = "ddim"
         if scheduler_kind == "ddim":
-            self.pipeline.scheduler = CogVideoXDDIMScheduler.from_config(
-                self.pipeline.scheduler.config, timestep_spacing="trailing"
+            pipeline.scheduler = CogVideoXDDIMScheduler.from_config(
+                pipeline.scheduler.config, timestep_spacing="trailing"
             )
         else:
-            self.pipeline.scheduler = CogVideoXDPMScheduler.from_config(
-                self.pipeline.scheduler.config, timestep_spacing="trailing"
+            pipeline.scheduler = CogVideoXDPMScheduler.from_config(
+                pipeline.scheduler.config, timestep_spacing="trailing"
             )
 
     def _load_lora_weights(self) -> None:
         if not self._lora_path:
             return
+        pipeline = self._require_pipeline()
         if self.model_family == "cogvideox":
-            self.pipeline.load_lora_weights(
+            pipeline.load_lora_weights(
                 self._lora_path,
                 weight_name=self.lora_weight_name,
                 adapter_name="videotuna-lora",
             )
-            if hasattr(self.pipeline, "set_adapters"):
-                self.pipeline.set_adapters(
+            if hasattr(pipeline, "set_adapters"):
+                pipeline.set_adapters(
                     ["videotuna-lora"], [self.lora_rank / max(self.lora_rank, 1)]
                 )
-            elif hasattr(self.pipeline, "fuse_lora"):
-                self.pipeline.fuse_lora(lora_scale=1.0 / self.lora_rank)
+            elif hasattr(pipeline, "fuse_lora"):
+                pipeline.fuse_lora(lora_scale=1.0 / self.lora_rank)
         elif self.model_family == "flux":
-            self.pipeline.load_lora_weights(self._lora_path)
+            pipeline.load_lora_weights(self._lora_path)
             logger.info("Loaded Flux LoRA weights from {}", self._lora_path)
 
     def _resolve_inputs(
@@ -336,7 +345,7 @@ class DiffusersVideoFlow(GenerationBase):
                     f"v2v: {len(prompts)} prompts but {len(videos)} videos "
                     f"in {prompt_dir}"
                 )
-            return prompts, videos
+            return prompts, cast(List[Optional[str]], videos)
         raise ValueError(f"Unsupported mode: {self.mode}")
 
     @torch.inference_mode()
@@ -349,6 +358,7 @@ class DiffusersVideoFlow(GenerationBase):
         self._dtype = resolve_torch_dtype(getattr(args, "dtype", None))
         if self.pipeline is None:
             self._load_pipeline(self._dtype)
+        pipeline = self._require_pipeline()
 
         if not hasattr(args, "fuse_qkv"):
             args.fuse_qkv = self.fuse_qkv
@@ -356,7 +366,7 @@ class DiffusersVideoFlow(GenerationBase):
             args.enable_attention_cache = self.enable_attention_cache
 
         apply_diffusers_optimizations(
-            self.pipeline,
+            pipeline,
             args,
             model_family=self.model_family,
             disable_progress_bar=False,
@@ -442,8 +452,9 @@ class DiffusersVideoFlow(GenerationBase):
         }
 
         entry = MODEL_REGISTRY[(self.model_family, self.mode)]
+        pipeline = self._require_pipeline()
 
-        with transformer_cache_context(self.pipeline):
+        with transformer_cache_context(pipeline):
             with _hunyuan_attention_context(self.model_family):
                 if self.model_family == "cogvideox":
                     pipe_kwargs.update(
@@ -456,21 +467,25 @@ class DiffusersVideoFlow(GenerationBase):
                     if width is not None:
                         pipe_kwargs["width"] = width
                     if self.mode == "i2v":
+                        if media_path is None:
+                            raise ValueError("i2v mode requires a media path")
                         pipe_kwargs["image"] = load_image(media_path)
                     elif self.mode == "v2v":
+                        if media_path is None:
+                            raise ValueError("v2v mode requires a media path")
                         pipe_kwargs["video"] = load_video(media_path)
-                    output = self.pipeline(**pipe_kwargs).frames[0]
+                    output = pipeline(**pipe_kwargs).frames[0]
                 elif self.model_family == "flux":
                     pipe_kwargs.update(
                         guidance_scale=guidance,
                         height=height or 768,
                         width=width or 1360,
                     )
-                    if isinstance(self.pipeline, FluxPipeline):
+                    if isinstance(pipeline, FluxPipeline):
                         pipe_kwargs["max_sequence_length"] = 256
                     else:
                         pipe_kwargs["max_sequence_length"] = 512
-                    output = self.pipeline(**pipe_kwargs).images[0]
+                    output = pipeline(**pipe_kwargs).images[0]
                 elif self.model_family == "mochi":
                     pipe_kwargs.update(
                         num_frames=frames,
@@ -483,15 +498,21 @@ class DiffusersVideoFlow(GenerationBase):
                     neg = getattr(args, "uncond_prompt", None)
                     if neg:
                         pipe_kwargs["negative_prompt"] = neg
-                    autocast_ctx = (
-                        torch.autocast(
-                            accelerator_device_string(), self._dtype, cache_enabled=False
+                    device_type = accelerator_device_string()
+                    autocast_ctx: AbstractContextManager[None] = (
+                        cast(
+                            AbstractContextManager[None],
+                            torch.autocast(
+                                device_type,
+                                dtype=self._dtype,
+                                cache_enabled=False,
+                            ),
                         )
-                        if accelerator_device_string() == "cuda"
-                        else torch.autocast("cpu", enabled=False)
+                        if device_type == "cuda"
+                        else nullcontext()
                     )
                     with autocast_ctx:
-                        output = self.pipeline(**pipe_kwargs).frames[0]
+                        output = pipeline(**pipe_kwargs).frames[0]
                 elif self.model_family == "wan":
                     pipe_kwargs.update(
                         num_frames=frames,
@@ -507,8 +528,10 @@ class DiffusersVideoFlow(GenerationBase):
                     if neg:
                         pipe_kwargs["negative_prompt"] = neg
                     if self.mode == "i2v":
+                        if media_path is None:
+                            raise ValueError("i2v mode requires a media path")
                         pipe_kwargs["image"] = load_image(media_path)
-                    output = self.pipeline(**pipe_kwargs).frames[0]
+                    output = pipeline(**pipe_kwargs).frames[0]
                 elif self.model_family == "hunyuan":
                     pipe_kwargs.update(num_frames=frames)
                     if height is not None:
@@ -519,8 +542,10 @@ class DiffusersVideoFlow(GenerationBase):
                     if neg:
                         pipe_kwargs["negative_prompt"] = neg
                     if self.mode == "i2v":
+                        if media_path is None:
+                            raise ValueError("i2v mode requires a media path")
                         pipe_kwargs["image"] = load_image(media_path)
-                    output = self.pipeline(**pipe_kwargs).frames[0]
+                    output = pipeline(**pipe_kwargs).frames[0]
                 elif self.model_family == "ltx":
                     pipe_kwargs.update(
                         num_frames=frames,
@@ -533,7 +558,7 @@ class DiffusersVideoFlow(GenerationBase):
                     neg = getattr(args, "uncond_prompt", None)
                     if neg:
                         pipe_kwargs["negative_prompt"] = neg
-                    output = self.pipeline(**pipe_kwargs).frames[0]
+                    output = pipeline(**pipe_kwargs).frames[0]
                 else:
                     raise ValueError(f"Unknown model family: {self.model_family}")
 

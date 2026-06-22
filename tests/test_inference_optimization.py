@@ -89,28 +89,67 @@ def test_prepare_cli_inference_args_validates_parallel():
         memory_preset=None,
         ulysses_degree=2,
         ring_degree=2,
+        cpu_smoke=False,
+        device=None,
+        enable_sequential_cpu_offload=False,
+        enable_model_cpu_offload=False,
     )
     with mock.patch.dict(os.environ, {"WORLD_SIZE": "3"}):
         with pytest.raises(ValueError, match="ulysses_degree"):
             prepare_cli_inference_args(args)
 
 
-@mock.patch.dict(os.environ, {"VIDEOTUNA_ATTN_BACKEND": "flash", "VIDEOTUNA_ATTN_BACKEND_STRICT": "0"})
+def test_validate_cpu_offload_rejected_on_cpu_smoke():
+    from videotuna.utils.inference_cli import validate_cpu_offload_flags
+
+    args = argparse.Namespace(
+        cpu_smoke=True,
+        device=None,
+        enable_sequential_cpu_offload=True,
+        enable_model_cpu_offload=False,
+        memory_preset=None,
+    )
+    with pytest.raises(RuntimeError, match="CPU offload flags"):
+        validate_cpu_offload_flags(args)
+
+
+def test_apply_cpu_smoke_env():
+    from videotuna.utils.inference_cli import apply_cpu_smoke_env
+
+    args = argparse.Namespace(cpu_smoke=True)
+    with mock.patch.dict(os.environ, {}, clear=True):
+        apply_cpu_smoke_env(args)
+        assert os.environ["VIDEOTUNA_CPU_MODE"] == "smoke"
+        assert os.environ["VIDEOTUNA_ATTN_BACKEND"] == "eager"
+        assert os.environ["VIDEOTUNA_TORCH_COMPILE"] == "0"
+
+
+@mock.patch.dict(
+    os.environ,
+    {"VIDEOTUNA_ATTN_BACKEND": "flash", "VIDEOTUNA_ATTN_BACKEND_STRICT": "0"},
+)
 def test_attn_flash_fallback_to_sdpa():
     from videotuna.utils import attention
 
     with mock.patch.object(attention, "_FLASH_ATTN_AVAILABLE", False):
-        with mock.patch.object(attention, "detect_compute_backend", return_value="cuda"):
+        with mock.patch.object(
+            attention, "detect_compute_backend", return_value="cuda"
+        ):
             with mock.patch.object(attention, "gpu_is_available", return_value=True):
                 assert attention.get_attn_backend() == "sdpa"
 
 
-@mock.patch.dict(os.environ, {"VIDEOTUNA_ATTN_BACKEND": "flash", "VIDEOTUNA_ATTN_BACKEND_STRICT": "1"})
+@mock.patch.dict(
+    os.environ,
+    {"VIDEOTUNA_ATTN_BACKEND": "flash", "VIDEOTUNA_ATTN_BACKEND_STRICT": "1"},
+)
 def test_attn_flash_strict_raises():
     from videotuna.utils import attention
 
     with mock.patch.object(attention, "_FLASH_ATTN_AVAILABLE", False):
-        with mock.patch.object(attention, "detect_compute_backend", return_value="cuda"):
+        with mock.patch.object(
+            attention, "detect_compute_backend", return_value="cuda"
+        ):
             with pytest.raises(RuntimeError, match="flash-attn"):
                 attention.get_attn_backend()
 
@@ -152,6 +191,14 @@ def test_precision_from_dtype_flag():
     assert precision_from_dtype_flag(None, default="bf16") == "bf16"
 
 
+def test_validate_fp8_inference_rejected_on_cpu():
+    with mock.patch(
+        "videotuna.utils.fp8_utils.detect_compute_backend", return_value="cpu"
+    ):
+        with pytest.raises(RuntimeError, match="not supported on CPU"):
+            validate_fp8_inference("model.pt")
+
+
 def test_validate_fp8_inference_missing_map():
     with tempfile.NamedTemporaryFile(suffix=".pt") as tmp:
         with mock.patch(
@@ -160,8 +207,13 @@ def test_validate_fp8_inference_missing_map():
             with mock.patch(
                 "videotuna.utils.fp8_utils.gpu_is_available", return_value=False
             ):
-                with pytest.raises(FileNotFoundError):
-                    validate_fp8_inference(tmp.name)
+                with mock.patch(
+                    "videotuna.utils.fp8_utils.fp8_dtype_available", return_value=True
+                ):
+                    mock_torchao = mock.MagicMock()
+                    with mock.patch.dict("sys.modules", {"torchao": mock_torchao}):
+                        with pytest.raises(FileNotFoundError):
+                            validate_fp8_inference(tmp.name)
 
 
 @mock.patch.dict(os.environ, {"VIDEOTUNA_ATTN_BACKEND": "eager"})
@@ -203,7 +255,7 @@ def test_require_accelerator_for_flow_raises_without_gpu():
     if torch.cuda.is_available():
         require_accelerator_for_flow("videotuna.flow.wanvideo.WanVideoModelFlow")
         return
-    with pytest.raises(RuntimeError, match="GPU accelerator"):
+    with pytest.raises(RuntimeError, match="requires a GPU"):
         require_accelerator_for_flow("videotuna.flow.wanvideo.WanVideoModelFlow")
 
 
@@ -215,7 +267,7 @@ def test_require_nvidia_cuda_alias_raises_without_gpu():
     if torch.cuda.is_available():
         require_nvidia_cuda_for_flow("videotuna.flow.wanvideo.WanVideoModelFlow")
         return
-    with pytest.raises(RuntimeError, match="GPU accelerator"):
+    with pytest.raises(RuntimeError, match="requires a GPU"):
         require_nvidia_cuda_for_flow("videotuna.flow.wanvideo.WanVideoModelFlow")
 
 

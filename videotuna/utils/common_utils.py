@@ -25,6 +25,7 @@ from videotuna.utils.attention import (
 )
 from videotuna.utils.device_utils import (
     detect_compute_backend,
+    empty_accelerator_cache,
     gpu_is_available,
     synchronize_accelerator,
 )
@@ -103,7 +104,7 @@ def get_params(config, resolve=True):
 
 
 # resolve will make params dict type rather than DictConfig type
-def instantiate_from_config(config, resolve=False):
+def instantiate_from_config(config, resolve=False) -> Any:
     if not "target" in config:
         if config == "__is_first_stage__":
             return None
@@ -169,8 +170,11 @@ def resize_numpy_image(image, max_resolution=512 * 512, resize_short_edge=None):
 def setup_dist(args):
     if dist.is_initialized():
         return
-    torch.cuda.set_device(args.local_rank)
-    torch.distributed.init_process_group("nccl", init_method="env://")
+    if gpu_is_available():
+        torch.cuda.set_device(args.local_rank)
+        torch.distributed.init_process_group("nccl", init_method="env://")
+    else:
+        torch.distributed.init_process_group("gloo", init_method="env://")
 
 
 def print_green(text):
@@ -392,9 +396,9 @@ def save_metrics(
 
 def get_dist_info():
     try:
-        local_rank = int(os.environ.get("LOCAL_RANK"))
-        global_rank = int(os.environ.get("RANK"))
-        num_rank = int(os.environ.get("WORLD_SIZE"))
-    except:
+        local_rank = int(os.environ.get("LOCAL_RANK") or 0)
+        global_rank = int(os.environ.get("RANK") or 0)
+        num_rank = int(os.environ.get("WORLD_SIZE") or 1)
+    except (TypeError, ValueError):
         local_rank, global_rank, num_rank = 0, 0, 1
     return local_rank, global_rank, num_rank

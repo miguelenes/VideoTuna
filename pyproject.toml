@@ -14,7 +14,8 @@ build-backend = "poetry.core.masonry.api"
 
 # Default install (`poetry install -E cuda`) = NVIDIA CUDA inference stack.
 # AMD ROCm: `poetry install -E rocm` then `poetry run install-rocm`
-# CPU dev:  `poetry install -E cpu` then `poetry run install-cpu-torch`
+# CPU dev:  `poetry install -E cpu` then `poetry run install-cpu-torch` (see docs/install-cpu.md)
+# Note: `cpu` extra is a marker; CPU torch wheels come from `install-cpu-torch`.
 # Training: `poetry install -E cuda --with training`
 # Eval:     `poetry install --with eval`
 # Dev:      `poetry install --with dev`
@@ -141,6 +142,9 @@ pre-commit = "^4.1.0"
 coverage = "^7.6.1"
 ruff = "^0.6.8"
 pudb = "2024.1.2"
+types-colorama = "*"
+types-tqdm = "*"
+types-psutil = "*"
 
 [tool.uv]
 package = true
@@ -173,6 +177,9 @@ dev = [
     "coverage>=7.6.1",
     "ruff>=0.6.8",
     "pudb==2024.1.2",
+    "types-colorama",
+    "types-tqdm",
+    "types-psutil",
 ]
 
 [[tool.poetry.source]]
@@ -212,6 +219,7 @@ format-check = 'scripts:code_format_check'
 lint = 'scripts:lint'
 benchmark-attn-backends = 'scripts:benchmark_attn_backends'
 verify-cuda-extras = 'scripts.verify_cuda_extras:main'
+verify-cpu-torch = 'scripts.verify_cpu_torch:main'
 test = 'scripts:test'
 type-check = 'scripts:type_check'
 inference-stepvideo-t2v-544x992 = 'scripts:inference_stepvideo_t2v_544x992'
@@ -263,6 +271,8 @@ train-wan2-1-t2v-fullft = 'scripts:train_wan2_1_t2v_fullft'
 [tool.pytest.ini_options]
 markers = [
     "gpu: tests that require an NVIDIA/ROCm GPU (skipped when torch.cuda.is_available() is False)",
+    "rocm: tests that require an AMD ROCm GPU",
+    "cpu_smoke: slow CPU integration tests (optional nightly)",
 ]
 
 [tool.black]
@@ -277,10 +287,15 @@ profile = "black"
 module = []
 ignore_missing_imports = true
 
+[tool.mypy]
+mypy_path = "typings"
+
 [tool.ruff]
 select = ["E", "F", "C90"]
 ignore = []
+exclude = ["videotuna/vendor/simpletuner"]
 
 [tool.pyrefly]
+search-path = ["typings"]
 project-includes = ["videotuna/**", "scripts/**", "tests/**"]
-project-excludes = ["**/third_party/flux/**"]
+project-excludes = ["videotuna/vendor/simpletuner/**"]

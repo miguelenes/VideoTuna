@@ -1,11 +1,11 @@
 ---
-description: Continuation handoff written by Markr
-alwaysApply: true
+description: Archived Markr session handoff (stale — do not apply)
+alwaysApply: false
 ---
 
-<!-- Paste into Cursor Chat -->
+<!-- Archived 2026-06-22. Superseded by AGENTS.md. Regenerate via Markr when starting a new handoff. -->
 
-# Handoff from Cursor
+# Handoff from Cursor (archived)
 > 10 messages | ~344 tokens | Projects/VideoTuna | branch `main`
 >
 > Conditional Residual Handoff — transmits what the repo can't tell you (decisions, dead-ends, constraints, uncommitted diff), not the code itself.
@@ -115,56 +115,6 @@ Uncommitted changes:
 - `D videotuna/models/cogvideo_sat/sgm/modules/autoencoding/regularizers/__init__.py`
 - `D videotuna/models/cogvideo_sat/sgm/modules/autoencoding/regularizers/base.py`
 - `D videotuna/models/cogvideo_sat/sgm/modules/autoencoding/regularizers/finite_scalar_quantization.py`
-
-```
-README.md                                          |   29 +-
- configs/005_cogvideox1.5/cogvideox1.5_5b.yaml      |  149 -
- docs/MODEL_VERSIONS.md                             |    4 +-
- docs/checkpoints.md                                |    5 +-
- poetry.lock                                        | 1070 +++-
- pyproject.toml                                     |   88 +-
- scripts/__init__.py                                |   77 -
- scripts/inference_cogVideo_sat_refactor.py         |  306 --
- tests/conftest.py                                  |    6 +-
- tests/test_import_smoke.py                         |   26 +-
- uv.lock                                            | 5379 +++++++++++++++++++-
- videotuna/models/cogvideo_sat/arguments.py         |  337 --
- videotuna/models/cogvideo_sat/data_video.py        |  495 --
- videotuna/models/cogvideo_sat/diffusion_video.py   |  421 --
- videotuna/models/cogvideo_sat/dit_video_concat.py  |  950 ----
- videotuna/models/cogvideo_sat/sgm/__init__.py      |    4 -
- videotuna/models/cogvideo_sat/sgm/lr_scheduler.py  |  135 -
- .../models/cogvideo_sat/sgm/models/__init__.py     |    1 -
- .../models/cogvideo_sat/sgm/models/autoencoder.py  |  591 ---
- .../models/cogvideo_sat/sgm/modules/__init__.py    |    6 -
- .../models/cogvideo_sat/sgm/modules/attention.py   |  633 ---
- .../sgm/modules/autoencoding/__init__.py           |    0
- .../sgm/modules/autoencoding/losses/__init__.py    |    8 -
- .../autoencoding/losses/discriminator_loss.py      |  317 --
- .../sgm/modules/autoencoding/losses/lpips.py       |   73 -
- .../sgm/modules/autoencoding/losses/video_loss.py  |  754 ---
- .../sgm/modules/autoencoding/lpips/__init__.py     |    0
- .../sgm/modules/autoencoding/lpips/loss/.gitignore |    1 -
- .../sgm/modules/autoencoding/lpips/loss/LICENSE    |   23 -
- .../modules/autoencoding/lpips/loss/__init__.py    |    0
- .../sgm/modules/autoencoding/lpips/loss/lpips.py   |  147 -
- .../sgm/modules/autoencoding/lpips/model/LICENSE   |   58 -
- .../modules/
-```
-
-## 📁 Files in play (pointers — read the live files, this is just the index)
-
-Modified:
-_none captured_
-
-Read / explored:
-_none captured_
-
-## ⌨️ Commands run
-
-_none captured_
-
-**Verify:** _none captured — run build/lint/test before finalizing._
 
 ## 🎯 Task
 

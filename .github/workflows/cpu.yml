@@ -1,0 +1,36 @@
+name: CPU
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Poetry
+        run: pip install poetry
+
+      - name: Install dependencies (CPU extra + dev)
+        run: poetry install -E cpu --with dev
+
+      - name: Install CPU PyTorch wheels
+        run: poetry run install-cpu-torch
+
+      - name: Verify CPU torch
+        run: poetry run verify-cpu-torch
+
+      - name: Run CPU-safe tests
+        run: |
+          poetry run pytest tests/ \
+            -m "not gpu and not cpu_smoke" \
+            --ignore=tests/test_training_step_mock.py \
+            --ignore=tests/test_wan_checkpoint.py \
+            -q

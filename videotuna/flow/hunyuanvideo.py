@@ -2,8 +2,9 @@ import functools
 import os
 import random
 import time
+from contextlib import AbstractContextManager
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 import numpy as np
 import torch
@@ -61,8 +62,17 @@ from videotuna.utils.device_utils import (
     resolve_inference_device,
 )
 from videotuna.utils.fp8_utils import validate_fp8_inference
+
+xfuser: Any = None
+get_sequence_parallel_world_size: Any = None
+get_sequence_parallel_rank: Any = None
+get_sp_group: Any = None
+initialize_model_parallel: Any = None
+init_distributed_environment: Any = None
 try:
-    import xfuser
+    import xfuser as _xfuser_module
+
+    xfuser = _xfuser_module
     from xfuser.core.distributed import (
         get_sequence_parallel_rank,
         get_sequence_parallel_world_size,
@@ -70,28 +80,16 @@ try:
         init_distributed_environment,
         initialize_model_parallel,
     )
-except:
-    xfuser = None
-    get_sequence_parallel_world_size = None
-    get_sequence_parallel_rank = None
-    get_sp_group = None
-    initialize_model_parallel = None
-    init_distributed_environment = None
+except ImportError:
+    pass
 
 
-from typing import Optional, Union
-
-import numpy as np
-
-###############################################
-# 20250308 pftq: Riflex workaround to fix 192-frame-limit bug, credit to Kijai for finding it in ComfyUI and thu-ml for making it
-# https://github.com/thu-ml/RIFLEx/blob/main/riflex_utils.py
 from diffusers.models.embeddings import get_1d_rotary_pos_embed
 
 
 def get_1d_rotary_pos_embed_riflex(
     dim: int,
-    pos: Union[np.ndarray, int],
+    pos: Union[np.ndarray, int, torch.Tensor],
     theta: float = 10000.0,
     use_real=False,
     k: Optional[int] = None,
@@ -123,7 +121,7 @@ def get_1d_rotary_pos_embed_riflex(
     if isinstance(pos, np.ndarray):
         pos = torch.from_numpy(pos)  # type: ignore  # [S]
 
-    freqs = 1.0 / (
+    freqs: torch.Tensor = 1.0 / (
         theta
         ** (torch.arange(0, dim, 2, device=pos.device)[: (dim // 2)].float() / dim)
     )  # [D/2]
@@ -132,7 +130,7 @@ def get_1d_rotary_pos_embed_riflex(
     # Reduce the intrinsic frequency to stay within a single period after extrapolation (see Eq. (8)).
     # Empirical observations show that a few videos may exhibit repetition in the tail frames.
     # To be conservative, we multiply by 0.9 to keep the extrapolated length below 90% of a single period.
-    if k is not None:
+    if k is not None and L_test is not None:
         freqs[k - 1] = 0.9 * 2 * torch.pi / L_test
     # === Riflex modification end ===
 
@@ -155,49 +153,50 @@ def get_1d_rotary_pos_embed_riflex(
 def parallelize_transformer(pipe):
     transformer = pipe.transformer
     original_forward = transformer.forward
+    assert get_sequence_parallel_world_size is not None
+    assert get_sequence_parallel_rank is not None
 
     @functools.wraps(transformer.__class__.forward)
     def new_forward(
         self,
         x: torch.Tensor,
         t: torch.Tensor,  # Should be in range(0, 1000).
-        text_states: torch.Tensor = None,
-        text_mask: torch.Tensor = None,  # Now we don't use it.
+        text_states: Optional[torch.Tensor] = None,
+        text_mask: Optional[torch.Tensor] = None,  # Now we don't use it.
         text_states_2: Optional[torch.Tensor] = None,  # Text embedding for modulation.
         freqs_cos: Optional[torch.Tensor] = None,
         freqs_sin: Optional[torch.Tensor] = None,
-        guidance: torch.Tensor = None,  # Guidance for modulation, should be cfg_scale x 1000.
+        guidance: Optional[
+            torch.Tensor
+        ] = None,  # Guidance for modulation, should be cfg_scale x 1000.
         return_dict: bool = True,
     ):
-        if x.shape[-2] // 2 % get_sequence_parallel_world_size() == 0:
+        sp_world_size = get_sequence_parallel_world_size()
+        sp_rank = get_sequence_parallel_rank()
+        if x.shape[-2] // 2 % sp_world_size == 0:
             # try to split x by height
             split_dim = -2
-        elif x.shape[-1] // 2 % get_sequence_parallel_world_size() == 0:
+        elif x.shape[-1] // 2 % sp_world_size == 0:
             # try to split x by width
             split_dim = -1
         else:
             raise ValueError(
-                f"Cannot split video sequence into ulysses_degree x ring_degree ({get_sequence_parallel_world_size()}) parts evenly"
+                f"Cannot split video sequence into ulysses_degree x ring_degree ({sp_world_size}) parts evenly"
             )
 
         # patch sizes for the temporal, height, and width dimensions are 1, 2, and 2.
         temporal_size, h, w = x.shape[2], x.shape[3] // 2, x.shape[4] // 2
 
-        x = torch.chunk(x, get_sequence_parallel_world_size(), dim=split_dim)[
-            get_sequence_parallel_rank()
-        ]
+        x = torch.chunk(x, sp_world_size, dim=split_dim)[sp_rank]
 
+        assert freqs_cos is not None and freqs_sin is not None
         dim_thw = freqs_cos.shape[-1]
         freqs_cos = freqs_cos.reshape(temporal_size, h, w, dim_thw)
-        freqs_cos = torch.chunk(
-            freqs_cos, get_sequence_parallel_world_size(), dim=split_dim - 1
-        )[get_sequence_parallel_rank()]
+        freqs_cos = torch.chunk(freqs_cos, sp_world_size, dim=split_dim - 1)[sp_rank]
         freqs_cos = freqs_cos.reshape(-1, dim_thw)
         dim_thw = freqs_sin.shape[-1]
         freqs_sin = freqs_sin.reshape(temporal_size, h, w, dim_thw)
-        freqs_sin = torch.chunk(
-            freqs_sin, get_sequence_parallel_world_size(), dim=split_dim - 1
-        )[get_sequence_parallel_rank()]
+        freqs_sin = torch.chunk(freqs_sin, sp_world_size, dim=split_dim - 1)[sp_rank]
         freqs_sin = freqs_sin.reshape(-1, dim_thw)
 
         from xfuser.core.long_ctx_attention import xFuserLongContextAttention
@@ -219,6 +218,7 @@ def parallelize_transformer(pipe):
 
         return_dict = not isinstance(output, tuple)
         sample = output["x"]
+        assert get_sp_group is not None
         sample = get_sp_group().all_gather(sample, dim=split_dim)
         output["x"] = sample
         return output
@@ -310,17 +310,21 @@ class HunyuanVideoFlow(GenerationBase):
         self.lora_path = lora_path
         self.lora_scale = lora_scale
 
-        text_encoder: TextEncoderWrapper = self.cond_stage_model
-        text_encoder_2: TextEncoder = self.cond_stage_2_model
-        model: HYVideoDiffusionTransformerWrapper = self.denoiser
-        vae: AutoencoderKLCausal3DWrapper = self.first_stage_model
+        text_encoder = self.cond_stage_model
+        text_encoder_2 = self.cond_stage_2_model
+        model = self.denoiser
+        vae = self.first_stage_model
+        assert isinstance(text_encoder, TextEncoderWrapper)
+        assert isinstance(model, HYVideoDiffusionTransformerWrapper)
+        assert isinstance(vae, AutoencoderKLCausal3DWrapper)
+        assert self.scheduler is not None
         self.pipeline = HunyuanVideoPipeline(
-            vae=vae.vae,
-            text_encoder=text_encoder.text_encoder,
-            text_encoder_2=text_encoder_2,
+            vae=cast(Any, vae.vae),
+            text_encoder=cast(TextEncoder, text_encoder.text_encoder),
+            text_encoder_2=cast(Optional[TextEncoder], text_encoder_2),
             transformer=model.model,
             scheduler=self.scheduler,
-            progress_bar_config=logger,
+            progress_bar_config={"disable": False},
             precision=precision,
             vae_precision=vae_precision,
             disable_autocast=disable_autocast,
@@ -329,6 +333,7 @@ class HunyuanVideoFlow(GenerationBase):
         if self.i2v_mode:
             self.default_negative_prompt = NEGATIVE_PROMPT_I2V
             if self.use_lora:
+                assert self.pipeline is not None
                 self.pipeline = load_lora_for_pipeline(
                     self.pipeline,
                     self.lora_path,
@@ -349,7 +354,7 @@ class HunyuanVideoFlow(GenerationBase):
         denoiser_ckpt_path: Optional[Union[str, Path]] = None,
         lora_ckpt_path: Optional[Union[str, Path]] = None,
         ignore_missing_ckpts: bool = False,
-        device: str | None = None,
+        device: str | torch.device | None = None,
         **kwargs,
     ):
         """
@@ -377,9 +382,8 @@ class HunyuanVideoFlow(GenerationBase):
             # 20250316 pftq: Set local rank and device explicitly for NCCL
             local_rank = int(os.environ["LOCAL_RANK"])
             device = torch.device(f"cuda:{local_rank}")
-            torch.cuda.set_device(
-                local_rank
-            )  # 20250316 pftq: Set CUDA device explicitly
+            if gpu_is_available():
+                torch.cuda.set_device(local_rank)
             dist.init_process_group(
                 "nccl"
             )  # 20250316 pftq: Removed device_id, rely on set_device
@@ -388,6 +392,8 @@ class HunyuanVideoFlow(GenerationBase):
             assert (
                 world_size == self.ring_degree * self.ulysses_degree
             ), "number of GPUs should be equal to ring_degree * ulysses_degree."
+            assert init_distributed_environment is not None
+            assert initialize_model_parallel is not None
             init_distributed_environment(rank=rank, world_size=world_size)
             initialize_model_parallel(
                 sequence_parallel_degree=world_size,
@@ -399,9 +405,7 @@ class HunyuanVideoFlow(GenerationBase):
             world_size = 1  # 20250316 pftq: Default world_size for single GPU
             if device is None:
                 device = (
-                    str(resolve_inference_device())
-                    if gpu_is_available()
-                    else "cpu"
+                    str(resolve_inference_device()) if gpu_is_available() else "cpu"
                 )
 
         torch.set_grad_enabled(False)
@@ -412,8 +416,11 @@ class HunyuanVideoFlow(GenerationBase):
         # 20250316 pftq: Load models only on rank 0, then broadcast
         if rank == 0:
             logger.info("Building model...")
-            model: HYVideoDiffusionTransformerWrapper = self.denoiser
-            self.denoiser.load_weight()
+            assert self.denoiser is not None
+            assert self.first_stage_model is not None
+            assert self.cond_stage_model is not None
+            model = cast(HYVideoDiffusionTransformerWrapper, self.denoiser)
+            model.load_weight()
             if self.use_fp8:
                 validate_fp8_inference(self.dit_weight)
                 convert_fp8_linear(
@@ -424,16 +431,17 @@ class HunyuanVideoFlow(GenerationBase):
             self.denoiser.eval()
 
             # VAE
-            vae: AutoencoderKLCausal3DWrapper = self.first_stage_model
-            vae.load_weight()
-            s_ratio = self.first_stage_model.vae.config.spatial_compression_ratio
-            t_ratio = self.first_stage_model.vae.config.time_compression_ratio
+            first_stage = cast(AutoencoderKLCausal3DWrapper, self.first_stage_model)
+            first_stage.load_weight()
+            vae_module = first_stage.vae
+            s_ratio = vae_module.config.spatial_compression_ratio
+            t_ratio = vae_module.config.time_compression_ratio
             vae_kwargs = {"s_ratio": s_ratio, "t_ratio": t_ratio}
-            vae = self.first_stage_model
+            vae = first_stage
 
             # encoder
-            text_encoder: TextEncoderWrapper = self.cond_stage_model
-            text_encoder_2: TextEncoder = self.cond_stage_2_model
+            text_encoder = cast(TextEncoderWrapper, self.cond_stage_model)
+            text_encoder_2 = cast(Optional[TextEncoder], self.cond_stage_2_model)
         else:
             # 20250316 pftq: Initialize as None on non-zero ranks
             model = None
@@ -448,25 +456,36 @@ class HunyuanVideoFlow(GenerationBase):
             dist.barrier()  # Ensure rank 0 finishes loading before broadcasting
             if rank != 0:
                 # Reconstruct model skeleton on non-zero ranks
-                self.denoiser: HYVideoDiffusionTransformerWrapper
-                self.denoiser.load_weight()
+                assert self.denoiser is not None
+                assert self.first_stage_model is not None
+                assert self.cond_stage_model is not None
+                cast(Any, self.denoiser).load_weight()
                 self.denoiser.eval()
-                model = self.denoiser
+                model = cast(HYVideoDiffusionTransformerWrapper, self.denoiser)
 
                 # VAE
-                vae: AutoencoderKLCausal3DWrapper = self.first_stage_model
-                vae.load_weight()
-                s_ratio = self.first_stage_model.vae.config.spatial_compression_ratio
-                t_ratio = self.first_stage_model.vae.config.time_compression_ratio
+                first_stage = cast(AutoencoderKLCausal3DWrapper, self.first_stage_model)
+                first_stage.load_weight()
+                vae_module = first_stage.vae
+                s_ratio = vae_module.config.spatial_compression_ratio
+                t_ratio = vae_module.config.time_compression_ratio
                 vae_kwargs = {"s_ratio": s_ratio, "t_ratio": t_ratio}
-                vae = self.first_stage_model
-                vae = vae.to(device)
+                vae = first_stage.to(device)
 
                 # encoder
-                text_encoder: TextEncoderWrapper = self.cond_stage_model.to(device)
-                text_encoder_2: TextEncoder = self.cond_stage_2_model.to(device)
+                text_encoder = cast(TextEncoderWrapper, self.cond_stage_model).to(
+                    device
+                )
+                text_encoder_2 = (
+                    cast(TextEncoder, self.cond_stage_2_model).to(device)
+                    if self.cond_stage_2_model is not None
+                    else None
+                )
 
             # Broadcast model parameters with logging
+            assert model is not None
+            assert vae is not None
+            assert text_encoder is not None
             logger.info(f"Rank {rank}: Broadcasting model parameters")
             for param in model.parameters():
                 dist.broadcast(param.data, src=0)
@@ -489,23 +508,26 @@ class HunyuanVideoFlow(GenerationBase):
 
         self._apply_pipeline_offload(device)
 
+        assert self.pipeline is not None
         if self.ulysses_degree > 1 or self.ring_degree > 1:
             parallelize_transformer(self.pipeline)
 
         self.pipeline.transformer = maybe_compile_denoiser(self.pipeline.transformer)
 
     def _apply_pipeline_offload(self, device):
+        assert self.pipeline is not None
+        pipeline = self.pipeline
         if self.use_cpu_offload:
             # Allow DiT offload for lowest-VRAM sequential mode.
-            self.pipeline._exclude_from_cpu_offload = []
-            self.pipeline.enable_sequential_cpu_offload()
+            pipeline._exclude_from_cpu_offload = []
+            pipeline.enable_sequential_cpu_offload()
         elif self.use_model_cpu_offload:
-            self.pipeline.enable_model_cpu_offload()
+            pipeline.enable_model_cpu_offload()
         else:
-            self.pipeline = self.pipeline.to(device)
+            self.pipeline = pipeline.to(device)
 
-        if self.vae_slicing and hasattr(self.pipeline.vae, "enable_slicing"):
-            self.pipeline.vae.enable_slicing()
+        if self.vae_slicing and hasattr(pipeline.vae, "enable_slicing"):
+            pipeline.vae.enable_slicing()
 
     @staticmethod
     def parse_size(size):
@@ -533,6 +555,7 @@ class HunyuanVideoFlow(GenerationBase):
             latents_size = [video_length, height // 8, width // 8]
 
         # Compute rope sizes
+        rope_sizes: list[int] = []
         if isinstance(model.patch_size, int):
             assert all(s % model.patch_size == 0 for s in latents_size), (
                 f"Latent size(last {ndim} dimensions) should be divisible by patch size({model.patch_size}), "
@@ -689,7 +712,7 @@ class HunyuanVideoFlow(GenerationBase):
                 [round(float(h) / float(w), 5) for h, w in crop_size_list]
             )
             closest_size, closest_ratio = get_closest_ratio(
-                origin_size[1], origin_size[0], aspect_ratios, crop_size_list
+                origin_size[1], origin_size[0], aspect_ratios.tolist(), crop_size_list
             )
 
             if ulysses_degree != 1 or ring_degree != 1:
@@ -722,20 +745,27 @@ class HunyuanVideoFlow(GenerationBase):
                 ]
             )
 
-            semantic_image_pixel_values = [
+            semantic_image_tensors = [
                 ref_image_transform(semantic_image)
                 for semantic_image in semantic_images
             ]
             semantic_image_pixel_values = (
-                torch.cat(semantic_image_pixel_values)
+                torch.cat(semantic_image_tensors)
                 .unsqueeze(0)
                 .unsqueeze(2)
                 .to(self.device_type)
             )
 
-            with torch.autocast(
-                device_type=accelerator_device_string(), dtype=torch.float16, enabled=True
-            ):
+            assert self.pipeline is not None
+            autocast_ctx: AbstractContextManager[None] = cast(
+                AbstractContextManager[None],
+                torch.autocast(
+                    device_type=accelerator_device_string(),
+                    dtype=torch.float16,
+                    enabled=True,
+                ),
+            )
+            with autocast_ctx:
                 img_latents = self.pipeline.vae.encode(
                     semantic_image_pixel_values
                 ).latent_dist.mode()
@@ -772,6 +802,7 @@ class HunyuanVideoFlow(GenerationBase):
             xdit_adaptive_size: {xdit_adaptive_size}"""
         logger.debug(debug_str)
 
+        assert self.pipeline is not None
         samples = self.pipeline(
             prompt=prompt,
             height=target_height,
@@ -810,7 +841,7 @@ class HunyuanVideoFlow(GenerationBase):
         seed = config.seed
         batch_size = config.bs
         num_videos_per_prompt = config.n_samples_prompt
-        out_dict = dict()
+        out_dict: dict[str, Any] = dict()
 
         if config.mode == VideoMode.T2V.value:
             prompt_list = self.load_inference_inputs(config.prompt_file, config.mode)
@@ -914,7 +945,10 @@ class HunyuanVideoFlow(GenerationBase):
         return seeds
 
     def enable_vram_management(self):
-        vae = getattr(self.first_stage_model, "vae", self.first_stage_model)
+        first_stage = self.first_stage_model
+        if first_stage is None:
+            return
+        vae = getattr(first_stage, "vae", first_stage)
         if self.vae_tiling and hasattr(vae, "enable_tiling"):
             vae.enable_tiling()
         if self.vae_slicing and hasattr(vae, "enable_slicing"):

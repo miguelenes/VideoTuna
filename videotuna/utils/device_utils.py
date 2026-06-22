@@ -13,16 +13,32 @@ import torch.version
 from loguru import logger
 
 ComputeBackend = Literal["cuda", "rocm", "cpu", "mps"]
-InferenceDtype = Literal["bf16", "fp16"]
+InferenceDtype = Literal["bf16", "fp16", "fp32"]
+FlowCapabilityTier = Literal["cpu_ok", "cpu_smoke", "gpu_required"]
+CpuMode = Literal["off", "smoke", "force"]
 
 _COMPUTE_BACKEND_ENV = "VIDEOTUNA_COMPUTE_BACKEND"
+_CPU_MODE_ENV = "VIDEOTUNA_CPU_MODE"
+_LEGACY_ALLOW_CPU_ENV = "VIDEOTUNA_ALLOW_CPU_INFERENCE"
 
 _STEPVIDEO_FLOW = "videotuna.flow.stepvideo.StepVideoModelFlow"
+_DIFFUSERS_FLOW = "videotuna.flow.diffusers_video.DiffusersVideoFlow"
+_HUNYUAN_FLOW = "videotuna.flow.hunyuanvideo.HunyuanVideoFlow"
+_WAN_FLOW = "videotuna.flow.wanvideo.WanVideoModelFlow"
+_VIDEOCRAFTER_FLOW = "videotuna.flow.videocrafter.VideocrafterFlow"
 
-# Flows that need a GPU for practical 720p video generation.
+FLOW_TIERS: dict[str, FlowCapabilityTier] = {
+    _DIFFUSERS_FLOW: "cpu_smoke",
+    _HUNYUAN_FLOW: "gpu_required",
+    _WAN_FLOW: "gpu_required",
+    _STEPVIDEO_FLOW: "gpu_required",
+    _VIDEOCRAFTER_FLOW: "cpu_smoke",
+}
+
+# Flows that need a GPU for practical 720p video generation (legacy alias).
 _GPU_REQUIRED_FLOW_TARGETS = (
-    "videotuna.flow.hunyuanvideo.HunyuanVideoFlow",
-    "videotuna.flow.wanvideo.WanVideoModelFlow",
+    _HUNYUAN_FLOW,
+    _WAN_FLOW,
     _STEPVIDEO_FLOW,
 )
 
@@ -88,7 +104,8 @@ def detect_compute_backend() -> ComputeBackend:
         )
     if not torch.cuda.is_available():
         raise RuntimeError(
-            "VIDEOTUNA_COMPUTE_BACKEND=cuda but torch.cuda.is_available() is False."
+            "VIDEOTUNA_COMPUTE_BACKEND=cuda but torch.cuda.is_available() "
+            "is False."
         )
     return "cuda"
 
@@ -109,14 +126,16 @@ def accelerator_device_string() -> str:
 
 
 def normalize_device_prefer(prefer: str | int | None) -> str | None:
-    """Accept cuda, cuda:0, cuda:1, 0, 1 → canonical 'cuda:N' or 'cuda'."""
+    """Accept cpu, cuda, cuda:0, cuda:1, 0, 1 → canonical device string."""
     if prefer is None:
         return None
     if isinstance(prefer, int):
         return f"cuda:{prefer}"
-    text = str(prefer).strip()
+    text = str(prefer).strip().lower()
     if not text:
         return None
+    if text in ("cpu", "mps"):
+        return text
     if text.isdigit():
         return f"cuda:{int(text)}"
     if text == "cuda":
@@ -124,8 +143,58 @@ def normalize_device_prefer(prefer: str | int | None) -> str | None:
     if re.match(r"^cuda:\d+$", text):
         return text
     raise ValueError(
-        f"Invalid device {prefer!r}. Expected cuda, cuda:N, or an integer GPU index."
+        f"Invalid device {prefer!r}. Expected cpu, cuda, cuda:N, or an integer GPU index."
     )
+
+
+def resolve_cpu_mode(*, cli_smoke: bool = False) -> CpuMode:
+    """Resolve CPU inference mode from CLI flag, env, or legacy allow_cpu."""
+    if cli_smoke:
+        return "smoke"
+    raw = os.environ.get(_CPU_MODE_ENV, "off").strip().lower()
+    if raw in ("off", "smoke", "force"):
+        mode: CpuMode = raw  # type: ignore[assignment]
+    elif raw:
+        raise ValueError(
+            f"Invalid {_CPU_MODE_ENV}={raw!r}. Expected off, smoke, or force."
+        )
+    else:
+        mode = "off"
+    if os.environ.get(_LEGACY_ALLOW_CPU_ENV, "0") == "1":
+        logger.warning(
+            "{} is deprecated; use {}=force or --cpu-smoke instead.",
+            _LEGACY_ALLOW_CPU_ENV,
+            _CPU_MODE_ENV,
+        )
+        return "force"
+    return mode
+
+
+def get_flow_tier(
+    flow_target: str,
+    *,
+    model_family: str | None = None,
+    model_variant: str | None = None,
+    height: int | None = None,
+    width: int | None = None,
+) -> FlowCapabilityTier:
+    """Return the CPU capability tier for a flow target and optional model hints."""
+    base = FLOW_TIERS.get(flow_target, "cpu_ok")
+    if flow_target != _DIFFUSERS_FLOW:
+        return base
+
+    family = (model_family or "").lower()
+    variant = (model_variant or "").lower()
+
+    if family == "cogvideox" and variant in ("2b", "2"):
+        return "cpu_smoke"
+    if family == "flux" and variant in ("schnell", "1-schnell"):
+        return "cpu_smoke"
+    if family in ("wan", "hunyuan"):
+        if (height is not None and height >= 720) or (width is not None and width >= 1280):
+            return "gpu_required"
+        return "cpu_smoke"
+    return base
 
 
 def _validate_cuda_device_index(index: int) -> None:
@@ -143,6 +212,9 @@ def _validate_cuda_device_index(index: int) -> None:
 
 def resolve_inference_device(prefer: str | int | None = None) -> torch.device:
     """Pick the best available torch device for inference."""
+    if detect_compute_backend() == "cpu" and prefer is None:
+        return torch.device("cpu")
+
     normalized = normalize_device_prefer(prefer)
     if normalized:
         device = torch.device(normalized)
@@ -156,7 +228,7 @@ def resolve_inference_device(prefer: str | int | None = None) -> torch.device:
             torch.cuda.set_device(index)
             return torch.device("cuda", index)
         return device
-    if gpu_is_available():
+    if gpu_is_available() and detect_compute_backend() != "cpu":
         torch.cuda.set_device(0)
         return torch.device("cuda", 0)
     return torch.device("cpu")
@@ -185,7 +257,9 @@ def get_visible_gpus() -> list[GpuInfo]:
 
 
 def recommend_dtype(device: torch.device) -> InferenceDtype:
-    """Ampere+ (sm >= 8.0) → bf16; older NVIDIA GPUs → fp16."""
+    """CPU → fp32; Ampere+ (sm >= 8.0) → bf16; older NVIDIA GPUs → fp16."""
+    if device.type == "cpu":
+        return "fp32"
     if device.type != "cuda" or not gpu_is_available():
         return "fp16"
     index = device.index if device.index is not None else 0
@@ -359,25 +433,68 @@ def snapshot_nvidia_smi() -> str | None:
     return None
 
 
+def _tiered_cpu_error_message(
+    flow_target: str,
+    tier: FlowCapabilityTier,
+    cpu_mode: CpuMode,
+) -> str:
+    lines = [
+        f"This inference command requires a GPU (tier={tier}, cpu_mode={cpu_mode}).\n",
+        _format_hardware_context(f"Flow: {flow_target}"),
+        "Install options:\n"
+        "  - NVIDIA: poetry install --extras cuda\n"
+        "  - AMD ROCm: poetry install --extras rocm (see docs/install-rocm.md)\n",
+        "What you can do without a GPU:\n"
+        "  - Unit tests: poetry run pytest tests/ -m 'not gpu'\n"
+        "  - CogVideoX 2B smoke: --cpu-smoke with "
+        "configs/inference/presets/cogvideox_2b_cpu_smoke.yaml\n",
+    ]
+    if tier == "gpu_required":
+        lines.append(
+            "  - Debug init only (not full 720p denoise): --cpu-smoke or "
+            f"{_CPU_MODE_ENV}=force\n"
+        )
+    elif tier == "cpu_smoke" and cpu_mode == "off":
+        lines.append(
+            f"  - Enable CPU smoke: --cpu-smoke or {_CPU_MODE_ENV}=smoke\n"
+        )
+    lines.append("See docs/install-cpu.md for supported CPU workflows.")
+    return "".join(lines)
+
+
 def require_accelerator_for_flow(
     flow_target: str,
     *,
     min_vram_gb: float | None = None,
     allow_cpu: bool = False,
+    cpu_mode: CpuMode | None = None,
+    tier: FlowCapabilityTier | None = None,
+    model_family: str | None = None,
+    model_variant: str | None = None,
+    height: int | None = None,
+    width: int | None = None,
 ) -> None:
     """
     Fail fast when a GPU-backed video flow is started without an accelerator.
 
-    Passes when a CUDA or ROCm GPU is available, or when allow_cpu is True.
+    Passes when a CUDA or ROCm GPU is available, or when CPU mode permits the tier.
     """
     if allow_cpu:
         logger.warning(
-            "allow_cpu=True: skipping GPU requirement check for {}",
-            flow_target,
+            "allow_cpu=True is deprecated; use --cpu-smoke or VIDEOTUNA_CPU_MODE=force"
         )
-        return
+        cpu_mode = "force"
 
-    if flow_target not in _GPU_REQUIRED_FLOW_TARGETS:
+    resolved_tier = tier or get_flow_tier(
+        flow_target,
+        model_family=model_family,
+        model_variant=model_variant,
+        height=height,
+        width=width,
+    )
+    mode = cpu_mode if cpu_mode is not None else resolve_cpu_mode()
+
+    if resolved_tier == "cpu_ok":
         return
 
     backend = detect_compute_backend()
@@ -395,7 +512,7 @@ def require_accelerator_for_flow(
             "  - See docs/install-rocm.md for Tier-A/B model compatibility."
         )
 
-    if gpu_is_available():
+    if gpu_is_available() and backend != "cpu":
         logger.info("Inference device: {}", describe_compute_environment())
         if min_vram_gb is not None:
             props = torch.cuda.get_device_properties(0)
@@ -409,23 +526,35 @@ def require_accelerator_for_flow(
                 )
         return
 
+    if mode == "force":
+        logger.warning(
+            "CPU force mode: skipping GPU requirement for {} (tier={}); "
+            "not suitable for production inference",
+            flow_target,
+            resolved_tier,
+        )
+        return
+
+    if mode == "smoke" and resolved_tier == "cpu_smoke":
+        logger.warning(
+            "CPU smoke mode: {} tier=cpu_smoke — tiny resolution/steps only",
+            flow_target,
+        )
+        return
+
     raise RuntimeError(
-        "This inference command requires a GPU accelerator (NVIDIA CUDA or AMD ROCm).\n"
-        + _format_hardware_context(f"Flow: {flow_target}")
-        + "Install options:\n"
-        "  - NVIDIA: poetry install --extras cuda\n"
-        "  - AMD ROCm: poetry install --extras rocm (see docs/install-rocm.md)\n"
-        "What you can do without a GPU:\n"
-        "  - Run unit/smoke tests: poetry run pytest tests/test_inference_optimization.py\n"
-        "  - Validate CLI/config parsing only (no model load)\n"
-        "To bypass this check for debugging init on CPU only: "
-        "VIDEOTUNA_ALLOW_CPU_INFERENCE=1 poetry run inference-..."
+        _tiered_cpu_error_message(flow_target, resolved_tier, mode)
     )
 
 
-def require_nvidia_cuda_for_flow(flow_target: str, *, allow_cpu: bool = False) -> None:
+def require_nvidia_cuda_for_flow(
+    flow_target: str,
+    *,
+    allow_cpu: bool = False,
+    **kwargs: object,
+) -> None:
     """Deprecated alias for require_accelerator_for_flow."""
-    require_accelerator_for_flow(flow_target, allow_cpu=allow_cpu)
+    require_accelerator_for_flow(flow_target, allow_cpu=allow_cpu, **kwargs)  # type: ignore[arg-type]
 
 
 def require_xfuser_sequence_parallel(flow_name: str) -> None:

@@ -55,7 +55,7 @@ poetry run inference-cogvideo-t2v-diffusers --num_inference_steps 2
 |------|--------|--------|
 | **A** | CogVideoX, Flux, Mochi, LTX, Hunyuan 1.5 Diffusers, Wan 2.2 Diffusers | Expected to work with `sdpa` + CPU offload |
 | **B** | Native Hunyuan/Wan, Open-Sora, VideoCrafter | Experimental; no flash/xfuser/FP8 |
-| **C** | StepVideo, CogVideo SAT, multi-GPU xfuser training | Unsupported |
+| **C** | StepVideo, CogVideo SAT (removed; use Diffusers 1.5), multi-GPU xfuser training | Unsupported |
 
 See [checkpoints.md](checkpoints.md) for download links.
 
@@ -74,6 +74,8 @@ Training (NVIDIA only): `poetry install -E cuda --with training` then `poetry ru
 poetry install -E cpu
 poetry run install-cpu-torch
 ```
+
+See [install-cpu.md](install-cpu.md) for smoke tests and tier matrix.
 
 ## Troubleshooting
 

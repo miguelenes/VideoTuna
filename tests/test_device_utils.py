@@ -18,11 +18,19 @@ def test_normalize_device_prefer():
     assert device_utils.normalize_device_prefer("cuda:1") == "cuda:1"
     assert device_utils.normalize_device_prefer(1) == "cuda:1"
     assert device_utils.normalize_device_prefer("0") == "cuda:0"
+    assert device_utils.normalize_device_prefer("cpu") == "cpu"
+    assert device_utils.normalize_device_prefer("mps") == "mps"
 
 
 def test_normalize_device_prefer_invalid():
     with pytest.raises(ValueError, match="Invalid device"):
         device_utils.normalize_device_prefer("invalid")
+
+
+def test_resolve_inference_device_explicit_cpu():
+    with mock.patch.object(device_utils, "gpu_is_available", return_value=True):
+        dev = device_utils.resolve_inference_device("cpu")
+    assert dev == torch.device("cpu")
 
 
 def test_resolve_inference_device_cpu_when_no_gpu():
@@ -32,9 +40,10 @@ def test_resolve_inference_device_cpu_when_no_gpu():
 
 def test_resolve_inference_device_cuda_when_gpu():
     with mock.patch.object(device_utils, "gpu_is_available", return_value=True):
-        with mock.patch.object(device_utils.torch.cuda, "set_device"):
-            with mock.patch.object(device_utils.torch.cuda, "device_count", return_value=2):
-                dev = device_utils.resolve_inference_device()
+        with mock.patch.object(device_utils, "detect_compute_backend", return_value="cuda"):
+            with mock.patch.object(device_utils.torch.cuda, "set_device"):
+                with mock.patch.object(device_utils.torch.cuda, "device_count", return_value=2):
+                    dev = device_utils.resolve_inference_device()
     assert dev == torch.device("cuda", 0)
 
 
@@ -51,6 +60,11 @@ def test_resolve_inference_device_rejects_cuda_without_gpu():
     with mock.patch.object(device_utils, "gpu_is_available", return_value=False):
         with pytest.raises(RuntimeError, match="no GPU accelerator"):
             device_utils.resolve_inference_device("cuda")
+
+
+def test_recommend_dtype_cpu():
+    dev = torch.device("cpu")
+    assert device_utils.recommend_dtype(dev) == "fp32"
 
 
 def test_recommend_dtype_ampere():
@@ -150,10 +164,53 @@ def test_describe_compute_environment_rocm():
 
 def test_require_accelerator_for_flow_raises_without_gpu():
     with mock.patch.object(device_utils, "gpu_is_available", return_value=False):
-        with pytest.raises(RuntimeError, match="GPU accelerator"):
+        with pytest.raises(RuntimeError, match="requires a GPU"):
             device_utils.require_accelerator_for_flow(
                 "videotuna.flow.wanvideo.WanVideoModelFlow"
             )
+
+
+def test_require_accelerator_for_flow_cpu_smoke_diffusers():
+    with mock.patch.object(device_utils, "gpu_is_available", return_value=False):
+        device_utils.require_accelerator_for_flow(
+            device_utils._DIFFUSERS_FLOW,
+            cpu_mode="smoke",
+            model_family="cogvideox",
+            model_variant="2b",
+        )
+
+
+def test_get_flow_tier_cogvideox_2b():
+    tier = device_utils.get_flow_tier(
+        device_utils._DIFFUSERS_FLOW,
+        model_family="cogvideox",
+        model_variant="2b",
+    )
+    assert tier == "cpu_smoke"
+
+
+def test_get_flow_tier_wan_720p_gpu_required():
+    tier = device_utils.get_flow_tier(
+        device_utils._DIFFUSERS_FLOW,
+        model_family="wan",
+        height=720,
+        width=1280,
+    )
+    assert tier == "gpu_required"
+
+
+def test_resolve_cpu_mode_smoke_cli():
+    with mock.patch.dict("os.environ", {}, clear=True):
+        assert device_utils.resolve_cpu_mode(cli_smoke=True) == "smoke"
+
+
+def test_resolve_cpu_mode_legacy_allow_cpu():
+    with mock.patch.dict(
+        "os.environ",
+        {"VIDEOTUNA_ALLOW_CPU_INFERENCE": "1"},
+        clear=True,
+    ):
+        assert device_utils.resolve_cpu_mode() == "force"
 
 
 def test_require_accelerator_for_flow_stepvideo_blocked_on_rocm():

@@ -23,7 +23,7 @@ class VideoMode(Enum):
 MANDATORY_INFERENCE_ARGS = ["savedir"]
 
 
-def prepare_train_args(parser: argparse.Namespace):
+def prepare_train_args(parser: argparse.ArgumentParser):
     """
     Prepare the arguments by updating the config with the command line arguments.
 

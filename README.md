@@ -46,12 +46,18 @@ VideoTuna supports **Poetry** (default) and **[uv](https://docs.astral.sh/uv/)**
 |----------|--------|-----|
 | Inference NVIDIA (default) | `poetry install -E cuda` or `poetry install` | `uv sync` |
 | Inference AMD ROCm | `poetry install -E rocm` then `poetry run install-rocm` | see [install-rocm.md](docs/install-rocm.md) |
-| CPU dev / CI | `poetry install -E cpu` then `poetry run install-cpu-torch` | see [install-rocm.md](docs/install-rocm.md) |
+| CPU dev / CI | `poetry install -E cpu` then `poetry run install-cpu-torch` | see [install-cpu.md](docs/install-cpu.md) |
 | + Training (Wan, Hunyuan, CogVideo, Flux LoRA, Open-Sora, …) | `poetry install -E cuda --with training` | `uv sync --group training` |
 | + VBench eval | `poetry install --with eval` | `uv sync --group eval` |
 | + Dev (pytest, ruff) | `poetry install --with dev` | `uv sync --group dev` |
 
 See [`docs/vendor-policy.md`](docs/vendor-policy.md) for vendored upstream code and update procedures.
+
+Optional reference submodule (not imported at runtime):
+
+```bash
+git submodule update --init videotuna/vendor/simpletuner
+```
 
 #### (1) If you use Linux and Conda (Recommend)
 ``` shell
@@ -73,6 +79,28 @@ poetry run python -c "from videotuna.utils.device_utils import describe_compute_
 
 See [`docs/install-rocm.md`](docs/install-rocm.md) for model tiers, smoke tests, and troubleshooting.
 
+**CPU-only development (Linux / no GPU)**
+
+```shell
+poetry install -E cpu --with dev
+poetry run install-cpu-torch
+poetry run verify-cpu-torch
+poetry run pytest tests/ -m "not gpu and not cpu_smoke" -q
+```
+
+CPU smoke inference (CogVideoX 2B, tiny resolution — not for production):
+
+```shell
+export VIDEOTUNA_ATTN_BACKEND=eager
+poetry run inference-cogvideo-t2v-diffusers \
+  --config configs/inference/presets/cogvideox_2b_cpu_smoke.yaml \
+  --cpu-smoke
+```
+
+See [`docs/install-cpu.md`](docs/install-cpu.md) for capability tiers, limitations, and how CPU inference differs from GPU+CPU offload.
+
+**Limitations on CPU:** Wan/StepVideo/Hunyuan 720p, FP8, flash-attn, `torch.compile`, and training are not supported. 14B models at full resolution are impractical on CPU.
+
 **Optional: Flash-attn installation (NVIDIA CUDA only)**
 
 Hunyuan model uses it to reduce memory usage and speed up inference. If it is not installed, the model will run in normal mode. Install the `flash-attn` via:
@@ -87,7 +115,8 @@ VideoTuna routes attention through a unified backend selector in `videotuna/util
 
 | Variable | Values | Default | Description |
 |----------|--------|---------|-------------|
-| `VIDEOTUNA_COMPUTE_BACKEND` | `auto`, `cuda`, `rocm`, `cpu` | `auto` | Override GPU backend detection (CUDA vs ROCm) |
+| `VIDEOTUNA_COMPUTE_BACKEND` | `auto`, `cuda`, `rocm`, `cpu` | `auto` | Override backend detection; `cpu` forces CPU even when a GPU is visible |
+| `VIDEOTUNA_CPU_MODE` | `off`, `smoke`, `force` | `off` | CPU inference mode (`smoke` = tiny runs; `force` = debug init). Prefer `--cpu-smoke` CLI flag |
 | `VIDEOTUNA_ATTN_BACKEND` | `auto`, `flash`, `sdpa`, `eager` | `auto` | Attention implementation for Hunyuan, OpenSora, Flux, StepVideo, Wan, and diffusers pipelines |
 | `VIDEOTUNA_ATTN_BACKEND_STRICT` | `0`, `1` | `0` | When `1`, fail if `flash` requested but flash-attn is missing (default: fall back to sdpa) |
 | `VIDEOTUNA_TORCH_COMPILE` | `0`, `1` | `0` | Compile denoiser/transformer forward with `torch.compile` (not VAE or text encoders) |
@@ -119,6 +148,10 @@ poetry run verify-cuda-extras
 **Device and VRAM CLI flags** (all `inference_new.py` entrypoints):
 
 ```shell
+# CPU-only smoke (dev/CI)
+poetry run inference-cogvideo-t2v-diffusers \
+  --config configs/inference/presets/cogvideox_2b_cpu_smoke.yaml --cpu-smoke
+
 # Select GPU (respects CUDA_VISIBLE_DEVICES remapping)
 CUDA_VISIBLE_DEVICES=1 poetry run inference-hunyuan-t2v --device cuda:0
 

@@ -73,11 +73,12 @@ def get_attn_backend() -> AttnBackend:
         return _resolve_auto_backend()
     if requested in ("flash", "sdpa", "eager"):
         if requested == "flash":
-            if detect_compute_backend() == "rocm":
+            if detect_compute_backend() in ("rocm", "cpu"):
+                backend_label = "AMD ROCm" if detect_compute_backend() == "rocm" else "CPU"
                 raise RuntimeError(
-                    "VIDEOTUNA_ATTN_BACKEND=flash is not supported on AMD ROCm. "
+                    f"VIDEOTUNA_ATTN_BACKEND=flash is not supported on {backend_label}. "
                     "Use VIDEOTUNA_ATTN_BACKEND=sdpa or eager. "
-                    "See docs/install-rocm.md."
+                    "See docs/install-rocm.md or docs/install-cpu.md."
                 )
             if not _FLASH_ATTN_AVAILABLE:
                 strict = os.environ.get("VIDEOTUNA_ATTN_BACKEND_STRICT", "0") == "1"

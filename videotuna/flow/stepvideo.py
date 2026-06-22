@@ -7,7 +7,7 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union, cast
 
 import numpy as np
 import torch
@@ -83,7 +83,7 @@ class StepVideoModelFlow(GenerationBase):
         ulysses_degree: int = 1,
         tensor_parallel_degree: int = 1,
         scale_factor: float = 1.0,
-        num_persistent_param_in_dit: int = None,
+        num_persistent_param_in_dit: int | None = None,
         torch_dtype: torch.dtype = torch.bfloat16,
         precision: str = "bf16",
         device: str | int | None = None,
@@ -124,19 +124,25 @@ class StepVideoModelFlow(GenerationBase):
                 else str(resolved)
             )
         self.device_type = device
+        first_stage = self.first_stage_model
         self.vae_scale_factor_temporal = (
-            self.vae.temporal_compression_ratio if getattr(self, "vae", None) else 8
+            getattr(first_stage, "temporal_compression_ratio", 8)
+            if first_stage is not None
+            else 8
         )
         self.vae_scale_factor_spatial = (
-            self.vae.spatial_compression_ratio if getattr(self, "vae", None) else 16
+            getattr(first_stage, "spatial_compression_ratio", 16)
+            if first_stage is not None
+            else 16
         )
         self.scale_factor = scale_factor
         self.num_persistent_param_in_dit = num_persistent_param_in_dit
         self.enable_sequential_cpu_offload = enable_sequential_cpu_offload
         self.enable_model_cpu_offload = enable_model_cpu_offload
 
-    def load_lib(self, ckpt_path: str):
+    def load_lib(self, ckpt_path: Union[str, Path]) -> None:
         logger.info(f"loading lib from {ckpt_path}")
+        ckpt_str = str(ckpt_path)
         accepted_version = {
             "2.2": "liboptimus_ths-torch2.2-cu121.cpython-310-x86_64-linux-gnu.so",
             "2.3": "liboptimus_ths-torch2.3-cu121.cpython-310-x86_64-linux-gnu.so",
@@ -146,7 +152,7 @@ class StepVideoModelFlow(GenerationBase):
             version = ".".join(torch.__version__.split(".")[:2])
             if version in accepted_version:
                 logger.info(f"cur dir: {os.getcwd()}")
-                library = os.path.join(ckpt_path, f"lib/{accepted_version[version]}")
+                library = os.path.join(ckpt_str, f"lib/{accepted_version[version]}")
                 logger.info(f"loading lib from {library}")
                 torch.ops.load_library(library)
                 logger.info(f"{library} loaded")
@@ -157,6 +163,7 @@ class StepVideoModelFlow(GenerationBase):
 
     def enable_vram_management(self):
         logger.info("StepVideoModelFlow: start enable_vram_management")
+        assert self.cond_stage_2_model is not None
         dtype = next(iter(self.cond_stage_2_model.parameters())).dtype
         logger.info(f"cond_stage_2_model param dtype: {dtype}")
         # use enable_model_cpu_offload as default
@@ -182,10 +189,11 @@ class StepVideoModelFlow(GenerationBase):
                 computation_device=self.device_type,
             ),
         )
+        assert self.cond_stage_model is not None
         dtype = next(iter(self.cond_stage_model.parameters())).dtype
         logger.info(f"cond_stage_model param dtype: {dtype}")
         enable_vram_management(
-            self.cond_stage_model,
+            cast(Any, self.cond_stage_model),
             module_map={
                 torch.nn.Linear: AutoWrappedLinear,
                 RMSNorm: AutoWrappedModule,
@@ -200,6 +208,7 @@ class StepVideoModelFlow(GenerationBase):
                 computation_device=self.device_type,
             ),
         )
+        assert self.denoiser is not None
         dtype = next(iter(self.denoiser.parameters())).dtype
         logger.info(f"denoiser param dtype: {dtype}")
         enable_vram_management(
@@ -228,6 +237,7 @@ class StepVideoModelFlow(GenerationBase):
                 computation_device=self.device_type,
             ),
         )
+        assert self.first_stage_model is not None
         dtype = next(iter(self.first_stage_model.parameters())).dtype
         logger.info(f"first_stage_model param dtype: {dtype}")
         enable_vram_management(
@@ -261,8 +271,10 @@ class StepVideoModelFlow(GenerationBase):
         bs = len(prompts)
         prompts += [neg_magic] * bs
 
-        prompt_embeds, prompt_embeds_mask = self.cond_stage_model(prompts)
-        clip_embedding, _ = self.cond_stage_2_model(prompts)
+        assert self.cond_stage_model is not None
+        assert self.cond_stage_2_model is not None
+        prompt_embeds, prompt_embeds_mask = cast(Any, self.cond_stage_model)(prompts)
+        clip_embedding, _ = cast(Any, self.cond_stage_2_model)(prompts)
 
         len_clip = clip_embedding.shape[1]
         prompt_embeds_mask = torch.nn.functional.pad(
@@ -280,7 +292,7 @@ class StepVideoModelFlow(GenerationBase):
     def prepare_latents(
         self,
         batch_size: int,
-        num_channels_latents: 64,
+        num_channels_latents: int = 64,
         height: int = 544,
         width: int = 992,
         num_frames: int = 204,
@@ -308,6 +320,8 @@ class StepVideoModelFlow(GenerationBase):
 
         if generator is None:
             generator = torch.Generator(device=device)
+        elif isinstance(generator, list):
+            generator = generator[0]
 
         latents = torch.randn(shape, generator=generator, device=device, dtype=dtype)
         return latents
@@ -385,21 +399,34 @@ class StepVideoModelFlow(GenerationBase):
             input_prompt=prompt, neg_magic=neg_magic, pos_magic=pos_magic
         )
 
-        denoiser_dtype = self.denoiser.dtype
-        prompt_embeds = prompt_embeds.to(denoiser_dtype).to(device)
-        prompt_attention_mask = prompt_attention_mask.to(denoiser_dtype).to(device)
-        prompt_embeds_2 = prompt_embeds_2.to(denoiser_dtype).to(device)
+        assert self.denoiser is not None
+        denoiser_dtype = cast(
+            torch.dtype, getattr(self.denoiser, "dtype", torch.bfloat16)
+        )
+        target_device = torch.device(f"cuda:{device}") if isinstance(device, int) else torch.device(device)
+        prompt_embeds = prompt_embeds.to(dtype=denoiser_dtype, device=target_device)
+        prompt_attention_mask = prompt_attention_mask.to(
+            dtype=denoiser_dtype, device=target_device
+        )
+        prompt_embeds_2 = prompt_embeds_2.to(dtype=denoiser_dtype, device=target_device)
 
         # 4. Prepare timesteps
+        assert self.scheduler is not None
         self.scheduler.set_timesteps(
             num_inference_steps=num_inference_steps,
             time_shift=time_shift,
-            device=device,
+            device=target_device,
         )
 
         # 5. Prepare latent variables
         logger.info("preparing latents")
-        num_channels_latents = self.denoiser.config.in_channels
+        denoiser_config = getattr(self.denoiser, "config", None)
+        if denoiser_config is not None and hasattr(denoiser_config, "in_channels"):
+            num_channels_latents = denoiser_config.in_channels
+        elif isinstance(denoiser_config, dict):
+            num_channels_latents = denoiser_config.get("in_channels", 64)
+        else:
+            num_channels_latents = 64
         latents = self.prepare_latents(
             batch_size * config.n_samples_prompt,
             num_channels_latents,
@@ -407,9 +434,9 @@ class StepVideoModelFlow(GenerationBase):
             config.width,
             config.frames,
             torch.bfloat16,
-            device,
-            torch.Generator(device=device).manual_seed(config.seed),
-        ).to(device)
+            target_device,
+            torch.Generator(device=target_device).manual_seed(config.seed),
+        ).to(device=target_device)
 
         # 7. Denoising loop
         logger.info("loading denoiser")
@@ -420,15 +447,15 @@ class StepVideoModelFlow(GenerationBase):
                 latent_model_input = (
                     torch.cat([latents] * 2) if do_classifier_free_guidance else latents
                 )
-                latent_model_input = latent_model_input.to(denoiser_dtype)
+                latent_model_input = latent_model_input.to(dtype=denoiser_dtype)
                 # broadcast to batch dimension in a way that's compatible with ONNX/Core ML
                 timestep = (
                     t.expand(latent_model_input.shape[0])
-                    .to(latent_model_input.dtype)
-                    .to(device)
+                    .to(dtype=latent_model_input.dtype)
+                    .to(device=target_device)
                 )
 
-                noise_pred = self.denoiser(
+                noise_pred = cast(Any, self.denoiser)(
                     hidden_states=latent_model_input,
                     timestep=timestep,
                     encoder_hidden_states=prompt_embeds,
@@ -455,8 +482,10 @@ class StepVideoModelFlow(GenerationBase):
             or int(torch.distributed.get_rank()) == 0
         ):
             self.load_models_to_device(["first_stage_model"])
-            video = self.first_stage_model.decode(
-                latents.to(denoiser_dtype).to(device) / self.scale_factor
+            assert self.first_stage_model is not None
+            first_stage = cast(Any, self.first_stage_model)
+            video = first_stage.decode(
+                latents.to(dtype=denoiser_dtype, device=target_device) / self.scale_factor
             )
             return video
 
@@ -469,11 +498,14 @@ class StepVideoModelFlow(GenerationBase):
         device: Optional[str] = None,
         **kwargs,
     ):
+        assert ckpt_path is not None
         self._inference_device = device
         logger.info("StepVideoModelFlow: start load weight")
         self.load_lib(ckpt_path)
-        self.first_stage_model.load_weight()
-        self.cond_stage_2_model.load_weight()
+        assert self.first_stage_model is not None
+        assert self.cond_stage_2_model is not None
+        cast(Any, self.first_stage_model).load_weight()
+        cast(Any, self.cond_stage_2_model).load_weight()
         logger.info("StepVideoModelFlow: end load weight")
 
         if self.tensor_parallel_degree > 1:
@@ -496,6 +528,9 @@ class StepVideoModelFlow(GenerationBase):
         device = str(resolve_inference_device())
         first_stage_key = self.first_stage_key
         cond_stage_key = self.cond_stage_key
+        assert self.first_stage_model is not None
+        assert self.cond_stage_model is not None
+        assert self.denoiser is not None
 
         if model_offload:
             self.first_stage_model.to(device)
@@ -514,7 +549,7 @@ class StepVideoModelFlow(GenerationBase):
             self.cond_stage_model.to("cpu")
 
         ## scheduler
-        self.scheduler: FlowMatchScheduler = FlowMatchScheduler(
+        self.scheduler = FlowMatchScheduler(
             shift=5, sigma_min=0.0, extra_one_step=True
         )
         self.scheduler.set_timesteps(1000, training=True)
@@ -530,7 +565,7 @@ class StepVideoModelFlow(GenerationBase):
         training_target = noise.to(device) - latents
 
         # compute loss
-        noise_pred = self.model(
+        noise_pred = cast(Any, self.denoiser)(
             x=noisy_latents, t=timestep, context=text_cond_embed, seq_len=None
         )
         loss = torch.nn.functional.mse_loss(

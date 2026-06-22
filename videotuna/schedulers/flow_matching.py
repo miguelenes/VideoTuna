@@ -29,8 +29,11 @@ class FlowMatchScheduler:
         denoising_strength=1.0,
         training=False,
         shift=None,
+        time_shift=None,
+        device=None,
     ):
-        if shift is not None:
+        if time_shift is not None:
+            shift = time_shift
             self.shift = shift
         sigma_start = (
             self.sigma_min + (self.sigma_max - self.sigma_min) * denoising_strength
@@ -50,7 +53,7 @@ class FlowMatchScheduler:
             self.sigmas = 1 - self.sigmas
         self.timesteps = self.sigmas * self.num_train_timesteps
         if training:
-            x = self.timesteps
+            x = self.timesteps.float()
             y = torch.exp(
                 -2 * ((x - num_inference_steps / 2) / num_inference_steps) ** 2
             )

@@ -8,6 +8,7 @@ import importlib
 import sys
 
 import torch
+import torch.version
 
 from videotuna.utils.device_utils import (
     _driver_version,
@@ -27,7 +28,9 @@ def _check_import(name: str) -> tuple[bool, str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Verify NVIDIA CUDA extras for VideoTuna.")
+    parser = argparse.ArgumentParser(
+        description="Verify NVIDIA CUDA extras for VideoTuna."
+    )
     parser.add_argument(
         "--expect-flash",
         action="store_true",

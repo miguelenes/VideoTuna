@@ -1,0 +1,24 @@
+# CPU smoke preset for Flux Schnell (single image, dev/CI only)
+# Usage:
+#   poetry run inference-flux-schnell \
+#     --config configs/inference/presets/flux_schnell_cpu_smoke.yaml --cpu-smoke
+flow:
+  target: videotuna.flow.diffusers_video.DiffusersVideoFlow
+  params:
+    model_family: flux
+    mode: t2i
+    pipeline_only: true
+    model_variant: schnell
+    pretrained_model_name_or_path: black-forest-labs/FLUX.1-schnell
+inference:
+  mode: t2i
+  device: cpu
+  ckpt_path: black-forest-labs/FLUX.1-schnell
+  savedir: results/t2i/flux-schnell-cpu-smoke
+  prompt_file: inputs/t2v/prompts.txt
+  height: 256
+  width: 256
+  num_inference_steps: 1
+  unconditional_guidance_scale: 0.0
+  seed: 42
+  dtype: fp32

@@ -4,7 +4,7 @@ import random
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, cast
 
 import torch
 import torch.distributed as dist
@@ -15,7 +15,10 @@ from PIL import Image
 import videotuna.models.wan.wan as wan
 from videotuna.base.generation_base import GenerationBase
 from videotuna.utils.common_utils import monitor_resources
-from videotuna.utils.device_utils import require_xfuser_sequence_parallel
+from videotuna.utils.device_utils import (
+    gpu_is_available,
+    require_xfuser_sequence_parallel,
+)
 from videotuna.models.wan.wan.configs import (
     MAX_AREA_CONFIGS,
     SIZE_CONFIGS,
@@ -26,10 +29,8 @@ from videotuna.models.wan.wan.utils.prompt_extend import (
     DashScopePromptExpander,
     QwenPromptExpander,
 )
-from videotuna.models.wan.wan.utils.utils import cache_image, cache_video, str2bool
 from videotuna.utils.args_utils import VideoMode
 from videotuna.utils.attention import maybe_compile_denoiser
-from videotuna.utils.common_utils import instantiate_from_config
 
 EXAMPLE_PROMPT = {
     "t2v-1.3B": {
@@ -56,6 +57,8 @@ EXAMPLE_PROMPT = {
 
 
 class WanVideoModelFlow(GenerationBase):
+    prompt_expander: DashScopePromptExpander | QwenPromptExpander | None = None
+
     """
     Training and inference flow for YourModel.
 
@@ -111,6 +114,7 @@ class WanVideoModelFlow(GenerationBase):
         self.offload_model = offload_model
         self.ulysses_size = ulysses_size
         self.ring_size = ring_size
+        self.use_sp = ulysses_size > 1 or ring_size > 1
 
         rank = int(os.getenv("RANK", 0))
         world_size = int(os.getenv("WORLD_SIZE", 1))
@@ -121,7 +125,8 @@ class WanVideoModelFlow(GenerationBase):
             offload_model = False if world_size > 1 else True
             logger.info(f"offload_model is not specified, set to {offload_model}.")
         if world_size > 1:
-            torch.cuda.set_device(local_rank)
+            if gpu_is_available():
+                torch.cuda.set_device(local_rank)
             if not dist.is_initialized():
                 dist.init_process_group(
                     backend="nccl",
@@ -179,18 +184,24 @@ class WanVideoModelFlow(GenerationBase):
         cfg = WAN_CONFIGS[task]
         self.cfg = cfg
         if ulysses_size > 1:
+            num_heads = getattr(cfg, "num_heads", None)
+            assert num_heads is not None, "Wan config missing num_heads"
             assert (
-                cfg.num_heads % ulysses_size == 0
-            ), f"`{cfg.num_heads=}` cannot be divided evenly by `{ulysses_size=}`."
+                num_heads % ulysses_size == 0
+            ), f"`num_heads={num_heads}` cannot be divided evenly by `ulysses_size={ulysses_size}`."
 
         logger.info(f"WanVideo flow: model config: {cfg}")
 
         if dist.is_initialized():
-            seed = [seed] if rank == 0 else [None]
-            dist.broadcast_object_list(seed, src=0)
-            seed = seed[0]
-            logger.info(f"WanVideo flow: broadcast seed")
+            seed_list: list[int | None] = [seed] if rank == 0 else [None]
+            dist.broadcast_object_list(seed_list, src=0)
+            broadcast_seed = seed_list[0]
+            assert broadcast_seed is not None
+            seed = broadcast_seed
+            self.seed = seed
+            logger.info("WanVideo flow: broadcast seed")
 
+        use_sp = self.use_sp
         if "t2v" in task or "t2i" in task:
             logger.info("Creating WanT2V pipeline.")
             self.wan_t2v = wan.WanT2V(
@@ -200,11 +211,8 @@ class WanVideoModelFlow(GenerationBase):
                 rank=rank,
                 t5_fsdp=t5_fsdp,
                 dit_fsdp=dit_fsdp,
-                use_usp=(ulysses_size > 1 or ring_size > 1),
+                use_sp=use_sp,
                 t5_cpu=t5_cpu,
-                first_stage_model=self.first_stage_model,
-                cond_stage_model=self.cond_stage_model,
-                denoiser=self.denoiser,
             )
         else:
             logger.info("Creating WanI2V pipeline.")
@@ -215,12 +223,8 @@ class WanVideoModelFlow(GenerationBase):
                 rank=rank,
                 t5_fsdp=t5_fsdp,
                 dit_fsdp=dit_fsdp,
-                use_usp=(ulysses_size > 1 or ring_size > 1),
+                use_sp=use_sp,
                 t5_cpu=t5_cpu,
-                first_stage_model=self.first_stage_model,
-                cond_stage_model=self.cond_stage_model,
-                cond_stage_2_model=self.cond_stage_2_model,
-                denoiser=self.denoiser,
             )
 
     def _validate_args(self, args):
@@ -256,11 +260,13 @@ class WanVideoModelFlow(GenerationBase):
         for prompt in prompt_list:
             logger.info(f"Input prompt: {prompt}")
             if self.use_prompt_extend:
+                assert self.prompt_expander is not None
                 logger.info("Extending prompt ...")
                 if rank == 0:
                     prompt_output = self.prompt_expander(
                         prompt, tar_lang=self.prompt_extend_target_lang, seed=self.seed
                     )
+                    assert prompt_output is not None
                     if prompt_output.status == False:
                         logger.info(f"Extending prompt failed: {prompt_output.message}")
                         logger.info("Falling back to original prompt.")
@@ -348,6 +354,7 @@ class WanVideoModelFlow(GenerationBase):
 
             img = Image.open(image_path).convert("RGB")
             if self.use_prompt_extend:
+                assert self.prompt_expander is not None
                 logger.info("Extending prompt ...")
                 if rank == 0:
                     prompt_output = self.prompt_expander(
@@ -356,6 +363,7 @@ class WanVideoModelFlow(GenerationBase):
                         image=img,
                         seed=self.seed,
                     )
+                    assert prompt_output is not None
                     if prompt_output.status == False:
                         logger.info(f"Extending prompt failed: {prompt_output.message}")
                         logger.info("Falling back to original prompt.")
@@ -438,38 +446,34 @@ class WanVideoModelFlow(GenerationBase):
         ignore_missing_ckpts: bool = False,
         device: Optional[str] = None,
         **kwargs,
-    ):
-        if "t2v" in self.task or "t2i" in self.task:
-            self.wan_t2v.load_weight()
-            # this is only used to load trained denoiser_ckpt_path,
-            # so we set ignore missing ckpts avoid duplicate loading
+    ) -> None:
+        if denoiser_ckpt_path is not None or ckpt_path is not None:
             self.load_denoiser(ckpt_path, denoiser_ckpt_path, True)
-            if not self.wan_t2v.use_usp:
-                self.wan_t2v.model = maybe_compile_denoiser(self.wan_t2v.model)
-        else:
-            self.wan_i2v.load_weight()
-            self.load_denoiser(ckpt_path, denoiser_ckpt_path, True)
-            if not self.wan_i2v.use_usp:
-                self.wan_i2v.model = maybe_compile_denoiser(self.wan_i2v.model)
+        if not self.use_sp:
+            if "t2v" in self.task or "t2i" in self.task:
+                self.wan_t2v.low_noise_model = cast(
+                    Any, maybe_compile_denoiser(self.wan_t2v.low_noise_model)
+                )
+                self.wan_t2v.high_noise_model = cast(
+                    Any, maybe_compile_denoiser(self.wan_t2v.high_noise_model)
+                )
+            else:
+                self.wan_i2v.low_noise_model = cast(
+                    Any, maybe_compile_denoiser(self.wan_i2v.low_noise_model)
+                )
+                self.wan_i2v.high_noise_model = cast(
+                    Any, maybe_compile_denoiser(self.wan_i2v.high_noise_model)
+                )
 
-    def enable_vram_management(self):
-        if "t2v" in self.task or "t2i" in self.task:
-            self.wan_t2v.enable_vram_management()
-        else:
-            self.wan_i2v.enable_vram_management()
+    def enable_vram_management(self) -> None:
+        logger.info(
+            "WanVideoModelFlow: VRAM handled via offload_model in generate(); no-op"
+        )
 
     def training_step(self, batch, batch_idx):
-        # self.first_stage_model.disable_cache()
-        if "t2v" in self.task or "t2i" in self.task:
-            loss = self.wan_t2v.training_step(
-                batch, batch_idx, self.first_stage_key, self.cond_stage_key
-            )
-        else:
-            loss = self.wan_i2v.training_step(
-                batch, batch_idx, self.first_stage_key, self.cond_stage_key
-            )
-        self.log("train_loss", loss, prog_bar=True, on_step=True)
-        return loss
+        raise NotImplementedError(
+            "Wan training is not yet wired to upstream WanT2V/WanI2V"
+        )
 
     @torch.no_grad()
     def log_images(self, batch, **kwargs):

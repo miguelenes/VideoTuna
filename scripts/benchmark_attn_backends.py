@@ -37,6 +37,7 @@ from videotuna.utils.device_utils import (
 def _verify_torch_vision_stack() -> None:
     """Fail fast when torch and torchvision are from different accelerator builds."""
     import torch
+    import torch.version
     import torchvision
 
     torch_build = torch.__version__
@@ -83,10 +84,12 @@ def _run_backend(
     empty_accelerator_cache()
     torch.cuda.reset_peak_memory_stats()
 
-    pipe = CogVideoXPipeline.from_pretrained(
+    loaded = CogVideoXPipeline.from_pretrained(
         model_path,
         torch_dtype=torch.bfloat16,
-    ).to(device)
+    )
+    assert loaded is not None
+    pipe = loaded.to(device)
 
     apply_diffusers_attention_backend(pipe.transformer)
 

@@ -21,6 +21,16 @@ GPU_BACKENDS = [
 ]
 
 
+def test_wan_t5_encoder_no_cuda_default_arg():
+    """T5EncoderModel must not use torch.cuda at class definition time."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "videotuna/models/wan/wan/modules/t5.py").read_text()
+    assert "device=torch.cuda.current_device()" not in source
+    assert "device=None" in source
+
+
 @pytest.mark.parametrize("module", INFERENCE_BACKENDS)
 def test_inference_backend_import(module):
     importlib.import_module(module)

@@ -168,6 +168,8 @@ class T5SelfAttention(nn.Module):
             num_buckets, num_heads, bidirectional=True)
 
     def forward(self, x, mask=None, pos_bias=None):
+        if not self.shared_pos:
+            assert self.pos_embedding is not None
         e = pos_bias if self.shared_pos else self.pos_embedding(
             x.size(1), x.size(1))
         x = fp16_clamp(x + self.attn(self.norm1(x), mask=mask, pos_bias=e))
@@ -209,6 +211,8 @@ class T5CrossAttention(nn.Module):
                 encoder_states=None,
                 encoder_mask=None,
                 pos_bias=None):
+        if not self.shared_pos:
+            assert self.pos_embedding is not None
         e = pos_bias if self.shared_pos else self.pos_embedding(
             x.size(1), x.size(1))
         x = fp16_clamp(x + self.self_attn(self.norm1(x), mask=mask, pos_bias=e))
@@ -303,8 +307,11 @@ class T5Encoder(nn.Module):
     def forward(self, ids, mask=None):
         x = self.token_embedding(ids)
         x = self.dropout(x)
-        e = self.pos_embedding(x.size(1),
-                               x.size(1)) if self.shared_pos else None
+        if self.shared_pos:
+            assert self.pos_embedding is not None
+            e = self.pos_embedding(x.size(1), x.size(1))
+        else:
+            e = None
         for block in self.blocks:
             x = block(x, mask, pos_bias=e)
         x = self.norm(x)
@@ -360,8 +367,11 @@ class T5Decoder(nn.Module):
         # layers
         x = self.token_embedding(ids)
         x = self.dropout(x)
-        e = self.pos_embedding(x.size(1),
-                               x.size(1)) if self.shared_pos else None
+        if self.shared_pos:
+            assert self.pos_embedding is not None
+            e = self.pos_embedding(x.size(1), x.size(1))
+        else:
+            e = None
         for block in self.blocks:
             x = block(x, mask, encoder_states, encoder_mask, pos_bias=e)
         x = self.norm(x)
@@ -475,11 +485,18 @@ class T5EncoderModel:
         self,
         text_len,
         dtype=torch.bfloat16,
-        device=torch.cuda.current_device(),
+        device=None,
         checkpoint_path=None,
         tokenizer_path=None,
         shard_fn=None,
     ):
+        from videotuna.utils.device_utils import resolve_inference_device
+
+        if device is None:
+            device = resolve_inference_device()
+        elif not isinstance(device, torch.device):
+            device = resolve_inference_device(device)
+
         self.text_len = text_len
         self.dtype = dtype
         self.device = device
@@ -493,6 +510,7 @@ class T5EncoderModel:
             dtype=dtype,
             device=device).eval().requires_grad_(False)
         logging.info(f'loading {checkpoint_path}')
+        assert checkpoint_path is not None
         model.load_state_dict(torch.load(checkpoint_path, map_location='cpu'))
         self.model = model
         if shard_fn is not None:

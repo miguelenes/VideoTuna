@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 import torch
 from loguru import logger
@@ -35,8 +35,7 @@ def apply_diffusers_optimizations(
     elif offload == "model":
         pipe.enable_model_cpu_offload()
     elif hasattr(pipe, "to"):
-        if gpu_is_available():
-            pipe.to(target_device)
+        pipe.to(target_device)
 
     if getattr(args, "enable_vae_slicing", False) and hasattr(pipe, "vae"):
         pipe.vae.enable_slicing()
@@ -90,12 +89,16 @@ def _apply_device_map(pipe: Any, device: torch.device) -> None:
             pipe.to(device)
         return
 
-    max_memory = {str(i): "22GiB" for i in range(torch.cuda.device_count())}
+    max_memory: dict[int | str, int | str] = {
+        i: "22GiB" for i in range(torch.cuda.device_count())
+    }
     device_map = infer_auto_device_map(
         main_module,
         max_memory=max_memory,
     )
-    dispatched = dispatch_model(main_module, device_map=device_map)
+    dispatched = dispatch_model(
+        main_module, device_map=cast(dict[str, Any], device_map)
+    )
     if hasattr(pipe, "transformer"):
         pipe.transformer = dispatched
     elif hasattr(pipe, "unet"):

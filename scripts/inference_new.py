@@ -1,4 +1,4 @@
-import argparse
+from typing import cast
 import os
 import sys
 from pathlib import Path
@@ -28,6 +28,7 @@ from videotuna.utils.device_utils import (
     log_startup_device_summary,
     require_accelerator_for_flow,
     require_min_vram,
+    resolve_cpu_mode,
     resolve_inference_device,
     snapshot_nvidia_smi,
 )
@@ -36,6 +37,7 @@ from videotuna.utils.fp8_utils import validate_fp8_inference
 from videotuna.utils.inference_cli import (
     add_standard_inference_flags,
     apply_compile_env,
+    apply_cpu_smoke_limits,
     resolve_offload_mode,
 )
 
@@ -250,7 +252,18 @@ def _run_inference_impl(args, gpu_num=1, rank=0, **kwargs):
     )
     seed_everything(inference_config.seed)
 
-    device = resolve_inference_device(getattr(inference_config, "device", None))
+    flow_config = config.pop("flow", OmegaConf.create(flags={"allow_objects": True}))
+    flow_target = flow_config.get("target", "")
+    flow_params = flow_config.get("params", OmegaConf.create())
+
+    cpu_mode = resolve_cpu_mode(cli_smoke=bool(getattr(args, "cpu_smoke", False)))
+    if cpu_mode == "smoke":
+        apply_cpu_smoke_limits(inference_config, flow_config)
+
+    device_prefer = getattr(inference_config, "device", None) or getattr(args, "device", None)
+    if device_prefer is None and cpu_mode in ("smoke", "force"):
+        device_prefer = "cpu"
+    device = resolve_inference_device(device_prefer)
     inference_config.device = str(device)
 
     logger.info("Compute environment: {}", describe_compute_environment())
@@ -262,13 +275,14 @@ def _run_inference_impl(args, gpu_num=1, rank=0, **kwargs):
         )
         validate_fp8_inference(str(dit_weight) if dit_weight else "")
 
-    flow_config = config.pop("flow", OmegaConf.create(flags={"allow_objects": True}))
-    flow_target = flow_config.get("target", "")
-    allow_cpu = os.environ.get("VIDEOTUNA_ALLOW_CPU_INFERENCE", "0") == "1"
     require_accelerator_for_flow(
         flow_target,
-        allow_cpu=allow_cpu,
+        cpu_mode=cpu_mode,
         min_vram_gb=getattr(inference_config, "min_vram_gb", None),
+        model_family=OmegaConf.select(flow_params, "model_family"),
+        model_variant=OmegaConf.select(flow_params, "model_variant"),
+        height=getattr(inference_config, "height", None),
+        width=getattr(inference_config, "width", None),
     )
 
     min_vram = getattr(inference_config, "min_vram_gb", None)
@@ -299,7 +313,7 @@ def _run_inference_impl(args, gpu_num=1, rank=0, **kwargs):
         )
 
     # 1. create flow
-    flow: GenerationBase = instantiate_from_config(flow_config, resolve=True)
+    flow = cast(GenerationBase, instantiate_from_config(flow_config, resolve=True))
     flow.from_pretrained(
         inference_config.ckpt_path,
         inference_config.trained_ckpt,

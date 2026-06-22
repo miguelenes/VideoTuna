@@ -23,6 +23,8 @@ from pytorch_lightning.utilities import rank_zero_info, rank_zero_only
 from pytorch_lightning.utilities.types import STEP_OUTPUT
 from torch import Tensor
 
+from videotuna.utils.device_utils import empty_accelerator_cache, gpu_is_available
+
 from .save_video import log_local, prepare_to_log
 
 
@@ -69,7 +71,16 @@ class VideoTunaModelCheckpoint(pl.callbacks.ModelCheckpoint):
         super().__init__(*args, **kwargs)
         self.save_flow = save_flow
         self.save_only_selected_model = save_only_selected_model
-        self.selected_model = selected_model
+        if save_only_selected_model and not selected_model:
+            raise ValueError(
+                "selected_model must be set when save_only_selected_model is True"
+            )
+        if isinstance(selected_model, str):
+            self.selected_model: list[str] = [selected_model]
+        elif selected_model is None:
+            self.selected_model = []
+        else:
+            self.selected_model = list(selected_model)
 
     @override
     def on_train_batch_end(
@@ -106,9 +117,7 @@ class VideoTunaModelCheckpoint(pl.callbacks.ModelCheckpoint):
             self._last_time_checked = now
 
         monitor_candidates = self._monitor_candidates(trainer)
-        self._save_last_checkpoint(
-            trainer, monitor_candidates, pl_module
-        )  # only save the last checkpoint
+        self._save_last_checkpoint(trainer, monitor_candidates)
 
     @override
     def on_train_epoch_end(
@@ -127,9 +136,12 @@ class VideoTunaModelCheckpoint(pl.callbacks.ModelCheckpoint):
         self,
         trainer: "pl.Trainer",
         monitor_candidates: dict[str, Tensor],
-        pl_module: "pl.LightningModule",
     ) -> None:
         if not self.save_last:
+            return
+
+        pl_module = trainer.lightning_module
+        if pl_module is None:
             return
 
         # filepath = self.format_checkpoint_name(monitor_candidates, self.CHECKPOINT_NAME_LAST)
@@ -154,7 +166,7 @@ class VideoTunaModelCheckpoint(pl.callbacks.ModelCheckpoint):
         ):
             self._link_checkpoint(trainer, self._last_checkpoint_saved, filepath)
         else:
-            self._save_checkpoint(trainer, filepath, pl_module)
+            self._save_checkpoint(trainer, filepath)
         if previous and self._should_remove_checkpoint(trainer, previous, filepath):
             self._remove_checkpoint(trainer, previous)
 
@@ -163,8 +175,10 @@ class VideoTunaModelCheckpoint(pl.callbacks.ModelCheckpoint):
         self,
         trainer: "pl.Trainer",
         filepath: str,
-        pl_module: "pl.LightningModule",
     ) -> None:
+        pl_module = trainer.lightning_module
+        if pl_module is None:
+            return
         if self.save_flow:
             # save all the state including the model, optimizer, and any state that the user has added
             self._save_flow_checkpoint(trainer, pl_module, filepath)
@@ -219,6 +233,11 @@ class VideoTunaModelCheckpoint(pl.callbacks.ModelCheckpoint):
             state_dict = get_fp32_state_dict_from_zero_checkpoint(
                 "/".join(deepspeed_flow_path)
             )
+            if state_dict is None:
+                raise RuntimeError(
+                    "Failed to load DeepSpeed zero checkpoint from "
+                    f"{'/'.join(deepspeed_flow_path)}"
+                )
 
             for seleted in self.selected_model:
                 new_state_dict = {
@@ -247,25 +266,31 @@ class VideoTunaModelCheckpoint(pl.callbacks.ModelCheckpoint):
                 )
 
     def _format_ckpt_path(
-        self, monitor_candidates: dict[str, Tensor], prefix: str = None
+        self, monitor_candidates: dict[str, Tensor], prefix: str | None = None
     ) -> str:
         """Format the checkpoint path with the current values of monitored quantities."""
-        epoch = monitor_candidates.get("epoch").item()
-        step = monitor_candidates.get("step").item()
+        epoch_tensor = monitor_candidates.get("epoch")
+        step_tensor = monitor_candidates.get("step")
+        assert epoch_tensor is not None and step_tensor is not None
+        epoch = epoch_tensor.item()
+        step = step_tensor.item()
 
-        if "epoch" in self.filename and "step" in self.filename:
-            format_filename = self.filename.format(epoch=epoch, step=step)
-        elif "epoch" in self.filename and "step" not in self.filename:
-            format_filename = self.filename.format(epoch=epoch)
-        elif "epoch" not in self.filename and "step" in self.filename:
-            format_filename = self.filename.format(step=step)
+        filename = self.filename or ""
+        if "epoch" in filename and "step" in filename:
+            format_filename = filename.format(epoch=epoch, step=step)
+        elif "epoch" in filename and "step" not in filename:
+            format_filename = filename.format(epoch=epoch)
+        elif "epoch" not in filename and "step" in filename:
+            format_filename = filename.format(step=step)
         else:
-            format_filename = self.filename
+            format_filename = filename
 
         if prefix is not None:
             format_filename = prefix + "-" + format_filename + ".ckpt"
 
-        filepath = os.path.join(self.dirpath, format_filename)
+        dirpath = self.dirpath
+        assert dirpath is not None
+        filepath = os.path.join(dirpath, format_filename)
 
         return filepath
 
@@ -323,7 +348,8 @@ class ImageLogger(Callback):
                 )
             elif isinstance(value, torch.Tensor) and value.dim() == 4:
                 img = value
-                grid = torchvision.utils.make_grid(img, nrow=int(n))
+                n = img.shape[0]
+                grid = torchvision.utils.make_grid(img, nrow=n)
                 grid = (grid + 1.0) / 2.0  # -1,1 -> 0,1; c,h,w
                 pl_module.logger.experiment.add_image(
                     tag, grid, global_step=global_step
@@ -346,7 +372,7 @@ class ImageLogger(Callback):
 
             ## process: move to CPU and clamp
             batch_logs = prepare_to_log(batch_logs, self.max_images, self.clamp)
-            torch.cuda.empty_cache()
+            empty_accelerator_cache()
 
             filename = "ep{}_idx{}_rank{}".format(
                 pl_module.current_epoch, batch_idx, pl_module.global_rank
@@ -389,7 +415,8 @@ class ImageLogger(Callback):
             if (
                 pl_module.calibrate_grad_norm and batch_idx % 25 == 0
             ) and batch_idx > 0:
-                self.log_gradients(trainer, pl_module, batch_idx=batch_idx)
+                if hasattr(self, "log_gradients"):
+                    self.log_gradients(trainer, pl_module, batch_idx=batch_idx)
 
 
 class TrainingMetricsCallback(Callback):
@@ -461,8 +488,10 @@ class CUDACallback(Callback):
         batch: Any,
         batch_idx: int,
     ):
+        if not gpu_is_available():
+            self.start_time = time.time()
+            return
         # Reset the memory use counter
-        # lightning update
         gpu_index = trainer.strategy.root_device.index
         torch.cuda.reset_peak_memory_stats(gpu_index)
         torch.cuda.synchronize(gpu_index)
@@ -476,14 +505,19 @@ class CUDACallback(Callback):
         batch: Any,
         batch_idx: int,
     ):
+        epoch_time = time.time() - self.start_time
+        if not gpu_is_available():
+            rank_zero_info(f"Average Epoch time: {epoch_time:.2f} seconds")
+            return
         gpu_index = trainer.strategy.root_device.index
         torch.cuda.synchronize(gpu_index)
         max_memory = torch.cuda.max_memory_allocated(gpu_index) / 2**20
-        epoch_time = time.time() - self.start_time
 
         try:
-            max_memory = trainer.training_type_plugin.reduce(max_memory)
-            epoch_time = trainer.training_type_plugin.reduce(epoch_time)
+            training_type_plugin = getattr(trainer, "training_type_plugin", None)
+            if training_type_plugin is not None:
+                max_memory = training_type_plugin.reduce(max_memory)
+                epoch_time = training_type_plugin.reduce(epoch_time)
 
             rank_zero_info(f"Average Epoch time: {epoch_time:.2f} seconds")
             rank_zero_info(f"Average Peak memory {max_memory:.2f}MiB")

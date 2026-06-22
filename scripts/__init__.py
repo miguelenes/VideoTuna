@@ -97,6 +97,7 @@ def _torch_cuda_wheel_tag() -> str:
     """Map torch.version.cuda to flash-attn wheel tag (e.g. cu126)."""
     try:
         import torch
+        import torch.version
 
         cuda = getattr(torch.version, "cuda", None)
         if cuda is None:
@@ -136,6 +137,7 @@ def install_flash_attn():
     _require_cuda_backend("install-flash-attn")
     try:
         import torch
+        import torch.version
 
         if getattr(torch.version, "hip", None) is not None:
             print(
@@ -232,6 +234,8 @@ _CUDA_ONLY_PACKAGES = (
     "nvidia-nvjitlink-cu12",
     "nvidia-nvtx-cu12",
 )
+# Keep triton on CPU installs — torchao/diffusers import torch._inductor which needs it.
+_CPU_UNINSTALL_PACKAGES = tuple(p for p in _CUDA_ONLY_PACKAGES if p != "triton")
 
 
 def _reconcile_poetry_pinned_deps(pip: list[str]) -> None:
@@ -283,6 +287,7 @@ def install_rocm():
     _reconcile_poetry_pinned_deps(pip)
 
     import torch
+    import torch.version
     import torchvision
 
     torch_build = torch.__version__
@@ -308,17 +313,14 @@ def install_rocm():
 
         print(describe_compute_environment())
     except ImportError:
-        print(
-            f"torch.cuda.is_available()={torch.cuda.is_available()}, "
-            f"hip={hip}"
-        )
+        print(f"torch.cuda.is_available()={torch.cuda.is_available()}, " f"hip={hip}")
     exit(0)
 
 
 def install_cpu_torch():
     """Install CPU-only PyTorch 2.6 wheels (no CUDA/ROCm)."""
     pip = [sys.executable, "-m", "pip"]
-    for pkg in (*_CUDA_ONLY_PACKAGES, "torch", "torchvision"):
+    for pkg in (*_CPU_UNINSTALL_PACKAGES, "torch", "torchvision"):
         subprocess.run([*pip, "uninstall", pkg, "-y"], check=False)
     result = subprocess.run(
         [
@@ -336,6 +338,10 @@ def install_cpu_torch():
     )
     if result.returncode != 0:
         exit(result.returncode)
+    subprocess.run(
+        [*pip, "install", "triton==3.2.0", "--no-cache-dir"],
+        check=False,
+    )
     _reconcile_poetry_pinned_deps(pip)
     exit(result.returncode)
 

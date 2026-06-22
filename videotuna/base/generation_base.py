@@ -1,7 +1,7 @@
 import enum
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, cast
 
 import pytorch_lightning as pl
 import torch
@@ -58,6 +58,15 @@ class LoadingMethod(str, enum.Enum):
 
 
 class GenerationBase(TrainBase, InferenceBase):
+    denoiser: nn.Module | None = None
+    first_stage_model: nn.Module | None = None
+    cond_stage_model: nn.Module | None = None
+    cond_stage_2_model: nn.Module | None = None
+    scheduler: Any | None = None
+    lr_config: dict[str, Any] | None = None
+    data: Any | None = None
+    pipeline: Any | None = None
+
     """
     The GenerationFlow class is a generative model class that inherits from both TrainBase and InferenceBase.
     It manages the instantiation of different stages of a generative process, including a denoiser and a scheduler.
@@ -75,9 +84,9 @@ class GenerationBase(TrainBase, InferenceBase):
         first_stage_config: Optional[Dict[str, Any]] = None,
         cond_stage_config: Optional[Dict[str, Any]] = None,
         denoiser_config: Optional[Dict[str, Any]] = None,
-        scheduler_config: Dict[str, Any] = None,
-        cond_stage_2_config: Dict[str, Any] = None,
-        lora_config: Dict[str, Any] = None,
+        scheduler_config: Optional[Dict[str, Any]] = None,
+        cond_stage_2_config: Optional[Dict[str, Any]] = None,
+        lora_config: Optional[Dict[str, Any]] = None,
         trainable_components: Union[str, List[str]] = [],
         pipeline_only: bool = False,
     ):
@@ -95,7 +104,7 @@ class GenerationBase(TrainBase, InferenceBase):
         super().__init__()
 
         # instantiate the modules
-        self.components = []
+        self.components: list[str] = []
         self.pipeline_only = pipeline_only
         if pipeline_only:
             self.use_lora = False
@@ -132,22 +141,27 @@ class GenerationBase(TrainBase, InferenceBase):
         # make sure call it again after loading weight
         self.set_trainable_components(trainable_components)
 
-    def instantiate_scheduler(self, config: Dict[str, Any]):
+    def instantiate_scheduler(self, config: Optional[Dict[str, Any]]) -> None:
         if config is not None:
             logger.info("creating scheduler")
             self.diffusion_scheduler = self.scheduler = instantiate_from_config(config)
             self.components.append(Component.SCHEDULER.value)
 
-    def instantiate_lora(self, config: Dict[str, Any]):
+    def instantiate_lora(self, config: Optional[Dict[str, Any]]) -> None:
         self.use_lora = False
         if config is not None:
             logger.info("creating lora")
             transformer_adapter_config = instantiate_from_config(config)
-            if hasattr(transformer_adapter_config, "target_modules"):
+            assert self.denoiser is not None
+            if transformer_adapter_config is not None and hasattr(
+                transformer_adapter_config, "target_modules"
+            ):
                 transformer_adapter_config.target_modules = resolve_lora_target_modules(
                     self.denoiser, transformer_adapter_config.target_modules
                 )
-            self.denoiser = get_peft_model(self.denoiser, transformer_adapter_config)
+            self.denoiser = get_peft_model(
+                cast(Any, self.denoiser), cast(Any, transformer_adapter_config)
+            )
             self.lora_params = collect_lora_parameter_names(self.denoiser)
             self.denoiser.requires_grad_(False)
             for name, param in self.denoiser.named_parameters():
@@ -159,14 +173,17 @@ class GenerationBase(TrainBase, InferenceBase):
                 f"self.use_lora: {self.use_lora} self.lora_path: {self.lora_path} self.lora_params: {self.lora_params}"
             )
 
-    def instantiate_first_stage(self, config: Dict[str, Any]):
+    def instantiate_first_stage(self, config: Optional[Dict[str, Any]]) -> None:
         """
         Instantiates the first stage model of the generative process.
 
         :param config: Dictionary containing configuration for the first stage model.
         """
+        if config is None:
+            return
         logger.info("creating first stage")
         model = instantiate_from_config(config)
+        assert model is not None
         self.first_stage_model = model.eval()
         for param in self.first_stage_model.parameters():
             param.requires_grad = False
@@ -176,12 +193,14 @@ class GenerationBase(TrainBase, InferenceBase):
         )
         logger.info(f"self.first_stage_model_path: {self.first_stage_model_path}")
 
-    def instantiate_cond_stage(self, config: Dict[str, Any]):
+    def instantiate_cond_stage(self, config: Optional[Dict[str, Any]]) -> None:
         """
         Instantiates the conditional stage model of the generative process.
 
         :param config: Dictionary containing configuration for the conditional stage model.
         """
+        if config is None:
+            return
         from videotuna.utils.quantization import apply_quantization_to_config_params
 
         logger.info("creating cond stage")
@@ -190,6 +209,7 @@ class GenerationBase(TrainBase, InferenceBase):
             cfg = dict(cfg)
             cfg["params"] = apply_quantization_to_config_params(dict(cfg["params"]))
         model = instantiate_from_config(cfg)
+        assert model is not None
         self.cond_stage_model = model.eval()
         for param in self.cond_stage_model.parameters():
             param.requires_grad = False
@@ -199,7 +219,7 @@ class GenerationBase(TrainBase, InferenceBase):
         )
         logger.info(f"self.cond_stage_model_path: {self.cond_stage_model_path}")
 
-    def instantiate_cond_stage_2(self, config: Dict[str, Any]):
+    def instantiate_cond_stage_2(self, config: Optional[Dict[str, Any]]) -> None:
         """
         Instantiates the conditional stage model of the generative process.
 
@@ -209,6 +229,7 @@ class GenerationBase(TrainBase, InferenceBase):
         if config is not None:
             logger.info("creating cond stage 2")
             model = instantiate_from_config(config)
+            assert model is not None
             self.cond_stage_2_model = model.eval()
             for param in self.cond_stage_2_model.parameters():
                 param.requires_grad = False
@@ -218,14 +239,17 @@ class GenerationBase(TrainBase, InferenceBase):
             )
             logger.info(f"self.cond_stage_2_model_path: {self.cond_stage_2_model_path}")
 
-    def instantiate_denoiser(self, config: Dict[str, Any]):
+    def instantiate_denoiser(self, config: Optional[Dict[str, Any]]) -> None:
         """
         Instantiates the denoiser model of the generative process.
 
         :param config: Dictionary containing configuration for the denoiser model.
         """
+        if config is None:
+            return
         logger.info("creating denoiser")
         model = instantiate_from_config(config)
+        assert model is not None
         self.denoiser = model.eval()
         for param in self.denoiser.parameters():
             param.requires_grad = False
@@ -265,6 +289,7 @@ class GenerationBase(TrainBase, InferenceBase):
 
         :return: A list containing the optimizer and optionally a list containing the learning rate scheduler.
         """
+        assert self.lr_config is not None
         lr_config = self.lr_config
         lr = lr_config["learning_rate"]
         params = [p for p in self.parameters() if p.requires_grad]
@@ -293,11 +318,12 @@ class GenerationBase(TrainBase, InferenceBase):
         :param optimizer: The optimizer for which the scheduler is being configured.
         :return: A dictionary containing the scheduler, interval, and frequency.
         """
-        lr_scheduler_config = self.lr_config.lr_scheduler_config
+        assert self.lr_config is not None
+        lr_scheduler_config = self.lr_config["lr_scheduler_config"]
         assert "target" in lr_scheduler_config
-        scheduler_name = lr_scheduler_config.target.split(".")[-1]
-        interval = lr_scheduler_config.interval
-        frequency = lr_scheduler_config.frequency
+        scheduler_name = lr_scheduler_config["target"].split(".")[-1]
+        interval = lr_scheduler_config["interval"]
+        frequency = lr_scheduler_config["frequency"]
         if scheduler_name == "LambdaLRScheduler":
             scheduler = instantiate_from_config(lr_scheduler_config)
             scheduler.start_step = self.global_step
@@ -370,9 +396,12 @@ class GenerationBase(TrainBase, InferenceBase):
 
         print_green(f"Set the following components as trainable: {components}")
 
-    def load_first_stage(self, ckpt_path: str, ignore_missing_ckpts: bool = False):
-        path = os.path.join(ckpt_path, self.first_stage_model_path)
+    def load_first_stage(
+        self, ckpt_path: Union[str, Path], ignore_missing_ckpts: bool = False
+    ) -> None:
+        path = os.path.join(str(ckpt_path), self.first_stage_model_path)
         if os.path.exists(path):
+            assert self.first_stage_model is not None
             self.first_stage_model = self.load_model(self.first_stage_model, path)
             print_green("Successfully loaded first_stage_model from checkpoint.")
         elif ignore_missing_ckpts:
@@ -380,9 +409,12 @@ class GenerationBase(TrainBase, InferenceBase):
         else:
             raise FileNotFoundError("Checkpoint of first_stage_model file not found.")
 
-    def load_cond_stage(self, ckpt_path: str, ignore_missing_ckpts: bool = False):
-        path = os.path.join(ckpt_path, self.cond_stage_model_path)
+    def load_cond_stage(
+        self, ckpt_path: Union[str, Path], ignore_missing_ckpts: bool = False
+    ) -> None:
+        path = os.path.join(str(ckpt_path), self.cond_stage_model_path)
         if os.path.exists(path):
+            assert self.cond_stage_model is not None
             self.cond_stage_model = self.load_model(self.cond_stage_model, path)
             print_green("Successfully loaded cond_stage_model from checkpoint.")
         elif ignore_missing_ckpts:
@@ -390,11 +422,13 @@ class GenerationBase(TrainBase, InferenceBase):
         else:
             raise FileNotFoundError("Checkpoint of cond_stage_model file not found.")
 
-    def load_cond_stage_2(self, ckpt_path: str, ignore_missing_ckpts: bool = False):
+    def load_cond_stage_2(
+        self, ckpt_path: Union[str, Path], ignore_missing_ckpts: bool = False
+    ) -> None:
         if self.cond_stage_2_model is None:
             return
 
-        path = os.path.join(ckpt_path, self.cond_stage_2_model_path)
+        path = os.path.join(str(ckpt_path), self.cond_stage_2_model_path)
         if os.path.exists(path):
             self.cond_stage_2_model = self.load_model(self.cond_stage_2_model, path)
             print_green("Successfully loaded cond_stage_2_model from checkpoint.")
@@ -405,15 +439,18 @@ class GenerationBase(TrainBase, InferenceBase):
 
     def load_denoiser(
         self,
-        ckpt_path: str = None,
-        denoiser_ckpt_path: str = None,
+        ckpt_path: Optional[Union[str, Path]] = None,
+        denoiser_ckpt_path: Optional[Union[str, Path]] = None,
         ignore_missing_ckpts: bool = False,
-    ):
-        path = os.path.join(ckpt_path, self.denoiser_path)
+    ) -> None:
+        if ckpt_path is None and denoiser_ckpt_path is None:
+            return
+        path = os.path.join(str(ckpt_path or ""), self.denoiser_path)
         if denoiser_ckpt_path is not None:
-            path = denoiser_ckpt_path
+            path = str(denoiser_ckpt_path)
 
         if os.path.exists(path):
+            assert self.denoiser is not None
             self.denoiser = self.load_model(self.denoiser, path)
             print_green("Successfully loaded denoiser from checkpoint.")
         elif ignore_missing_ckpts:
@@ -421,15 +458,20 @@ class GenerationBase(TrainBase, InferenceBase):
         else:
             raise FileNotFoundError("Checkpoint of denoiser file not found.")
 
-    def load_lora(self, lora_ckpt_path: str = None, ignore_missing_ckpts: bool = False):
+    def load_lora(
+        self,
+        lora_ckpt_path: Optional[Union[str, Path]] = None,
+        ignore_missing_ckpts: bool = False,
+    ) -> None:
         if not self.use_lora:
             return
 
         lora_path = self.lora_path
         if lora_ckpt_path is not None:
-            lora_path = lora_ckpt_path
+            lora_path = str(lora_ckpt_path)
 
-        if os.path.exists(lora_path):
+        if lora_path is not None and os.path.exists(lora_path):
+            assert self.denoiser is not None
             self.load_model(self.denoiser, lora_path, strict=False)
             print_green("Successfully loaded denoiser from checkpoint.")
         elif ignore_missing_ckpts:
@@ -447,13 +489,16 @@ class GenerationBase(TrainBase, InferenceBase):
         **kwargs,
     ) -> None:
         assert ckpt_path is not None, "Please provide a valid checkpoint path."
+        ckpt_str = str(ckpt_path)
+        denoiser_path = str(denoiser_ckpt_path) if denoiser_ckpt_path is not None else None
+        lora_path = str(lora_ckpt_path) if lora_ckpt_path is not None else None
 
         # can ovrride following methods
-        self.load_first_stage(ckpt_path, ignore_missing_ckpts)
-        self.load_cond_stage(ckpt_path, ignore_missing_ckpts)
-        self.load_cond_stage_2(ckpt_path, ignore_missing_ckpts)
-        self.load_denoiser(ckpt_path, denoiser_ckpt_path, ignore_missing_ckpts)
-        self.load_lora(lora_ckpt_path, ignore_missing_ckpts)
+        self.load_first_stage(ckpt_str, ignore_missing_ckpts)
+        self.load_cond_stage(ckpt_str, ignore_missing_ckpts)
+        self.load_cond_stage_2(ckpt_str, ignore_missing_ckpts)
+        self.load_denoiser(ckpt_str, denoiser_path, ignore_missing_ckpts)
+        self.load_lora(lora_path, ignore_missing_ckpts)
 
     def enable_vram_management(self):
         logger.info("enable_vram_management: default moving to cuda")
@@ -557,13 +602,16 @@ class GenerationBase(TrainBase, InferenceBase):
         # 2. lr
         lr_config: DictConfig = train_config.get("lr_config")
         bs = train_config["data"]["params"]["batch_size"]
-        self.lr_config = OmegaConf.to_container(lr_config, resolve=True)
+        self.lr_config = cast(
+            dict[str, Any], OmegaConf.to_container(lr_config, resolve=True)
+        )
         self.configure_lr_config(self.lr_config, bs=bs, num_rank=num_rank)
 
         # 3. dataset
         logger.info("***** Configuring Data *****")
         data = instantiate_from_config(train_config["data"])
         self.data = data
+        assert data is not None
         data.setup()
         for k in data.datasets:
             logger.info(
@@ -582,14 +630,18 @@ class GenerationBase(TrainBase, InferenceBase):
             trainer_config["accelerator"] = "gpu"
 
         ## 4.2 logger
-        trainer_kwargs = dict()
+        trainer_kwargs: dict[str, Any] = {}
         trainer_kwargs["num_sanity_val_steps"] = 0
         logger_cfg = get_trainer_logger(lightning_config, workdir, debug)
         trainer_kwargs["logger"] = instantiate_from_config(logger_cfg)
-        logger.info(f"logger save_dir: {trainer_kwargs['logger'].save_dir}")
+        logger_obj = trainer_kwargs["logger"]
+        if hasattr(logger_obj, "save_dir"):
+            logger.info(f"logger save_dir: {logger_obj.save_dir}")
 
         ## 4.3 callback
-        callbacks_cfg = get_trainer_callbacks(lightning_config, workdir, ckptdir)
+        callbacks_cfg = cast(
+            dict[str, Any], get_trainer_callbacks(lightning_config, workdir, ckptdir)
+        )
         callbacks_cfg["image_logger"]["params"]["save_dir"] = workdir
         if "training_metrics" in callbacks_cfg:
             callbacks_cfg["training_metrics"]["params"]["save_dir"] = workdir
@@ -601,8 +653,10 @@ class GenerationBase(TrainBase, InferenceBase):
         strategy_cfg = get_trainer_strategy(lightning_config)
         trainer_kwargs["strategy"] = (
             strategy_cfg
-            if type(strategy_cfg) == str
-            else instantiate_from_config(OmegaConf.to_container(strategy_cfg))
+            if isinstance(strategy_cfg, str)
+            else instantiate_from_config(
+                cast(dict[str, Any], OmegaConf.to_container(strategy_cfg))
+            )
         )
         trainer_kwargs["sync_batchnorm"] = False
 
@@ -614,7 +668,10 @@ class GenerationBase(TrainBase, InferenceBase):
             from pytorch_lightning.profilers import PyTorchProfiler
 
             profiler = PyTorchProfiler(emit_nvtx=True)
-        trainer = Trainer(**trainer_config, **trainer_kwargs, profiler=profiler)
+        trainer_config_dict = cast(
+            dict[str, Any], OmegaConf.to_container(trainer_config, resolve=True)
+        )
+        trainer = Trainer(**trainer_config_dict, **trainer_kwargs, profiler=profiler)
         self.trainer = trainer
 
         ## 5. allow user

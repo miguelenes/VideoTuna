@@ -67,6 +67,7 @@ Prefer **git submodule** or **pip/git dependency** over copying large trees. In-
 | `videotuna/models/hunyuan/` | Tencent HunyuanVideo | Apache-2.0 (HF blocks) | `inference-hunyuan-*`, `train-hunyuan-*` | **Keep** |
 | `videotuna/models/lvdm/` | [AILab-CVC/VideoCrafter](https://github.com/AILab-CVC/VideoCrafter) + LVDM | Mixed | VC/DC/Open-Sora v1 train configs | **Keep** (frozen legacy) |
 | `videotuna/models/cogvideo_hf/` | VideoTuna wrappers | N/A | `train-cogvideox-*`, Diffusers CogVideo | **Keep** |
+| `videotuna/vendor/simpletuner/` | [bghira/SimpleTuner](https://github.com/bghira/SimpleTuner) | Apache-2.0 | *(reference only)* | **Submodule** — pinned `34b1fd72`; see [`vendor/VENDOR.md`](../videotuna/vendor/VENDOR.md) |
 | `videotuna/third_party/flux/` (SimpleTuner) | [bghira/SimpleTuner](https://github.com/bghira/SimpleTuner) | Apache-2.0 | *(removed)* | **Deleted** — see archive doc |
 | `eval/vbench/` + `eval/vbench/third_party/*` | [Vchitect/VBench](https://github.com/Vchitect/VBench) | VBench + sub-vendors | `eval/scripts/evaluation.py` | **Keep** |
 
