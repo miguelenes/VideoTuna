@@ -52,10 +52,12 @@ Prefer **git submodule** or **pip/git dependency** over copying large trees.
 
 ## Inventory
 
-| Path | Upstream | License | Entrypoints | Status |
-|------|----------|---------|-------------|--------|
-| `videotuna/training/flux_lora/` | PrivTune first-party | N/A | `train-flux-lora` | **Keep** |
-| `videotuna/models/wan/` | [Wan-Video/Wan2.1](https://github.com/Wan-Video/Wan2.1) | Upstream terms | `train-wan2-1-t2v-lora`, native LoRA smoke | **Keep** |
+| Path | Upstream | License | Entrypoints | Vendor deps | Status |
+|------|----------|---------|-------------|-------------|--------|
+| `videotuna/training/flux_lora/` | PrivTune first-party | N/A | `train-flux-lora` | — | **Keep** |
+| `videotuna/models/wan/` | [Wan-Video/Wan2.1](https://github.com/Wan-Video/Wan2.1) | Upstream terms | `train-wan2-1-t2v-lora`, native LoRA smoke | `easydict` (configs only) | **Keep** |
+
+`easydict` is pinned in `pyproject.toml` for upstream Wan config modules under `videotuna/models/wan/wan/configs/`. First-party code must not import it; `tests/test_vendor_import_boundary.py` enforces that boundary.
 
 ## Flux LoRA training
 
