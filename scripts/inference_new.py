@@ -1,14 +1,9 @@
-import os
-import sys
 from pathlib import Path
 from typing import cast
 
 from loguru import logger
 from omegaconf import DictConfig, OmegaConf
 from pytorch_lightning import seed_everything
-
-sys.path.insert(0, os.getcwd())
-sys.path.insert(1, f"{os.getcwd()}/src")
 
 from videotuna.base.generation_base import GenerationBase
 from videotuna.settings import get_settings

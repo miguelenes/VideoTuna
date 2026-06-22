@@ -1,7 +1,6 @@
 import argparse
 import datetime
 import os
-import sys
 
 import pytorch_lightning as pl
 import torch
@@ -9,8 +8,6 @@ from omegaconf import DictConfig, OmegaConf
 from pytorch_lightning import seed_everything
 from transformers import logging as transf_logging
 
-# sys.path.insert(1, os.path.join(sys.path[0], '..'))
-sys.path.insert(0, os.getcwd())
 from videotuna.base.generation_base import GenerationBase
 from videotuna.utils.args_utils import prepare_train_args
 from videotuna.utils.common_utils import get_dist_info, instantiate_from_config

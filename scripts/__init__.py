@@ -489,7 +489,7 @@ def train_wan2_1_t2v_lora():
     expname = "train_wan_domain_t2v_lora"
     result = subprocess.run(
         [
-            "python",
+            sys.executable,
             "scripts/train_new.py",
             "-t",
             "--ckpt",
@@ -528,7 +528,7 @@ def train_wan2_1_i2v_lora():
     expname = "train_wan_domain_i2v_lora"
     result = subprocess.run(
         [
-            "python",
+            sys.executable,
             "scripts/train_new.py",
             "-t",
             "--ckpt",
