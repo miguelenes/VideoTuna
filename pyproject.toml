@@ -13,7 +13,7 @@ packages = [{ include = "videotuna" }]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
-# Default install (`poetry install -E cuda`) = NVIDIA CUDA inference stack.
+# Default install (`poetry install -E cuda --with training`) = NVIDIA CUDA + domain LoRA training stack.
 # AMD ROCm: `poetry install -E rocm` then `poetry run install-rocm`
 # CPU dev:  `poetry install -E cpu` then `poetry run install-cpu-torch` (see docs/install-cpu.md)
 # Note: `cpu` extra is a marker; CPU torch wheels come from `install-cpu-torch`.
@@ -199,6 +199,9 @@ inference-flux-lora = 'scripts:inference_flux_lora'
 "inference-wan2.2-t2v-720p" = 'scripts:inference_wan2_2_t2v_720p'
 train-flux-lora = 'scripts:train_flux_lora'
 train-wan2-1-t2v-lora = 'scripts:train_wan2_1_t2v_lora'
+train-domain-t2i = 'scripts:train_domain_t2i'
+train-domain-t2v = 'scripts:train_domain_t2v'
+inference-domain-t2i = 'scripts:inference_domain_t2i'
 
 [tool.pytest.ini_options]
 markers = [

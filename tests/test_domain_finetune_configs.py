@@ -10,13 +10,9 @@ from videotuna.training.flux_lora.config import load_train_config
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-FLUX_TRAIN_CONFIG = REPO_ROOT / "configs" / "006_flux" / "domain_adult_t2i.json"
-FLUX_DATA_CONFIG = (
-    REPO_ROOT / "configs" / "006_flux" / "domain_adult_t2i_data.json"
-)
-WAN_DOMAIN_CONFIG = (
-    REPO_ROOT / "configs" / "008_wanvideo" / "wan2_1_t2v_14B_lora_domain.yaml"
-)
+FLUX_TRAIN_CONFIG = REPO_ROOT / "configs" / "domain" / "flux_t2i.json"
+FLUX_DATA_CONFIG = REPO_ROOT / "configs" / "domain" / "flux_t2i_data.json"
+WAN_DOMAIN_CONFIG = REPO_ROOT / "configs" / "domain" / "wan_t2v_lora.yaml"
 FLUX_INFER_SMOKE = (
     REPO_ROOT / "configs" / "inference" / "presets" / "flux_domain_lora_smoke.yaml"
 )

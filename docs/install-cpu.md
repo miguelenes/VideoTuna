@@ -1,6 +1,6 @@
 # CPU-only development install
 
-VideoTuna supports CPU-only installs for **unit tests**, **config validation**, and **tiny smoke inference**. CPU is not practical for 720p / 14B video generation — use NVIDIA CUDA or AMD ROCm for production inference.
+PrivTune supports CPU-only installs for **unit tests**, **config validation**, and **tiny smoke inference**. CPU is not practical for domain LoRA training or 14B video generation — use NVIDIA CUDA or AMD ROCm for production training.
 
 ## Prerequisites
 
@@ -11,7 +11,7 @@ VideoTuna supports CPU-only installs for **unit tests**, **config validation**, 
 ## Install
 
 ```bash
-poetry install -E cpu --with dev
+poetry install -E cpu --with dev --with training
 poetry run install-cpu-torch
 ```
 
@@ -50,9 +50,12 @@ CPU offload flags move weights between GPU and **host RAM**. They do not replace
 
 ```bash
 export VIDEOTUNA_ATTN_BACKEND=eager
-poetry run pytest tests/ -m "not gpu and not cpu_smoke" -q
-poetry run test tests/test_domain_finetune_configs.py -q
+poetry run lint
+poetry run format-check
 poetry run test tests/test_import_smoke.py -q
+poetry run test tests/test_domain_finetune_configs.py -q
+poetry run test tests/test_flux_lora_train_smoke.py -q
+poetry run test tests/test_poetry_scripts.py -q
 ```
 
 Optional CPU inference smoke (downloads Wan 2.2 weights on first run):
@@ -63,7 +66,7 @@ poetry run inference-wan2.2-t2v-720p \
   --cpu-smoke --num_inference_steps 2
 ```
 
-Preset: [`configs/inference/presets/wan2_2_cpu_smoke.yaml`](../configs/inference/presets/wan2_2_cpu_smoke.yaml). See [capability-matrix.md](capability-matrix.md).
+Preset: [`configs/inference/presets/wan2_2_cpu_smoke.yaml`](../configs/inference/presets/wan2_2_cpu_smoke.yaml). See [MODEL_VERSIONS.md](MODEL_VERSIONS.md).
 
 ## Model tiers on CPU
 
@@ -76,7 +79,8 @@ Preset: [`configs/inference/presets/wan2_2_cpu_smoke.yaml`](../configs/inference
 ## NVIDIA install (default)
 
 ```bash
-poetry install -E cuda
+poetry install -E cuda --with training
+poetry run install-deepspeed
 poetry run install-flash-attn   # optional
 ```
 

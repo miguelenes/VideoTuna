@@ -42,9 +42,7 @@ FLUX_CLOUD_SMOKE = REPO_ROOT / "configs" / "006_flux" / "cloud_smoke.json"
 WAN_CLOUD_SMOKE = (
     REPO_ROOT / "configs" / "008_wanvideo" / "wan2_1_t2v_14B_lora_cloud_smoke.yaml"
 )
-FLUX_DATA_CONFIG = (
-    REPO_ROOT / "configs" / "006_flux" / "domain_adult_t2i_data.json"
-)
+FLUX_DATA_CONFIG = REPO_ROOT / "configs" / "domain" / "flux_t2i_data.json"
 
 
 def test_cloud_scripts_exist_and_are_executable():

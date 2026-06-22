@@ -1,6 +1,6 @@
 {
     "--resume_from_checkpoint": "latest",
-    "--data_backend_config": "configs/006_flux/domain_adult_t2i_data.json",
+    "--data_backend_config": "configs/domain/flux_t2i_data.json",
     "--aspect_bucket_rounding": 2,
     "--seed": 42,
     "--minimum_image_size": 0,

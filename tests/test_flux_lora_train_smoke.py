@@ -9,8 +9,8 @@ from videotuna.training.flux_lora.config import FluxLoraDataConfig, load_train_c
 from videotuna.training.flux_lora.dataset import FluxLoraImageDataset
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-FLUX_CONFIG = REPO_ROOT / "configs" / "006_flux" / "domain_adult_t2i.json"
-FLUX_DATA = REPO_ROOT / "configs" / "006_flux" / "domain_adult_t2i_data.json"
+FLUX_CONFIG = REPO_ROOT / "configs" / "domain" / "flux_t2i.json"
+FLUX_DATA = REPO_ROOT / "configs" / "domain" / "flux_t2i_data.json"
 
 
 @pytest.fixture

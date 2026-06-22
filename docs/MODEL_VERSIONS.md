@@ -1,41 +1,46 @@
 # Model versions
 
-PrivTune supports three model families for domain LoRA training and validation.
+PrivTune supports three model families: two for **training** and one for **validation**.
 
-| Family | Hub ID | Pipeline / stack | Integration | Role |
-|--------|--------|------------------|-------------|------|
-| Flux T2I | `black-forest-labs/FLUX.1-dev` | `FluxPipeline` | `DiffusersVideoFlow` | Phase 1 T2I LoRA train + smoke infer |
-| Wan 2.1 T2V | `Wan-AI/Wan2.1-T2V-14B` | Native Wan modules | `wanvideo.py` | Phase 2 T2V LoRA train + native smoke |
-| Wan 2.2 T2V | `Wan-AI/Wan2.2-T2V-A14B-Diffusers` | `WanPipeline` | `DiffusersVideoFlow` | Phase 3 production validation |
+| Model | Hub ID | Role |
+|-------|--------|------|
+| FLUX.1-dev | `black-forest-labs/FLUX.1-dev` | **Train** — Phase 1 T2I LoRA |
+| Wan 2.1 T2V 14B | `Wan-AI/Wan2.1-T2V-14B` | **Train** — Phase 2 T2V LoRA |
+| Wan 2.2 T2V A14B Diffusers | `Wan-AI/Wan2.2-T2V-A14B-Diffusers` | **Validate** — Phase 3 production inference (Prompt 4) |
 
-## Flux notes
+## Training configs
 
-- Training config: `configs/006_flux/domain_adult_t2i.json`
-- Smoke preset: `configs/inference/presets/flux_domain_lora_smoke.yaml`
-- Command: `poetry run train-flux-lora` / `poetry run inference-flux-lora`
+| Phase | Config |
+|-------|--------|
+| Flux T2I | `configs/domain/flux_t2i.json` + `configs/domain/flux_t2i_data.json` |
+| Wan T2V | `configs/domain/wan_t2v_lora.yaml` |
 
-## Wan 2.1 notes
+Commands: `poetry run train-domain-t2i` / `poetry run train-domain-t2v`
 
-- Training config: `configs/008_wanvideo/wan2_1_t2v_14B_lora_domain.yaml`
-- Requires DeepSpeed ZeRO-3: `poetry run install-deepspeed`
-- Native smoke preset: `configs/inference/presets/wan_domain_lora_smoke.yaml`
+Wan training requires DeepSpeed ZeRO-3: `poetry run install-deepspeed`
 
-## Wan 2.2 notes
+## Smoke inference presets
 
-- Base config: `configs/inference/wan2_2_t2v_a14b.yaml`
-- Memory presets: `configs/inference/presets/low_vram_wan2_2_720p.yaml`, `balanced_wan2_2_720p.yaml`, `max_speed_wan2_2_720p.yaml`
-- LoRA bridge: Wan 2.1 native `.ckpt` → Diffusers 2.2 via `videotuna/utils/wan_lora_bridge.py`
-- Command: `poetry run inference-wan2.2-t2v-720p`
+| Phase | Preset | Command |
+|-------|--------|---------|
+| Flux LoRA | `configs/inference/presets/flux_domain_lora_smoke.yaml` | `poetry run inference-domain-t2i` |
+| Wan 2.1 LoRA (interim) | `configs/inference/presets/wan_domain_lora_smoke.yaml` | `inference_new` + `--trained_ckpt` |
+| Wan 2.2 (production) | `configs/inference/presets/balanced_wan2_2_720p.yaml` | `poetry run inference-wan2.2-t2v-720p` |
+
+LoRA bridge (Wan 2.1 native → 2.2 Diffusers): `videotuna/utils/wan_lora_bridge.py`
 
 ## CI smoke (CPU config validation)
 
 ```bash
-poetry run test tests/test_domain_finetune_configs.py -q
+poetry run lint
+poetry run format-check
 poetry run test tests/test_import_smoke.py -q
-poetry run test tests/test_wan_lora_bridge.py -q
+poetry run test tests/test_domain_finetune_configs.py -q
+poetry run test tests/test_flux_lora_train_smoke.py -q
+poetry run test tests/test_poetry_scripts.py -q
 ```
 
-GPU inference smoke (optional):
+GPU inference smoke (optional, manual):
 
 ```bash
 poetry run inference-wan2.2-t2v-720p \

@@ -1,6 +1,6 @@
 # Cloud GPU training runbook (Vast.ai / linux-desktop template)
 
-Headless training on rented NVIDIA GPUs using the VideoTuna `cloud/vast/` provisioning bundle. Primary workflow: **Flux LoRA T2I → Wan 2.1 T2V LoRA** (see [domain-adult-finetune.md](domain-adult-finetune.md)).
+Headless training on rented NVIDIA GPUs using the PrivTune `cloud/vast/` provisioning bundle. Primary workflow: **Flux LoRA T2I → Wan 2.1 T2V LoRA** (see [domain-adult-finetune.md](domain-adult-finetune.md)).
 
 Never commit datasets, weights, API keys, or `results/` to git.
 
@@ -10,9 +10,8 @@ Never commit datasets, weights, API keys, or `results/` to git.
 |----------|-----------|--------------|-------|
 | Flux LoRA @ 512px | ~24–40 GB | RTX 4090 24GB, A100 40GB | No DeepSpeed required |
 | Wan 2.1 T2V LoRA @ 480×832×81 | ~38 GB | A100 40GB, H100 | Requires DeepSpeed ZeRO-3 offload |
-| CogVideoX 5B T2V LoRA (fallback) | varies | 24GB+ | Legacy 5B path |
 
-**CUDA:** Template should ship NVIDIA driver + CUDA 12.x compatible with VideoTuna's cu126 PyTorch wheels (`poetry install -E cuda`).
+**CUDA:** Template should ship NVIDIA driver + CUDA 12.x compatible with PrivTune's cu126 PyTorch wheels (`poetry install -E cuda --with training`).
 
 **Disk:** Base weights are large (Wan 14B ≈ tens of GB). Use **≥200 GB** volume. Pre-download via manifest when `HF_TOKEN` is set.
 
@@ -38,7 +37,7 @@ PROVISIONING_SCRIPT=https://raw.githubusercontent.com/miguelenes/VideoTuna/main/
 3. **SSH in** (preferred) or use the Jupyter terminal on port 8080.
 4. Wait for provisioning to finish:
    - Template marker: `/.provisioning_complete`
-   - VideoTuna marker: `/workspace/.videotuna_provisioned`
+   - PrivTune marker: `/workspace/.videotuna_provisioned`
    - Logs: `/var/log/portal/provisioning.log` (if present)
 5. Confirm smoke tests passed during bootstrap (`poetry run test tests/test_import_smoke.py`).
 6. Sync datasets via Syncthing (port **8384**) — see [C. Data sync](#c-data-sync).
@@ -98,7 +97,7 @@ Smoke run logs: `/workspace/results/smoke-train.log`.
 |-------|-----------------|
 | Flux LoRA | `results/train/flux-domain-adult/checkpoint-<step>/` |
 | Flux smoke | `results/train/flux-cloud-smoke/checkpoint-<step>/` |
-| Wan LoRA | `results/train/train_wanvideo_t2v_lora_<timestamp>/checkpoints/only_trained_model/denoiser-*.ckpt` |
+| Wan LoRA | `results/train/train_wan_domain_t2v_lora_<timestamp>/checkpoints/only_trained_model/denoiser-*.ckpt` |
 
 **Before terminating the instance:** Syncthing `results/` (and optionally `checkpoints/`) back to your machine.
 
@@ -132,10 +131,8 @@ export RESUME_CKPT=/workspace/results/train/.../checkpoints/...
 
 | Profile | Default config |
 |---------|----------------|
-| `flux-lora` | `configs/006_flux/domain_adult_t2i.json` |
-| `wan-t2v-lora` | `configs/008_wanvideo/wan2_1_t2v_14B_lora_domain.yaml` |
-| `wan-t2v-fullft` | `configs/008_wanvideo/wan2_1_t2v_14B_fullft.yaml` |
-| `cogvideox-t2v-lora` | `configs/004_cogvideox/cogvideo5b.yaml` |
+| `flux-lora` | `configs/domain/flux_t2i.json` |
+| `wan-t2v-lora` | `configs/domain/wan_t2v_lora.yaml` |
 
 Override with `CONFIG_PATH` and `DATA_CONFIG_PATH` (Flux only) in `.env`.
 
@@ -143,6 +140,5 @@ Override with `CONFIG_PATH` and `DATA_CONFIG_PATH` (Flux only) in `.env`.
 
 - [domain-adult-finetune.md](domain-adult-finetune.md) — dataset layout, hyperparameters, inference smoke
 - [../checkpoints.md](../checkpoints.md) — weight download layout
-- [../finetune_flux.md](../finetune_flux.md) / [../finetune_wan.md](../finetune_wan.md)
 - [`cloud/vast/provisioning.yaml`](../../cloud/vast/provisioning.yaml) — manifest source
 - [`AGENTS.md`](../../AGENTS.md) — local dev verification gates

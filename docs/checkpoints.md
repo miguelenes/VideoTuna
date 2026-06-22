@@ -20,7 +20,7 @@ PrivTune domain training and validation use Hugging Face hub weights (downloaded
 
 Install: NVIDIA `poetry install -E cuda --with training` · AMD [`docs/install-rocm.md`](install-rocm.md) · CPU [`docs/install-cpu.md`](install-cpu.md)
 
-See [`docs/capability-matrix.md`](capability-matrix.md) for commands and presets.
+See [`docs/MODEL_VERSIONS.md`](MODEL_VERSIONS.md) and [`docs/runbooks/domain-adult-finetune.md`](runbooks/domain-adult-finetune.md) for commands and presets.
 
 ## Download (offline / air-gapped)
 
@@ -36,9 +36,9 @@ Flux and Wan 2.2 Diffusers weights are pulled from the hub on first `train-flux-
 
 | Use case | Command |
 |----------|---------|
-| Flux LoRA train | `poetry run train-flux-lora` |
-| Flux LoRA smoke | `poetry run inference-flux-lora` |
-| Wan LoRA train | `poetry run train-wan2-1-t2v-lora` |
+| Flux LoRA train | `poetry run train-domain-t2i` |
+| Flux LoRA smoke | `poetry run inference-domain-t2i` |
+| Wan LoRA train | `poetry run train-domain-t2v` |
 | Wan native smoke | `poetry run python scripts/inference_new.py --config configs/inference/presets/wan_domain_lora_smoke.yaml` |
 | Wan 2.2 validation | `poetry run inference-wan2.2-t2v-720p` |
 

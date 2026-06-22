@@ -89,10 +89,12 @@ class DatasetFromCSV(torch.utils.data.Dataset):
         if "video_length" in kwargs:
             num_frames = kwargs.pop("video_length")
         self.csv_path = csv_path
-        if isinstance(csv_path, str):
-            csv_path = [csv_path]
-        if data_root is None or isinstance(data_root, str):
-            data_root = [data_root]
+        if isinstance(csv_path, (str, os.PathLike)):
+            csv_path = [str(csv_path)]
+        if data_root is None:
+            data_root = [None]
+        elif isinstance(data_root, (str, os.PathLike)):
+            data_root = [str(data_root)]
 
         if len(data_root) == 1:
             data_root = data_root * len(csv_path)

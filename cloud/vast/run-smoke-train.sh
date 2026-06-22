@@ -43,7 +43,7 @@ run_cmd() {
 case "${TRAIN_PROFILE}" in
   flux-lora)
   CONFIG_PATH="${CONFIG_PATH:-configs/006_flux/cloud_smoke.json}"
-  DATA_CONFIG_PATH="${DATA_CONFIG_PATH:-configs/006_flux/domain_adult_t2i_data.json}"
+  DATA_CONFIG_PATH="${DATA_CONFIG_PATH:-configs/domain/flux_t2i_data.json}"
   run_cmd poetry run train-flux-lora \
     --config_path "${CONFIG_PATH}" \
     --data_config_path "${DATA_CONFIG_PATH}"

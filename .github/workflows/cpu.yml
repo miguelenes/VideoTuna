@@ -18,8 +18,8 @@ jobs:
       - name: Install Poetry
         run: pip install poetry
 
-      - name: Install dependencies (CPU extra + dev)
-        run: poetry install -E cpu --with dev
+      - name: Install dependencies (CPU extra + dev + training)
+        run: poetry install -E cpu --with dev --with training
 
       - name: Install CPU PyTorch wheels
         run: poetry run install-cpu-torch
@@ -33,10 +33,23 @@ jobs:
       - name: Format check
         run: poetry run format-check
 
-      - name: Run CPU-safe tests
+      - name: Import smoke
+        run: poetry run test tests/test_import_smoke.py -q
+
+      - name: Domain configs
+        run: poetry run test tests/test_domain_finetune_configs.py -q
+
+      - name: Flux train smoke
+        run: poetry run test tests/test_flux_lora_train_smoke.py -q
+
+      - name: Poetry scripts
+        run: poetry run test tests/test_poetry_scripts.py -q
+
+      - name: Run remaining CPU-safe tests
         run: |
           poetry run pytest tests/ \
             -m "not gpu and not cpu_smoke" \
             --ignore=tests/test_training_step_mock.py \
             --ignore=tests/test_wan_checkpoint.py \
+            --ignore=tests/datasets \
             -q

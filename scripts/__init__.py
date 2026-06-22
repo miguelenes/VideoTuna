@@ -10,6 +10,10 @@ from datetime import datetime
 
 current_time = datetime.now().strftime("%Y%m%d%H%M%S")
 
+FLUX_T2I_CONFIG = "configs/domain/flux_t2i.json"
+FLUX_T2I_DATA_CONFIG = "configs/domain/flux_t2i_data.json"
+WAN_T2V_LORA_CONFIG = "configs/domain/wan_t2v_lora.yaml"
+
 
 def _require_cuda_backend(installer_name: str) -> None:
     """Abort when the active PyTorch build is ROCm (CUDA-only installer)."""
@@ -459,8 +463,8 @@ def inference_wan2_2_t2v_720p():
 
 def train_flux_lora():
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
-    config_path = "configs/006_flux/domain_adult_t2i.json"
-    data_config_path = "configs/006_flux/domain_adult_t2i_data.json"
+    config_path = FLUX_T2I_CONFIG
+    data_config_path = FLUX_T2I_DATA_CONFIG
     result = subprocess.run(
         [
             "accelerate",
@@ -483,7 +487,7 @@ def train_flux_lora():
 def train_wan2_1_t2v_lora():
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
     ckpt = "checkpoints/wan/Wan2.1-T2V-14B"
-    config = "configs/008_wanvideo/wan2_1_t2v_14B_lora_domain.yaml"
+    config = WAN_T2V_LORA_CONFIG
     resroot = "results/train"
     expname = "train_wan_domain_t2v_lora"
     result = subprocess.run(
@@ -507,6 +511,21 @@ def train_wan2_1_t2v_lora():
         check=False,
     )
     exit(result.returncode)
+
+
+def train_domain_t2i():
+    """Canonical alias for Flux T2I domain LoRA training."""
+    train_flux_lora()
+
+
+def train_domain_t2v():
+    """Canonical alias for Wan 2.1 T2V domain LoRA training."""
+    train_wan2_1_t2v_lora()
+
+
+def inference_domain_t2i():
+    """Canonical alias for Flux domain LoRA smoke inference."""
+    inference_flux_lora()
 
 
 def benchmark_attn_backends():

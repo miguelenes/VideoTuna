@@ -22,8 +22,8 @@ huggingface-cli login                    # FLUX.1-dev is gated on Hugging Face
 
 | Phase | Model | Peak VRAM | GPUs | Rough time | Limitation |
 |-------|-------|-----------|------|------------|------------|
-| 1 — T2I | Flux LoRA @ 512px | ~24–40 GB | 1 | 2000 steps ≈ hours on A100-class | Trains **FLUX.1-dev**; use `flux1_dev.yaml` / `inference-flux-lora`, not FLUX.2 |
-| 2 — T2V | Wan 2.1 T2V LoRA @ 480×832×81 | ~38 GB | 1 + DeepSpeed | ~41 s/epoch on H800 | Trains **Wan 2.1**; validate on **Wan 2.2 Diffusers** (Phase 3) |
+| 1 — T2I | Flux LoRA @ 512px | ~24–40 GB | 1 | 2000 steps ≈ hours on A100-class | Trains **FLUX.1-dev** |
+| 2 — T2V | Wan 2.1 T2V LoRA @ 480×832×81 | ~38 GB | 1 + DeepSpeed | ~41 s/epoch on H800 | Trains **Wan 2.1**; production validation on Wan 2.2 (Phase 3) |
 
 ---
 
@@ -49,8 +49,8 @@ data/t2i/domain/
 
 | File | Purpose |
 |------|---------|
-| `configs/006_flux/domain_adult_t2i.json` | Training hyperparameters |
-| `configs/006_flux/domain_adult_t2i_data.json` | Dataset backend (`data/t2i/domain`) |
+| `configs/domain/flux_t2i.json` | Training hyperparameters |
+| `configs/domain/flux_t2i_data.json` | Dataset backend (`data/t2i/domain`) |
 
 ### Download base weights
 
@@ -61,15 +61,15 @@ mkdir -p checkpoints/flux
 hf download black-forest-labs/FLUX.1-dev --local-dir checkpoints/flux/FLUX.1-dev
 ```
 
-Then set `"--pretrained_model_name_or_path": "checkpoints/flux/FLUX.1-dev"` in `domain_adult_t2i.json`.
+Then set `"--pretrained_model_name_or_path": "checkpoints/flux/FLUX.1-dev"` in `flux_t2i.json`.
 
 ### Train
 
 ```bash
-poetry run train-flux-lora \
-  --config_path configs/006_flux/domain_adult_t2i.json \
-  --data_config_path configs/006_flux/domain_adult_t2i_data.json
+poetry run train-domain-t2i
 ```
+
+Legacy alias: `poetry run train-flux-lora` (same defaults).
 
 Checkpoints: `results/train/flux-domain-adult/checkpoint-<step>/` (Diffusers LoRA format).
 
@@ -78,18 +78,7 @@ For a quick smoke on GPU, temporarily set `"--max_train_steps": 50` in the JSON.
 ### Inference smoke
 
 ```bash
-poetry run python scripts/inference_new.py \
-  --config configs/inference/presets/flux_domain_lora_smoke.yaml \
-  --lorackpt results/train/flux-domain-adult/checkpoint-2000 \
-  --prompt "sks_style, portrait, soft lighting" \
-  --num_inference_steps 8 \
-  --enable_model_cpu_offload
-```
-
-Or via Poetry wrapper:
-
-```bash
-poetry run inference-flux-lora \
+poetry run inference-domain-t2i \
   --lorackpt results/train/flux-domain-adult/checkpoint-2000 \
   --prompt "sks_style, portrait, soft lighting"
 ```
@@ -124,7 +113,7 @@ ffmpeg -i in.mp4 -vf scale=832:480 -r 16 -frames:v 81 data/t2v/domain/videos/cli
 
 ### Config file
 
-`configs/008_wanvideo/wan2_1_t2v_14B_lora_domain.yaml` — domain CSV path, 25-step checkpoint interval, 50 max epochs (raise for production).
+`configs/domain/wan_t2v_lora.yaml` — domain CSV path, 25-step checkpoint interval, 50 max epochs (raise for production).
 
 ### Download base weights
 
@@ -136,19 +125,22 @@ hf download Wan-AI/Wan2.1-T2V-14B --local-dir checkpoints/wan/Wan2.1-T2V-14B
 ### Train
 
 ```bash
-poetry run train-wan2-1-t2v-lora \
-  --base configs/008_wanvideo/wan2_1_t2v_14B_lora_domain.yaml
+poetry run train-domain-t2v
 ```
+
+Legacy alias: `poetry run train-wan2-1-t2v-lora` (same defaults).
 
 Checkpoint example:
 
 `results/train/train_wan_domain_t2v_lora_<timestamp>/checkpoints/only_trained_model/denoiser-000-000000025.ckpt`
 
-### Inference smoke
+### Inference smoke (interim — Wan 2.1 native)
+
+Use this for Phase 2 validation until Wan 2.2 bridge work is complete (Prompt 4):
 
 ```bash
 poetry run python scripts/inference_new.py \
-  --config configs/008_wanvideo/wan2_1_t2v_14B_lora_domain.yaml \
+  --config configs/inference/presets/wan_domain_lora_smoke.yaml \
   --ckpt_path checkpoints/wan/Wan2.1-T2V-14B \
   --trained_ckpt results/train/train_wan_domain_t2v_lora_<ts>/checkpoints/only_trained_model/denoiser-000-000000025.ckpt \
   --prompt "sks_style, slow camera push-in, soft lighting" \
@@ -157,7 +149,9 @@ poetry run python scripts/inference_new.py \
   --enable_model_cpu_offload
 ```
 
-For **Wan 2.2 Diffusers 720p** production validation (rental GPU), pass the Phase 2 checkpoint:
+### Phase 3 — Wan 2.2 production validation (deferred)
+
+Wan 2.2 Diffusers 720p validation is documented in [wan2.2-inference-profile.md](wan2.2-inference-profile.md). Not required for the training-only milestone.
 
 ```bash
 poetry run inference-wan2.2-t2v-720p \
@@ -166,8 +160,6 @@ poetry run inference-wan2.2-t2v-720p \
   --prompt "sks_style, cinematic lighting" \
   --enable_model_cpu_offload
 ```
-
-See [wan2.2-inference-profile.md](wan2.2-inference-profile.md).
 
 ---
 
@@ -182,6 +174,7 @@ When no CUDA/ROCm GPU is available locally:
 poetry run test tests/test_domain_finetune_configs.py -q
 poetry run test tests/test_flux_lora_train_smoke.py -q
 poetry run test tests/test_import_smoke.py -q
+poetry run test tests/test_poetry_scripts.py -q
 ```
 
 3. Run the full train/infer commands above on a GPU machine with the same repo checkout and dataset paths.
@@ -201,12 +194,11 @@ poetry run test tests/test_import_smoke.py -q
 ## Known limitations
 
 - **FLUX.1 only:** Training uses FLUX.1-dev; see [`docs/MODEL_VERSIONS.md`](../MODEL_VERSIONS.md).
-- **Wan 2.1 → 2.2:** LoRA trains on Wan 2.1 native; Wan 2.2 Diffusers validation uses `videotuna/utils/wan_lora_bridge.py`. GPU validation required before production.
+- **Wan 2.1 → 2.2:** LoRA trains on Wan 2.1 native; Wan 2.2 Diffusers validation uses `videotuna/utils/wan_lora_bridge.py` (Prompt 4).
 
 ## Related docs
 
 - [`docs/runbooks/cloud-gpu-training.md`](cloud-gpu-training.md) — Vast.ai / rented GPU provisioning and Syncthing workflow
-- [`docs/finetune_flux.md`](../finetune_flux.md)
-- [`docs/finetune_wan.md`](../finetune_wan.md)
+- [`docs/runbooks/wan2.2-inference-profile.md`](wan2.2-inference-profile.md) — Wan 2.2 production validation (Phase 3)
 - [`docs/checkpoints.md`](../checkpoints.md)
 - [`docs/datasets.md`](../datasets.md)

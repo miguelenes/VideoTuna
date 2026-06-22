@@ -1,6 +1,6 @@
 # AMD ROCm install
 
-VideoTuna supports AMD GPUs on Linux x86_64 via PyTorch ROCm wheels. ROCm uses the same `torch.cuda` API as NVIDIA CUDA (HIP backend).
+PrivTune supports AMD GPUs on Linux x86_64 via PyTorch ROCm wheels. ROCm uses the same `torch.cuda` API as NVIDIA CUDA (HIP backend).
 
 ## Prerequisites
 
@@ -51,7 +51,7 @@ poetry run inference-wan2.2-t2v-720p \
   --num_inference_steps 2 --enable_model_cpu_offload
 ```
 
-Per-model presets: [capability-matrix.md](capability-matrix.md).
+Per-model presets: [MODEL_VERSIONS.md](MODEL_VERSIONS.md).
 
 ## Model tiers on ROCm
 
