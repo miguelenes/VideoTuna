@@ -1,6 +1,6 @@
 import inspect
 from argparse import ArgumentParser
-from typing import Any, Callable, Dict, List, Tuple, Type, TypeVar, Union, cast
+from typing import Any, Callable, Dict, List, Tuple, Type, Union
 
 import pytorch_lightning as pl
 

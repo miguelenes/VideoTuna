@@ -1,7 +1,6 @@
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, Union
 
-import torch
 import torch.nn as nn
 
 

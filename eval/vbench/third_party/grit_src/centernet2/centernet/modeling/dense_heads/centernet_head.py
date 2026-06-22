@@ -1,9 +1,8 @@
 import math
-from typing import List
 
 import torch
 from detectron2.config import configurable
-from detectron2.layers import ShapeSpec, get_norm
+from detectron2.layers import get_norm
 from torch import nn
 from torch.nn import functional as F
 

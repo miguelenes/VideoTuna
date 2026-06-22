@@ -359,7 +359,7 @@ class MemEfficientRingAttnProcessor:
 
 class ContextParallelAttention:
     def __init__(self):
-        raise ImportError(f"ContextParallelAttention should not be initialized directly.")
+        raise ImportError("ContextParallelAttention should not be initialized directly.")
 
     @staticmethod
     def from_native_module(module: Attention, process_group, *args, **kwargs) -> Attention:

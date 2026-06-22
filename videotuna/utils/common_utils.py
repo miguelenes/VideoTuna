@@ -1,8 +1,6 @@
 import importlib
 import json
 import os
-import subprocess
-import sys
 import time
 from argparse import Namespace
 from functools import wraps
@@ -18,14 +16,12 @@ from loguru import logger
 from omegaconf import DictConfig, OmegaConf
 
 from videotuna.utils.attention import (
-    get_attn_backend,
     get_attn_backend_requested,
     get_resolved_attn_backend,
     get_torch_compile_mode,
 )
 from videotuna.utils.device_utils import (
     detect_compute_backend,
-    empty_accelerator_cache,
     gpu_is_available,
     synchronize_accelerator,
 )
@@ -105,7 +101,7 @@ def get_params(config, resolve=True):
 
 # resolve will make params dict type rather than DictConfig type
 def instantiate_from_config(config, resolve=False) -> Any:
-    if not "target" in config:
+    if "target" not in config:
         if config == "__is_first_stage__":
             return None
         elif config == "__is_unconditional__":

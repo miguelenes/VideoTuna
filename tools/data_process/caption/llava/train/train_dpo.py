@@ -16,7 +16,6 @@
 
 import ast
 import copy
-import json
 import logging
 import math
 import os
@@ -336,7 +335,7 @@ def safe_save_model_for_hf_trainer(trainer: transformers.Trainer, output_dir: st
                 )
             else:
                 torch.save(
-                    weight_to_save, os.path.join(output_dir, f"mm_projector.bin")
+                    weight_to_save, os.path.join(output_dir, "mm_projector.bin")
                 )
         return
 
@@ -1852,7 +1851,7 @@ def train(attn_implementation=None):
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
     if training_args.verbose_logging:
-        rank0_print(f"Inspecting experiment hyperparameters:\n")
+        rank0_print("Inspecting experiment hyperparameters:\n")
         rank0_print(f"model_args = {vars(model_args)}\n\n")
         rank0_print(f"data_args = {vars(data_args)}\n\n")
         rank0_print(f"training_args = {vars(training_args)}\n\n")

@@ -1,9 +1,7 @@
 import logging
-import math
 import os
 
 import torch
-from einops import rearrange
 from torch import nn
 
 from .simple_tokenizer import SimpleTokenizer as _Tokenizer

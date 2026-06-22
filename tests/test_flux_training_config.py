@@ -3,7 +3,6 @@
 import json
 from pathlib import Path
 
-import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FLUX_CONFIG = REPO_ROOT / "configs" / "006_flux" / "config.json"

@@ -149,7 +149,7 @@ def static_filter(args):
         assert (
             os.path.isfile(args.filter_scope)
             and Path(args.filter_scope).suffix.lower() == ".json"
-        ), f"""
+        ), """
         --filter_scope flag is not correctly set, set to 'all' to filter all videos in the --videos_path directory,
         or provide the correct path to the JSON file
         """
@@ -209,7 +209,7 @@ def register_subparsers(subparser):
     parser.add_argument(
         "--filter_scope",
         default="temporal_flickering",
-        help=f"""For specifying the scope for filtering videos
+        help="""For specifying the scope for filtering videos
         1. 'temporal_flickering' (default): filter videos based on matches with temporal_flickering dimension of VBench.
         2. 'all': filter all video in the current directory.
         3. '$filename': if a filepath to a JSON file is provided, only the filename exists in JSON file will be filtered.

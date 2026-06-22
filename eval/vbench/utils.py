@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from decord import VideoReader, cpu
+from decord import VideoReader
 from PIL import Image, ImageSequence
 from torchvision import transforms
 from torchvision.transforms import (

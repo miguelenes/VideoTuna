@@ -4,7 +4,6 @@ import os
 import random
 from itertools import repeat
 
-import deepspeed
 import numpy as np
 import torch
 import torch.distributed as dist

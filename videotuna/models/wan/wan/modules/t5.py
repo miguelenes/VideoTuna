@@ -168,10 +168,12 @@ class T5SelfAttention(nn.Module):
             num_buckets, num_heads, bidirectional=True)
 
     def forward(self, x, mask=None, pos_bias=None):
-        if not self.shared_pos:
-            assert self.pos_embedding is not None
-        e = pos_bias if self.shared_pos else self.pos_embedding(
-            x.size(1), x.size(1))
+        if self.shared_pos:
+            e = pos_bias
+        else:
+            pos_embedding = self.pos_embedding
+            assert pos_embedding is not None
+            e = pos_embedding(x.size(1), x.size(1))
         x = fp16_clamp(x + self.attn(self.norm1(x), mask=mask, pos_bias=e))
         x = fp16_clamp(x + self.ffn(self.norm2(x)))
         return x
@@ -211,10 +213,12 @@ class T5CrossAttention(nn.Module):
                 encoder_states=None,
                 encoder_mask=None,
                 pos_bias=None):
-        if not self.shared_pos:
-            assert self.pos_embedding is not None
-        e = pos_bias if self.shared_pos else self.pos_embedding(
-            x.size(1), x.size(1))
+        if self.shared_pos:
+            e = pos_bias
+        else:
+            pos_embedding = self.pos_embedding
+            assert pos_embedding is not None
+            e = pos_embedding(x.size(1), x.size(1))
         x = fp16_clamp(x + self.self_attn(self.norm1(x), mask=mask, pos_bias=e))
         x = fp16_clamp(x + self.cross_attn(
             self.norm2(x), context=encoder_states, mask=encoder_mask))

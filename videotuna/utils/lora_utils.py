@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, List, Union
+from typing import List, Union
 
 import torch.nn as nn
 

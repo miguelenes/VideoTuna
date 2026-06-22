@@ -6,7 +6,6 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 import argparse
 import json
 import os
-from datetime import datetime
 
 import torch
 from vbench import VBench
@@ -159,7 +158,7 @@ def main():
     device = torch.device("cuda")
     my_VBench = VBench(device, args.full_json_dir, args.output_path)
 
-    print(f"start evaluation")
+    print("start evaluation")
 
     if args.dimension is None:
         dimensions = STANDARD_DIMENSION
@@ -183,7 +182,7 @@ def main():
     kwargs["imaging_quality_preprocessing_mode"] = (
         args.imaging_quality_preprocessing_mode
     )
-    result_save_name = args.output_path + f"results"
+    result_save_name = args.output_path + "results"
 
     my_VBench.evaluate(
         videos_path=video_path,

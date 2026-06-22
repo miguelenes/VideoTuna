@@ -6,11 +6,10 @@ import torch.distributed as dist
 import torch.nn as nn
 from einops import rearrange
 from timm.layers import DropPath, Mlp
-from transformers import PretrainedConfig, PreTrainedModel
+from transformers import PretrainedConfig
 
 from videotuna.models.opensora.acceleration.checkpoint import auto_grad_checkpoint
 from videotuna.models.opensora.acceleration.communications import (
-    gather_forward_split_backward,
     split_forward_gather_backward,
 )
 from videotuna.models.opensora.acceleration.parallel_states import (

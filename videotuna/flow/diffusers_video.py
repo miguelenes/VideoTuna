@@ -235,7 +235,7 @@ class DiffusersVideoFlow(GenerationBase):
         self.enable_attention_cache = enable_attention_cache
         self._model_id: Optional[str] = None
         self._lora_path: Optional[str] = None
-        self._dtype: torch.dtype = torch.bfloat16
+        self._dtype = torch.bfloat16
 
     def from_pretrained(
         self,
@@ -504,7 +504,7 @@ class DiffusersVideoFlow(GenerationBase):
                             AbstractContextManager[None],
                             torch.autocast(
                                 device_type,
-                                dtype=self._dtype,
+                                dtype=cast(torch.dtype, self._dtype),
                                 cache_enabled=False,
                             ),
                         )

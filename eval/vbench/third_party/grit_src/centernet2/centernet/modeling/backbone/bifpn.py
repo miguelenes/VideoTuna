@@ -2,14 +2,8 @@
 # The original file is under Apache-2.0 License
 import math
 from collections import OrderedDict
-from os.path import join
-from typing import List
 
-import fvcore.nn.weight_init as weight_init
-import numpy as np
 import torch
-import torch.nn.functional as F
-import torch.utils.model_zoo as model_zoo
 from detectron2.layers import Conv2d, ShapeSpec
 from detectron2.layers.batch_norm import get_norm
 from detectron2.modeling.backbone import Backbone

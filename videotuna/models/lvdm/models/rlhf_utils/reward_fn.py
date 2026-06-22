@@ -1,26 +1,20 @@
 # adapted from VADER  https://github.com/mihirp1998/VADER
 import argparse
-import glob
-import math
 import os
-import random
 import sys
 
-import yaml
 
 sys.path.insert(
     1, os.path.join(sys.path[0], "..", "..")
 )  # setting path to get Core and assets
 
 import hpsv2
-import models.lvdm.models.rlhf_utils.prompts as prompts_file
 import torchvision
 from hpsv2.src.open_clip import create_model_and_transforms, get_tokenizer
 from models.lvdm.models.rlhf_utils.actpred_scorer import ActPredScorer
 from models.lvdm.models.rlhf_utils.aesthetic_scorer import AestheticScorerDiff
 from models.lvdm.models.rlhf_utils.compression_scorer import (
     JpegCompressionScorer,
-    jpeg_compressibility,
 )
 from models.lvdm.models.rlhf_utils.weather_scorer import WeatherScorer
 from transformers import (
@@ -30,7 +24,6 @@ from transformers import (
     AutoModelForZeroShotObjectDetection,
     AutoProcessor,
 )
-from transformers.utils import ContextManagers
 
 # import ipdb
 # st = ipdb.set_trace

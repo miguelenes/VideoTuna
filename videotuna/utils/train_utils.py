@@ -1,19 +1,12 @@
-import argparse
-import glob
 import logging
-import multiprocessing as mproc
 import os
-import sys
 from collections import OrderedDict
 
 from omegaconf import OmegaConf
-from packaging import version
 
 mainlogger = logging.getLogger("mainlogger")
 
-from collections import OrderedDict
 
-import pytorch_lightning as pl
 import torch
 
 from videotuna.utils.load_weights import load_from_pretrainedSD_checkpoint
@@ -147,7 +140,7 @@ def load_checkpoints(model, model_cfg):
         )
         print(f"Loading model from {pretrained_ckpt}")
         ## only load weight for the backbone model (e.g. latent diffusion model)
-        state_dict = torch.load(pretrained_ckpt, map_location=f"cpu")
+        state_dict = torch.load(pretrained_ckpt, map_location="cpu")
         if "state_dict" in list(state_dict.keys()):
             state_dict = state_dict["state_dict"]
         else:

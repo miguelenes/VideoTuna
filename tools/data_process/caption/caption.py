@@ -4,25 +4,16 @@ import glob
 import json
 import os
 import warnings
-from operator import attrgetter
 
-import cv2
 import numpy as np
-import requests
-import torch
 import tqdm
 from decord import VideoReader, cpu
 from llava.constants import (
-    DEFAULT_IM_END_TOKEN,
-    DEFAULT_IM_START_TOKEN,
     DEFAULT_IMAGE_TOKEN,
-    IGNORE_INDEX,
     IMAGE_TOKEN_INDEX,
 )
-from llava.conversation import SeparatorStyle, conv_templates
+from llava.conversation import conv_templates
 from llava.mm_utils import (
-    get_model_name_from_path,
-    process_images,
     tokenizer_image_token,
 )
 from llava.model.builder import load_pretrained_model

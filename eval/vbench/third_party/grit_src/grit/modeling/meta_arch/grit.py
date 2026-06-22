@@ -4,7 +4,7 @@ import torch
 from detectron2.config import configurable
 from detectron2.modeling.meta_arch.build import META_ARCH_REGISTRY
 from detectron2.modeling.meta_arch.rcnn import GeneralizedRCNN
-from detectron2.structures import Boxes, ImageList, Instances
+from detectron2.structures import Instances
 
 
 @META_ARCH_REGISTRY.register()

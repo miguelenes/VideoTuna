@@ -4,7 +4,7 @@ import sys
 sys.path.append(os.getcwd())
 import copy
 import random
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Union
 
 import pandas as pd
 import torch
@@ -15,7 +15,6 @@ from videotuna.data.datasets_utils import (
     is_image,
     is_video,
     read_image_meta,
-    read_video,
     read_video_meta,
 )
 from videotuna.data.transforms import (
@@ -235,7 +234,7 @@ class DatasetFromCSV(torch.utils.data.Dataset):
                 data_item = self.getitem(index)
                 self.safe_data_list.add(index)
                 return data_item
-            except (ValueError, AssertionError) as e:
+            except (ValueError, AssertionError):
                 import traceback
 
                 traceback.print_exc()

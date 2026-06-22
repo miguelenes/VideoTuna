@@ -1,7 +1,4 @@
-import argparse
 import os
-import pickle
-import threading
 
 import torch
 from stepvideo.config import parse_args

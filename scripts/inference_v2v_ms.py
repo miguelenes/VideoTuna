@@ -1,4 +1,3 @@
-import argparse
 import os
 import sys
 
@@ -9,7 +8,7 @@ from modelscope.outputs import OutputKeys
 from modelscope.pipelines import pipeline
 from pydantic import Field
 from pydantic_core import ValidationError
-from pydantic_settings import BaseSettings, CliApp, SettingsConfigDict, SettingsError
+from pydantic_settings import BaseSettings, CliApp
 
 from videotuna.utils.inference_utils import load_inputs_v2v
 

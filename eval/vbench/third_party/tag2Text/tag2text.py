@@ -10,7 +10,6 @@ warnings.filterwarnings("ignore")
 import os
 
 import torch
-import torch.nn.functional as F
 from torch import nn
 from transformers import BertTokenizer
 

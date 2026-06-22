@@ -1,16 +1,10 @@
-import datetime
 import logging
 import os
 import time
-from collections import OrderedDict
-from typing import Any, Literal, Optional, Union
+from typing import Any, Optional, Union
 from weakref import proxy
 
-import numpy as np
-from einops import rearrange
 from loguru import logger
-from omegaconf import OmegaConf
-from PIL import Image
 from typing_extensions import override
 
 mainlogger = logging.getLogger("mainlogger")
@@ -335,7 +329,7 @@ class ImageLogger(Callback):
                 n = video.shape[0]
                 video = video.permute(2, 0, 1, 3, 4)  # t,n,c,h,w
                 frame_grids = [
-                    torchvision.utils.make_grid(framesheet, nrow=int(n))
+                    torchvision.utils.make_grid(framesheet, nrow=n)
                     for framesheet in video
                 ]  # [3, n*h, 1*w]
                 grid = torch.stack(

@@ -16,7 +16,6 @@
 import math
 import random
 import re
-import time
 from abc import ABC, abstractmethod
 
 import torch
@@ -29,7 +28,7 @@ from llava.constants import (
     IMAGE_TOKEN_INDEX,
 )
 from llava.mm_utils import get_anyres_image_grid_shape
-from llava.utils import rank0_print, rank_print
+from llava.utils import rank0_print
 
 from .multimodal_encoder.builder import build_vision_tower
 from .multimodal_projector.builder import build_vision_projector

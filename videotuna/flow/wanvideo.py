@@ -1,15 +1,11 @@
-import math
 import os
-import random
-import sys
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union, cast
+from typing import Any, Dict, Optional, Union, cast
 
 import torch
 import torch.distributed as dist
 from loguru import logger
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 from PIL import Image
 
 import videotuna.models.wan.wan as wan
@@ -138,16 +134,16 @@ class WanVideoModelFlow(GenerationBase):
         else:
             assert not (
                 t5_fsdp or dit_fsdp
-            ), f"t5_fsdp and dit_fsdp are not supported in non-distributed environments."
+            ), "t5_fsdp and dit_fsdp are not supported in non-distributed environments."
             assert not (
                 ulysses_size > 1 or ring_size > 1
-            ), f"context parallel are not supported in non-distributed environments."
+            ), "context parallel are not supported in non-distributed environments."
 
         if ulysses_size > 1 or ring_size > 1:
             require_xfuser_sequence_parallel("WanVideoModelFlow")
             assert (
                 ulysses_size * ring_size == world_size
-            ), f"The number of ulysses_size and ring_size should be equal to the world size."
+            ), "The number of ulysses_size and ring_size should be equal to the world size."
             from xfuser.core.distributed import (
                 init_distributed_environment,
                 initialize_model_parallel,

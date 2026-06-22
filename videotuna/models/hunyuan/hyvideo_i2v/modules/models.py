@@ -1,9 +1,8 @@
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.utils
 import torch.utils.checkpoint
 from diffusers.configuration_utils import ConfigMixin, register_to_config
@@ -12,10 +11,7 @@ from einops import rearrange
 from loguru import logger
 
 from ..constants import (
-    NEGATIVE_PROMPT,
-    NEGATIVE_PROMPT_I2V,
     PRECISION_TO_TYPE,
-    PROMPT_TEMPLATE,
 )
 from .activation_layers import get_activation_layer
 from .attenion import attention, get_cu_seqlens, parallel_attention

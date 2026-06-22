@@ -1,5 +1,3 @@
-import json
-import os
 
 import clip
 import numpy as np
@@ -7,11 +5,9 @@ import torch
 from PIL import Image
 from tqdm import tqdm
 from vbench.utils import (
-    clip_transform,
     clip_transform_Image,
     load_dimension_info,
     load_video,
-    read_frames_decord_by_fps,
 )
 
 

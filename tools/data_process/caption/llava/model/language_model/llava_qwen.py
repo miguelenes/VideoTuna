@@ -13,21 +13,16 @@
 #    limitations under the License.
 
 
-from typing import Dict, List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
-import transformers
 
 # from ...constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 from llava.model.llava_arch import LlavaMetaForCausalLM, LlavaMetaModel
-from torch.nn import CrossEntropyLoss
 from transformers import (
     AutoConfig,
     AutoModelForCausalLM,
-    LlamaConfig,
-    LlamaForCausalLM,
-    LlamaModel,
     Qwen2Config,
     Qwen2ForCausalLM,
     Qwen2Model,

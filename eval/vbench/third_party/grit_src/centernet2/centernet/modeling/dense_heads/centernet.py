@@ -1,18 +1,11 @@
-import copy
-import json
-import math
-from typing import Dict, List
 
-import numpy as np
 import torch
 from detectron2.config import configurable
-from detectron2.layers import ShapeSpec, cat
-from detectron2.modeling import detector_postprocess
+from detectron2.layers import cat
 from detectron2.modeling.proposal_generator.build import PROPOSAL_GENERATOR_REGISTRY
 from detectron2.structures import Boxes, Instances
 from detectron2.utils.comm import get_world_size
 from torch import nn
-from torch.nn import functional as F
 
 from ..debug import debug_test, debug_train
 from ..layers.heatmap_focal_loss import (

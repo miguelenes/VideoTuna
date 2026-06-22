@@ -3,7 +3,6 @@
 from pathlib import Path
 
 import pytest
-import torch
 from PIL import Image
 
 from videotuna.training.flux_lora.config import FluxLoraDataConfig, load_train_config

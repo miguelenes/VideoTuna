@@ -1,10 +1,7 @@
-import os
-import sys
 
 from detectron2.data.detection_utils import read_image
 
 from .grit_src.image_dense_captions import (
-    dense_pred_to_caption,
     dense_pred_to_caption_only_name,
     dense_pred_to_caption_tuple,
     image_caption_api,

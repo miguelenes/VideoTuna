@@ -6,7 +6,6 @@ import argparse
 from types import SimpleNamespace
 from unittest import mock
 
-import pytest
 import torch
 from omegaconf import OmegaConf
 

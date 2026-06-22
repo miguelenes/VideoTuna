@@ -23,7 +23,6 @@ import json
 import logging
 import math
 import os
-import sys
 from io import open
 
 import torch

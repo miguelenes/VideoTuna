@@ -4,15 +4,12 @@ import os
 import tarfile
 from collections import defaultdict
 from pathlib import Path
-from typing import List
 
 import imageio
 import numpy as np
-import PIL.Image
 import torch
 import torchvision
 from einops import rearrange
-from PIL import Image
 
 CODE_SUFFIXES = {
     ".py",  # Python codes

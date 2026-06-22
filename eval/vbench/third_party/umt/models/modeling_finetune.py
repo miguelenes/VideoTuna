@@ -255,7 +255,7 @@ def get_sinusoid_encoding_table(n_position, d_hid, cur_frame=-1, pre_n_position=
         C = d_hid
         new_P = int((n_position // cur_frame) ** 0.5)  # testing size
         print(f"Pretraining uses 14x14, but current version is {new_P}x{new_P}")
-        print(f"Interpolate the position embedding")
+        print("Interpolate the position embedding")
         sinusoid_table = sinusoid_table.reshape(-1, T, P, P, C)
         sinusoid_table = sinusoid_table.reshape(-1, P, P, C).permute(0, 3, 1, 2)
         sinusoid_table = torch.nn.functional.interpolate(
@@ -268,7 +268,7 @@ def get_sinusoid_encoding_table(n_position, d_hid, cur_frame=-1, pre_n_position=
         sinusoid_table = sinusoid_table.flatten(1, 3)  # B, THW, C
     if cur_frame != -1 and cur_frame != 8:
         print(f"Pretraining uses 8 frames, but current frame is {cur_frame}")
-        print(f"Interpolate the position embedding")
+        print("Interpolate the position embedding")
         T = 8  # checkpoint frame
         new_T = cur_frame  # testing frame
         # interpolate

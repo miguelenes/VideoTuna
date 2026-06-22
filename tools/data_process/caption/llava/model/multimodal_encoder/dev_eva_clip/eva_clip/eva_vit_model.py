@@ -13,7 +13,7 @@ try:
 except:
     from timm.layers import drop_path, to_2tuple, trunc_normal_
 
-from .rope import VisionRotaryEmbedding, VisionRotaryEmbeddingFast
+from .rope import VisionRotaryEmbeddingFast
 from .transformer import PatchDropout
 
 if os.getenv("ENV_TYPE") == "deepspeed":

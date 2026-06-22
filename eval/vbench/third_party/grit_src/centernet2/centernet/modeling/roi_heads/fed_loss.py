@@ -1,8 +1,6 @@
 import json
 
-import numpy as np
 import torch
-from torch.nn import functional as F
 
 
 def load_class_freq(path="datasets/lvis/lvis_v1_train_cat_info.json", freq_weight=0.5):

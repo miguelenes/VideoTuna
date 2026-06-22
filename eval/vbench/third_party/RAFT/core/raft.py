@@ -1,4 +1,3 @@
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -6,7 +5,7 @@ import torch.nn.functional as F
 from .corr import AlternateCorrBlock, CorrBlock
 from .extractor import BasicEncoder, SmallEncoder
 from .update import BasicUpdateBlock, SmallUpdateBlock
-from .utils_core.utils import bilinear_sampler, coords_grid, upflow8
+from .utils_core.utils import coords_grid, upflow8
 
 try:
     autocast = torch.cuda.amp.autocast

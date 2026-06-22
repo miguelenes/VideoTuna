@@ -3,7 +3,6 @@ import logging
 import os
 from collections import OrderedDict
 
-import numpy as np
 import torch
 import torch.nn.functional as F
 import torch.utils.checkpoint as checkpoint

@@ -18,7 +18,6 @@ from typing import List, Optional, Tuple, Union
 import torch
 import torch.nn as nn
 from llava.model.llava_arch import LlavaMetaForCausalLM, LlavaMetaModel
-from torch.nn import CrossEntropyLoss
 
 # , LlamaModel, LlamaForCausalLM, GenerationConfig
 # from .modeling_llama import LlamaModel, LlamaForCausalLM

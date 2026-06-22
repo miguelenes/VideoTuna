@@ -8,7 +8,6 @@ import torch
 import torch.utils.data
 from detectron2.config import configurable
 from detectron2.data.build import (
-    build_batch_data_loader,
     check_metadata_consistency,
     filter_images_with_few_keypoints,
     filter_images_with_only_crowd_annotations,
@@ -22,7 +21,7 @@ from detectron2.data.dataset_mapper import DatasetMapper
 from detectron2.data.samplers import TrainingSampler
 from detectron2.utils import comm
 from detectron2.utils.comm import get_world_size
-from torch.utils.data.sampler import BatchSampler, Sampler
+from torch.utils.data.sampler import Sampler
 
 
 def _custom_train_loader_from_config(cfg, mapper=None, *, dataset=None, sampler=None):

@@ -2,13 +2,11 @@ import itertools
 import json
 import os
 
-import numpy as np
-import pycocotools.mask as mask_util
 from detectron2.evaluation.coco_evaluation import (
     COCOEvaluator,
     _evaluate_predictions_on_coco,
 )
-from detectron2.structures import Boxes, BoxMode, pairwise_iou
+from detectron2.structures import BoxMode
 from detectron2.utils.file_io import PathManager
 
 

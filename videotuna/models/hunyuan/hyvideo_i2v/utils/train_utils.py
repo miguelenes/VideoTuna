@@ -1,9 +1,8 @@
 import os
 import random
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import List, Union
 
-import imageio
 import numpy as np
 import PIL.Image
 import torch
@@ -254,7 +253,7 @@ def prepare_model_inputs(
     elif len(batch_args) == 5:
         text_ids, text_mask, text_ids_2, text_mask_2, kwargs = batch_args
     else:
-        raise ValueError(f"Unexpected batch_args.")
+        raise ValueError("Unexpected batch_args.")
     data_type = kwargs["type"][0]
 
     # Move batch to device

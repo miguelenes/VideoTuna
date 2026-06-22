@@ -1,6 +1,6 @@
 import logging
 import math
-from typing import Dict, List, Optional, Tuple, Union
+from typing import List, Tuple
 
 import torch
 from detectron2.config import configurable
@@ -8,7 +8,7 @@ from detectron2.layers import batched_nms
 from detectron2.modeling.box_regression import Box2BoxTransform
 from detectron2.modeling.poolers import ROIPooler
 from detectron2.modeling.roi_heads.cascade_rcnn import CascadeROIHeads, _ScaleGradient
-from detectron2.modeling.roi_heads.roi_heads import ROI_HEADS_REGISTRY, StandardROIHeads
+from detectron2.modeling.roi_heads.roi_heads import ROI_HEADS_REGISTRY
 from detectron2.structures import Boxes, Instances, pairwise_iou
 from detectron2.utils.events import get_event_storage
 from transformers import BertTokenizer

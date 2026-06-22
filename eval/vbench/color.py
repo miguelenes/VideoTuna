@@ -1,12 +1,10 @@
-import json
 import logging
-import os
 
 import numpy as np
 import torch
 from tqdm import tqdm
 from vbench.third_party.grit_model import DenseCaptioning
-from vbench.utils import load_dimension_info, load_video, read_frames_decord_by_fps
+from vbench.utils import load_dimension_info, load_video
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"

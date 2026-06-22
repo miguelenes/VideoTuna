@@ -1,10 +1,9 @@
 import functools
 import os
 import random
-import time
 from contextlib import AbstractContextManager
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union, cast
+from typing import Any, Dict, Optional, Union, cast
 
 import numpy as np
 import torch
@@ -13,20 +12,15 @@ import torchvision.transforms as transforms
 from loguru import logger
 from omegaconf import DictConfig
 from PIL import Image
-from safetensors.torch import load_file
 
 from videotuna.base.generation_base import GenerationBase
 from videotuna.models.hunyuan.hyvideo_i2v.constants import (
     NEGATIVE_PROMPT,
     NEGATIVE_PROMPT_I2V,
     PRECISION_TO_TYPE,
-    PROMPT_TEMPLATE,
 )
 from videotuna.models.hunyuan.hyvideo_i2v.diffusion.pipelines import (
     HunyuanVideoPipeline,
-)
-from videotuna.models.hunyuan.hyvideo_i2v.diffusion.schedulers import (
-    FlowMatchDiscreteScheduler,
 )
 from videotuna.models.hunyuan.hyvideo_i2v.modules.fp8_optimization import (
     convert_fp8_linear,
@@ -56,7 +50,6 @@ from videotuna.utils.attention import maybe_compile_denoiser
 from videotuna.utils.common_utils import monitor_resources
 from videotuna.utils.device_utils import (
     accelerator_device_string,
-    detect_compute_backend,
     gpu_is_available,
     require_xfuser_sequence_parallel,
     resolve_inference_device,
@@ -84,7 +77,6 @@ except ImportError:
     pass
 
 
-from diffusers.models.embeddings import get_1d_rotary_pos_embed
 
 
 def get_1d_rotary_pos_embed_riflex(
@@ -121,10 +113,10 @@ def get_1d_rotary_pos_embed_riflex(
     if isinstance(pos, np.ndarray):
         pos = torch.from_numpy(pos)  # type: ignore  # [S]
 
-    freqs: torch.Tensor = 1.0 / (
-        theta
-        ** (torch.arange(0, dim, 2, device=pos.device)[: (dim // 2)].float() / dim)
-    )  # [D/2]
+    denominator = theta ** (
+        torch.arange(0, dim, 2, device=pos.device)[: (dim // 2)].float() / dim
+    )
+    freqs = denominator.reciprocal()  # [D/2]
 
     # === Riflex modification start ===
     # Reduce the intrinsic frequency to stay within a single period after extrapolation (see Eq. (8)).
@@ -342,7 +334,8 @@ class HunyuanVideoFlow(GenerationBase):
                     device=self.device_type,
                     is_parallel=(self.ulysses_degree > 1 or self.ring_degree > 1),
                 )
-                logger.info(
+                assert self.pipeline is not None
+                cast(Any, logger).info(
                     f"load lora {self.lora_path} into pipeline, lora scale is {self.lora_scale}."
                 )
         else:
@@ -433,7 +426,7 @@ class HunyuanVideoFlow(GenerationBase):
             # VAE
             first_stage = cast(AutoencoderKLCausal3DWrapper, self.first_stage_model)
             first_stage.load_weight()
-            vae_module = first_stage.vae
+            vae_module = cast(Any, first_stage.vae)
             s_ratio = vae_module.config.spatial_compression_ratio
             t_ratio = vae_module.config.time_compression_ratio
             vae_kwargs = {"s_ratio": s_ratio, "t_ratio": t_ratio}
@@ -466,7 +459,7 @@ class HunyuanVideoFlow(GenerationBase):
                 # VAE
                 first_stage = cast(AutoencoderKLCausal3DWrapper, self.first_stage_model)
                 first_stage.load_weight()
-                vae_module = first_stage.vae
+                vae_module = cast(Any, first_stage.vae)
                 s_ratio = vae_module.config.spatial_compression_ratio
                 t_ratio = vae_module.config.time_compression_ratio
                 vae_kwargs = {"s_ratio": s_ratio, "t_ratio": t_ratio}
@@ -543,6 +536,7 @@ class HunyuanVideoFlow(GenerationBase):
 
     # 20250317 pftq: Modified to use Riflex when >192 frames
     def get_rotary_pos_embed(self, video_length, height, width):
+        assert self.pipeline is not None
         target_ndim = 3
         ndim = 5 - 2  # B, C, F, H, W -> F, H, W
         model = self.pipeline.transformer
@@ -948,7 +942,7 @@ class HunyuanVideoFlow(GenerationBase):
         first_stage = self.first_stage_model
         if first_stage is None:
             return
-        vae = getattr(first_stage, "vae", first_stage)
+        vae = cast(Any, getattr(first_stage, "vae", first_stage))
         if self.vae_tiling and hasattr(vae, "enable_tiling"):
             vae.enable_tiling()
         if self.vae_slicing and hasattr(vae, "enable_slicing"):

@@ -7,7 +7,6 @@ https://github.com/CompVis/taming-transformers
 """
 
 import logging
-import os
 import random
 from contextlib import contextmanager
 from functools import partial
@@ -35,9 +34,7 @@ from videotuna.models.lvdm.modules.encoders.ip_resampler import (
 from videotuna.models.lvdm.modules.utils import (
     default,
     disabled_train,
-    exists,
     extract_into_tensor,
-    noise_like,
 )
 from videotuna.schedulers.ddim import DDIMSampler
 from videotuna.utils.common_utils import instantiate_from_config
@@ -430,7 +427,7 @@ class DDPMFlow(pl.LightningModule):
                     f"Parameter {key} from lora_state_dict was not copied to the model."
                 )
                 # print(f"Parameter {key} from lora_state_dict was not copied to the model.")
-        print(f"All Parameters was copied successfully.")
+        print("All Parameters was copied successfully.")
 
     def inject_lora(self):
         """inject lora into the denoising module.

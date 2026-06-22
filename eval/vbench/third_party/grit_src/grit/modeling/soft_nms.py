@@ -1,9 +1,7 @@
 import torch
 from detectron2.structures import (
     Boxes,
-    RotatedBoxes,
     pairwise_iou,
-    pairwise_iou_rotated,
 )
 
 

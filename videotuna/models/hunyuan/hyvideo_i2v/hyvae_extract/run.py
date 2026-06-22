@@ -1,13 +1,10 @@
 import argparse
-import glob
 import json
 import os
 import random
-import sys
-import time
 import traceback
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import List, Tuple
 
 import numpy as np
 import torch
@@ -104,7 +101,7 @@ def extract(
                     save_json_path / f"{item['videoid'][k]}.json", "w", encoding="utf-8"
                 ) as f:
                     json.dump(data, f, ensure_ascii=False)
-        except Exception as e:
+        except Exception:
             traceback.print_exc()
 
 
@@ -124,10 +121,10 @@ def main(
     global_rank = local_rank
     world_size = int(os.environ["HOST_GPU_NUM"])
 
-    print(f"split video urls")
+    print("split video urls")
     start, end, meta_files = split_video_urls(meta_files, global_rank, world_size)
 
-    print(f"Load VAE")
+    print("Load VAE")
     vae, vae_path, spatial_compression_ratio, time_compression_ratio = load_vae(
         vae_type="884-16c-hy",
         vae_precision="fp16",
@@ -139,7 +136,7 @@ def main(
     vae.enable_spatial_tiling()
     vae.eval()
 
-    print(f"processing video latent extraction")
+    print("processing video latent extraction")
     extract(
         vae,
         meta_files,

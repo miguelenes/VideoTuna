@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from vbench.third_party.amt.networks.blocks.feat_enc import LargeEncoder
 from vbench.third_party.amt.networks.blocks.ifrnet import (
     Encoder,

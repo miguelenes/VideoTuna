@@ -49,7 +49,7 @@ from llava.mm_utils import (
 )
 from llava.model import *
 from llava.train.llava_trainer import LLaVATrainer
-from llava.utils import process_video_with_decord, process_video_with_pyav, rank0_print
+from llava.utils import process_video_with_decord, rank0_print
 from packaging import version
 from PIL import Image, ImageFile
 from torch.utils.data import Dataset
@@ -345,7 +345,7 @@ def safe_save_model_for_hf_trainer(trainer: transformers.Trainer, output_dir: st
                 )
             else:
                 torch.save(
-                    weight_to_save, os.path.join(output_dir, f"mm_projector.bin")
+                    weight_to_save, os.path.join(output_dir, "mm_projector.bin")
                 )
         return
 
@@ -1720,7 +1720,7 @@ def train(attn_implementation=None):
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
     if training_args.verbose_logging:
-        rank0_print(f"Inspecting experiment hyperparameters:\n")
+        rank0_print("Inspecting experiment hyperparameters:\n")
         rank0_print(f"model_args = {vars(model_args)}\n\n")
         rank0_print(f"data_args = {vars(data_args)}\n\n")
         rank0_print(f"training_args = {vars(training_args)}\n\n")
@@ -1887,7 +1887,7 @@ def train(attn_implementation=None):
             ):
                 try:
                     patch_size = data_args.image_processor.size[0]
-                except Exception as e:
+                except Exception:
                     patch_size = data_args.image_processor.size["shortest_edge"]
 
                 assert patch_size in [

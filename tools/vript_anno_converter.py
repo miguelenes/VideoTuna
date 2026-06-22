@@ -47,7 +47,7 @@ def get_video_data(video_root):
                     meta.update(read_video_meta(video_path))
                     video_dict[osp.splitext(clip_meta["clip_id"])[0]] = meta
 
-            except Exception as e:
+            except Exception:
                 import traceback
 
                 traceback.print_exc()

@@ -369,10 +369,8 @@ def clip_l14_336(
 
 
 if __name__ == "__main__":
-    import time
 
     import numpy as np
-    from fvcore.nn import FlopCountAnalysis, flop_count_table
 
     seed = 4217
     np.random.seed(seed)

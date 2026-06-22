@@ -1,7 +1,4 @@
-import json
-import math
 
-import numpy as np
 import torch
 from detectron2.modeling import (
     build_backbone,

@@ -1,12 +1,6 @@
-import json
 import os
 
-import clip
-import numpy as np
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from PIL import Image
 from timm.models import create_model
 from tqdm import tqdm
 from vbench.third_party.umt.datasets.video_transforms import (
@@ -14,16 +8,8 @@ from vbench.third_party.umt.datasets.video_transforms import (
     Compose,
     Normalize,
     Resize,
-    create_random_augment,
-    horizontal_flip,
-    random_crop,
-    random_resized_crop,
-    random_resized_crop_with_shift,
-    random_short_side_scale_jitter,
-    uniform_crop,
 )
 from vbench.third_party.umt.datasets.volume_transforms import ClipToTensor
-from vbench.third_party.umt.models.modeling_finetune import vit_large_patch16_224
 from vbench.utils import load_dimension_info, load_video
 
 

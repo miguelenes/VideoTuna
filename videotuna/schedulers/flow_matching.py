@@ -54,9 +54,9 @@ class FlowMatchScheduler:
         self.timesteps = self.sigmas * self.num_train_timesteps
         if training:
             x = self.timesteps.float()
-            y = torch.exp(
-                -2 * ((x - num_inference_steps / 2) / num_inference_steps) ** 2
-            )
+            steps = float(num_inference_steps)
+            shifted = (x - (steps / 2.0)) / steps
+            y = torch.exp(-2.0 * shifted * shifted)
             y_shifted = y - y.min()
             bsmntw_weighing = y_shifted * (num_inference_steps / y_shifted.sum())
             self.linear_timesteps_weights = bsmntw_weighing

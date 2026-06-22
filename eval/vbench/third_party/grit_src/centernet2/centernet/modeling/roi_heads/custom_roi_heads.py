@@ -1,20 +1,11 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
-import json
-import math
-from typing import Dict, List, Optional, Tuple, Union
 
-import numpy as np
 import torch
-from detectron2.layers import ShapeSpec
 from detectron2.modeling.box_regression import Box2BoxTransform
-from detectron2.modeling.roi_heads.box_head import build_box_head
 from detectron2.modeling.roi_heads.cascade_rcnn import CascadeROIHeads
 from detectron2.modeling.roi_heads.fast_rcnn import fast_rcnn_inference
 from detectron2.modeling.roi_heads.roi_heads import ROI_HEADS_REGISTRY, StandardROIHeads
-from detectron2.structures import Boxes, Instances, pairwise_iou
 from detectron2.utils.events import get_event_storage
-from torch import nn
-from torch.autograd.function import Function
 
 from .custom_fast_rcnn import CustomFastRCNNOutputLayers
 

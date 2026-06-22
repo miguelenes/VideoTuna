@@ -1,5 +1,3 @@
-import math
-import random
 
 import cv2
 import numpy as np
@@ -8,8 +6,6 @@ from PIL import Image
 cv2.setNumThreads(0)
 cv2.ocl.setUseOpenCL(False)
 
-import torch
-import torch.nn.functional as F
 from torchvision.transforms import ColorJitter
 
 

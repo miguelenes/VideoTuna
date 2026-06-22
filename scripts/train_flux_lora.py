@@ -2,7 +2,6 @@
 
 import argparse
 import logging
-import os
 from os import environ
 
 from videotuna.training.flux_lora.train import run_training

@@ -1,8 +1,6 @@
 import argparse
 import json
 import os
-import shutil
-from pathlib import Path
 
 SEMANTIC_WEIGHT = 1
 QUALITY_WEIGHT = 4

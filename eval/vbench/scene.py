@@ -1,8 +1,5 @@
-import json
 import logging
-import os
 
-import numpy as np
 import torch
 from tqdm import tqdm
 from vbench.third_party.tag2Text.tag2text import tag2text_caption

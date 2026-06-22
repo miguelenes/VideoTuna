@@ -1,42 +1,26 @@
-import asyncio
-import copy
-import logging
 import os
-import pickle
-import sys
-from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union, cast
+from typing import Any, Dict, List, Optional, Union, cast
 
-import numpy as np
 import torch
 import torch.distributed as dist
-from diffusers.pipelines.pipeline_utils import DiffusionPipeline
-from diffusers.utils import BaseOutput
 from loguru import logger
-from omegaconf import DictConfig, OmegaConf
-from PIL import Image
+from omegaconf import DictConfig
 from tqdm import tqdm
 from transformers.models.bert.modeling_bert import BertEmbeddings
 
 from videotuna.base.generation_base import GenerationBase
-from videotuna.models.stepvideo.stepvideo.diffusion.scheduler import (
-    FlowMatchDiscreteScheduler,
-)
-from videotuna.models.stepvideo.stepvideo.modules.model import RMSNorm, StepVideoModel
+from videotuna.models.stepvideo.stepvideo.modules.model import RMSNorm
 from videotuna.models.stepvideo.stepvideo.parallel import (
-    get_parallel_group,
     initialize_parall_group,
 )
-from videotuna.models.stepvideo.stepvideo.utils import VideoProcessor, with_empty_init
+from videotuna.models.stepvideo.stepvideo.utils import VideoProcessor
 from videotuna.models.stepvideo.stepvideo.vae.vae import (
     CausalConv,
     CausalConvAfterNorm,
     Upsample2D,
 )
 from videotuna.schedulers.flow_matching import FlowMatchScheduler
-from videotuna.utils.common_utils import instantiate_from_config
 from videotuna.utils.device_utils import resolve_inference_device
 from videotuna.utils.inference_utils import (
     AutoWrappedLinear,
@@ -309,8 +293,8 @@ class StepVideoModelFlow(GenerationBase):
             batch_size,
             max(num_frames // 17 * 3, 1),
             num_channels_latents,
-            int(height) // self.vae_scale_factor_spatial,
-            int(width) // self.vae_scale_factor_spatial,
+            height // self.vae_scale_factor_spatial,
+            width // self.vae_scale_factor_spatial,
         )  # b,f,c,h,w
         if isinstance(generator, list) and len(generator) != batch_size:
             raise ValueError(
@@ -479,7 +463,7 @@ class StepVideoModelFlow(GenerationBase):
 
         if (
             not torch.distributed.is_initialized()
-            or int(torch.distributed.get_rank()) == 0
+            or torch.distributed.get_rank() == 0
         ):
             self.load_models_to_device(["first_stage_model"])
             assert self.first_stage_model is not None
@@ -535,14 +519,14 @@ class StepVideoModelFlow(GenerationBase):
         if model_offload:
             self.first_stage_model.to(device)
         latents = (
-            torch.stack(self.first_stage_model.encode(batch[first_stage_key]))
+            torch.stack(cast(Any, self.first_stage_model).encode(batch[first_stage_key]))
             .to(dtype=dtype, device=device)
             .detach()
         )
         if model_offload:
             self.first_stage_model.to("cpu")
             self.cond_stage_model.to(device)
-        text_cond_embed, text_cond_embed_mask = self.cond_stage_model(
+        text_cond_embed, text_cond_embed_mask = cast(Any, self.cond_stage_model)(
             batch[cond_stage_key], device
         )
         if model_offload:

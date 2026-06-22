@@ -3,11 +3,8 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union, cast
 
-import pytorch_lightning as pl
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from colorama import Fore, Style
 from loguru import logger
 from omegaconf import DictConfig, OmegaConf
 from pytorch_lightning import Trainer
@@ -29,15 +26,9 @@ from videotuna.utils.lora_utils import (
     resolve_lora_target_modules,
 )
 from videotuna.utils.train_utils import (
-    check_config_attribute,
-    get_autoresume_path,
-    get_empty_params_comparedwith_sd,
     get_trainer_callbacks,
     get_trainer_logger,
     get_trainer_strategy,
-    init_workspace,
-    load_checkpoints,
-    set_logger,
 )
 
 
@@ -696,7 +687,7 @@ class GenerationBase(TrainBase, InferenceBase):
         ## since loaded weight will ovrride params, make sure it is been handled
         if trainer.strategy.__class__.__name__ == "DeepSpeedStrategy":
             logger.info(
-                f"Make parameter contiguous in case deepseed does not allow non contigouous data"
+                "Make parameter contiguous in case deepseed does not allow non contigouous data"
             )
             for param in self.parameters():
                 param.data = param.data.contiguous()

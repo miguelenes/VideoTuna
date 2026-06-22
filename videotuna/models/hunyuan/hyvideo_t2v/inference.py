@@ -3,7 +3,7 @@ import os
 import random
 import time
 from pathlib import Path
-from typing import List, Optional, Tuple, Union
+from typing import Optional
 
 import torch
 import torch.distributed as dist

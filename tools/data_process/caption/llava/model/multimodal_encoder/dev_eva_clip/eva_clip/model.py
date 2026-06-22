@@ -3,7 +3,6 @@
 Adapted from https://github.com/openai/CLIP. Originally MIT License, Copyright (c) 2021 OpenAI.
 """
 
-import os
 from dataclasses import dataclass
 from functools import partial
 from typing import Optional, Tuple, Union
@@ -489,7 +488,7 @@ def build_model_from_openai_state_dict(
         set(
             k.split(".")[2]
             for k in state_dict
-            if k.startswith(f"transformer.resblocks")
+            if k.startswith("transformer.resblocks")
         )
     )
 

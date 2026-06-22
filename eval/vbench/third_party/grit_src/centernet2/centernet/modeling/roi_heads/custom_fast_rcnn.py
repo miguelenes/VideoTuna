@@ -1,27 +1,15 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
 # Part of the code is from https://github.com/tztztztztz/eql.detectron2/blob/master/projects/EQL/eql/fast_rcnn.py
-import json
-import logging
-import math
-from typing import Dict, Union
 
 import torch
-from detectron2.config import configurable
-from detectron2.layers import Linear, ShapeSpec, batched_nms, cat, nonzero_tuple
-from detectron2.modeling.box_regression import Box2BoxTransform
+from detectron2.layers import ShapeSpec, cat
 from detectron2.modeling.roi_heads.fast_rcnn import (
     FastRCNNOutputLayers,
     _log_classification_stats,
     fast_rcnn_inference,
 )
-from detectron2.structures import Boxes, Instances
-from detectron2.utils.comm import get_world_size
-from detectron2.utils.events import get_event_storage
-from fvcore.nn import giou_loss, smooth_l1_loss
-from torch import nn
 from torch.nn import functional as F
 
-from .fed_loss import get_fed_loss_inds, load_class_freq
 
 __all__ = ["CustomFastRCNNOutputLayers"]
 

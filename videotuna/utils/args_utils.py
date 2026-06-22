@@ -1,5 +1,4 @@
 import argparse
-import json
 import os
 import time
 from enum import Enum
@@ -47,7 +46,7 @@ def prepare_train_args(parser: argparse.ArgumentParser):
     ## parser args replace train config
     train_config = config.get("train", OmegaConf.create())
     for k, v in vars(args).items():
-        if not k in train_config.keys():
+        if k not in train_config.keys():
             train_config[k] = v
         else:
             if v is not None:
@@ -122,7 +121,7 @@ def prepare_inference_args(
     # update the config with the command line arguments
     inference_config = config.pop("inference", OmegaConf.create())
     for k, v in vars(args).items():
-        if not k in inference_config.keys():
+        if k not in inference_config.keys():
             inference_config[k] = v
         else:
             if v is not None:

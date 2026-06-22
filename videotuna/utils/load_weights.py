@@ -10,7 +10,6 @@ from contextlib import contextmanager
 
 import torch
 from safetensors import safe_open
-from torch import nn
 
 from videotuna.utils.common_utils import instantiate_from_config
 
@@ -89,9 +88,9 @@ def load_from_pretrainedSD_checkpoint(
     model, pretained_ckpt, expand_to_3d=True, adapt_keyname=False
 ):
     mainlogger.info(
-        f"------------------- Load pretrained SD weights -------------------"
+        "------------------- Load pretrained SD weights -------------------"
     )
-    sd_state_dict = torch.load(pretained_ckpt, map_location=f"cpu")
+    sd_state_dict = torch.load(pretained_ckpt, map_location="cpu")
     if "state_dict" in list(sd_state_dict.keys()):
         sd_state_dict = sd_state_dict["state_dict"]
     model_state_dict = model.state_dict()
@@ -144,7 +143,7 @@ def load_from_pretrainedSD_checkpoint(
     try:
         model.load_state_dict(model_state_dict)
     except:
-        state_dict = torch.load(model_state_dict, map_location=f"cpu")
+        state_dict = torch.load(model_state_dict, map_location="cpu")
         if "state_dict" in list(state_dict.keys()):
             state_dict = state_dict["state_dict"]
         model_state_dict = model.state_dict()
@@ -157,7 +156,7 @@ def load_from_pretrainedSD_checkpoint(
         model.load_state_dict(model_state_dict)
 
     mainlogger.info(
-        f"---------------------------- Finish! ----------------------------"
+        "---------------------------- Finish! ----------------------------"
     )
     return model, empty_paras
 
@@ -219,7 +218,7 @@ def load_partial_weights(
     model_dict_ori = copy.deepcopy(model_dict)
 
     mainlogger.info(
-        f"-------------- Load pretrained LDM weights --------------------------"
+        "-------------- Load pretrained LDM weights --------------------------"
     )
     mainlogger.info(f"Num of parameters of target model: {len(model_dict.keys())}")
     mainlogger.info(f"Num of parameters of source model: {len(pretrained_dict.keys())}")
@@ -288,7 +287,7 @@ def load_partial_weights(
         empty_paras += skipped
         mainlogger.info(f"Empty parameters: {len(empty_paras)} ")
 
-    mainlogger.info(f"-------------- Finish! --------------------------")
+    mainlogger.info("-------------- Finish! --------------------------")
     return model2, empty_paras
 
 

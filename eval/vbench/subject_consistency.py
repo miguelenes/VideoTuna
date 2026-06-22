@@ -1,14 +1,8 @@
-import io
-import json
 import logging
 import os
 
-import cv2
-import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
-import torchvision.transforms as transforms
 from PIL import Image
 from tqdm import tqdm
 from vbench.utils import (

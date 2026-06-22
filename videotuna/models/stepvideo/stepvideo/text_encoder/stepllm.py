@@ -10,7 +10,6 @@
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
 # ==============================================================================
-import json
 import os
 from typing import Optional
 
@@ -19,7 +18,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 from loguru import logger
-from safetensors.torch import load_file
 from transformers.modeling_utils import PretrainedConfig, PreTrainedModel
 
 from ..modules.model import RMSNorm

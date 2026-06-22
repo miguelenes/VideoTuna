@@ -145,7 +145,7 @@ class VBench(object):
             CUR_DIR = os.path.dirname(os.path.abspath(__file__))
             category_supported = [
                 Path(category).stem
-                for category in os.listdir(f"prompts/prompts_per_category")
+                for category in os.listdir("prompts/prompts_per_category")
             ]  # TODO: probably need refactoring again
             if "category" not in kwargs:
                 category = category_supported

@@ -1,6 +1,5 @@
 """Tests for videotuna.utils.video_io."""
 
-import numpy as np
 import pytest
 
 from videotuna.utils.video_io import sample_frame_indices

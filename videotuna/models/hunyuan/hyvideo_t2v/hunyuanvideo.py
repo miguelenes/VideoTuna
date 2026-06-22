@@ -6,24 +6,16 @@ import numpy as np
 import pytorch_lightning as pl
 import torch
 from diffusers import (
-    AutoencoderKLCogVideoX,
     CogVideoXDDIMScheduler,
-    CogVideoXDPMScheduler,
-    CogVideoXTransformer3DModel,
     FlowMatchEulerDiscreteScheduler,
 )
 from diffusers.callbacks import MultiPipelineCallbacks, PipelineCallback
-from diffusers.models.embeddings import get_3d_rotary_pos_embed
 from diffusers.training_utils import compute_loss_weighting_for_sd3
 from diffusers.utils.torch_utils import randn_tensor
 from diffusers.video_processor import VideoProcessor
 from peft import (
-    LoraConfig,
     get_peft_model,
-    get_peft_model_state_dict,
-    set_peft_model_state_dict,
 )
-from transformers import T5EncoderModel, T5Tokenizer
 
 from videotuna.utils.common_utils import instantiate_from_config
 from videotuna.utils.lora_utils import resolve_lora_target_modules

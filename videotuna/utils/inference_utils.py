@@ -1,7 +1,5 @@
 import copy
-import glob
 import os
-import sys
 from collections import OrderedDict
 
 import cv2

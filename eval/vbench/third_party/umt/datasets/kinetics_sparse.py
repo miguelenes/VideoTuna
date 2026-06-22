@@ -6,7 +6,6 @@ import warnings
 import numpy as np
 import torch
 from decord import VideoReader, cpu
-from numpy.lib.function_base import disp
 from torch.utils.data import Dataset
 from torchvision import transforms
 

@@ -3,9 +3,7 @@ import os
 import os.path as osp
 import sys
 
-import numpy as np
 import torch
-import torch.nn.functional as F
 
 sys.path.append(".")
 from flow_generation.liteflownet.run import estimate

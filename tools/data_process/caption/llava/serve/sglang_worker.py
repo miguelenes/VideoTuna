@@ -5,11 +5,9 @@ A model worker executes the model.
 import argparse
 import asyncio
 import json
-import re
 import threading
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 
 import requests
@@ -18,28 +16,15 @@ import uvicorn
 from fastapi import BackgroundTasks, FastAPI, Request
 from fastapi.responses import StreamingResponse
 from llava.constants import (
-    DEFAULT_IM_END_TOKEN,
-    DEFAULT_IM_START_TOKEN,
     DEFAULT_IMAGE_TOKEN,
-    IMAGE_TOKEN_INDEX,
     WORKER_HEART_BEAT_INTERVAL,
 )
 from llava.mm_utils import (
     expand2square,
     load_image_from_base64,
-    process_images,
-    tokenizer_image_token,
 )
-from llava.model.builder import load_pretrained_model
 from llava.utils import build_logger, pretty_print_semaphore, server_error_msg
 from sglang.backend.runtime_endpoint import RuntimeEndpoint
-from sglang.lang.interpreter import ProgramState
-from sglang.test.test_utils import (
-    add_common_sglang_args_and_parse,
-    select_sglang_backend,
-)
-from sglang.utils import dump_state_text, read_jsonl
-from transformers import AutoTokenizer
 
 GB = 1 << 30
 

@@ -1,7 +1,7 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
 # Modified by Jialian Wu from https://github.com/facebookresearch/Detic/blob/main/detic/custom_solver.py
 import itertools
-from typing import Any, Callable, Dict, Iterable, List, Set, Type, Union
+from typing import Any, Dict, List, Set
 
 import torch
 from detectron2.config import CfgNode

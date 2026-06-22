@@ -17,11 +17,9 @@ from typing import List, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
-from torch.nn import CrossEntropyLoss
 from transformers import (
     AutoConfig,
     AutoModelForCausalLM,
-    GenerationConfig,
     MistralConfig,
     MistralForCausalLM,
     MistralModel,

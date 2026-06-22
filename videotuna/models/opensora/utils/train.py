@@ -378,7 +378,7 @@ def prepare_visual_condition_causal(x: torch.Tensor, condition_config: dict, mod
                 latent[i, :, -1:, :, :] = model_ae.encode(x[i, :, -1:, :, :].unsqueeze(0))
 
             elif "v2v_head" in mask_cond:  # mask the first 33 video frames
-                ref_t = 33 if not "easy" in mask_cond else 65
+                ref_t = 33 if "easy" not in mask_cond else 65
                 assert (ref_t - 1) % model_ae.time_compression_ratio == 0
                 conditioned_t = (ref_t - 1) // model_ae.time_compression_ratio + 1
                 masks[i, :, :conditioned_t, :, :] = 1
@@ -387,7 +387,7 @@ def prepare_visual_condition_causal(x: torch.Tensor, condition_config: dict, mod
                 latent[i, :, :conditioned_t, :, :] = model_ae.encode(x[i, :, :ref_t, :, :].unsqueeze(0))
 
             elif "v2v_tail" in mask_cond:  # mask the last 32 video frames
-                ref_t = 33 if not "easy" in mask_cond else 65
+                ref_t = 33 if "easy" not in mask_cond else 65
                 assert (ref_t - 1) % model_ae.time_compression_ratio == 0
                 conditioned_t = (ref_t - 1) // model_ae.time_compression_ratio + 1
                 masks[i, :, -conditioned_t:, :, :] = 1
@@ -435,10 +435,10 @@ def get_batch_loss(model_pred, v_t, masks=None):
         for i in range(model_pred.size(0)):
             pred_val = model_pred[i]
             target_val = v_t[i]
-            if masks[i][0] == 1 and (not 1 in masks[i][1:-1]):  # have front padding
+            if masks[i][0] == 1 and (1 not in masks[i][1:-1]):  # have front padding
                 pred_val = pred_val[:, 1:]
                 target_val = target_val[:, 1:]
-            if masks[i][-1] == 1 and (not 1 in masks[i][1:-1]):  # have tail padding
+            if masks[i][-1] == 1 and (1 not in masks[i][1:-1]):  # have tail padding
                 pred_val = pred_val[:, :-1]
                 target_val = target_val[:, :-1]
             batch_loss += F.mse_loss(pred_val.float(), target_val.float(), reduction="mean")

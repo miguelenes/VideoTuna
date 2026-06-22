@@ -7,7 +7,6 @@ import pytorch_lightning as pl
 import torch
 from omegaconf import OmegaConf
 from pytorch_lightning import seed_everything
-from pytorch_lightning.cli import LightningCLI
 from pytorch_lightning.trainer import Trainer
 from transformers import logging as transf_logging
 

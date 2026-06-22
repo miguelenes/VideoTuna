@@ -3,11 +3,9 @@ import json
 import os
 import sys
 import time
-from typing import List
 
 import torch
 import torchvision.transforms as transforms
-from einops import repeat
 from omegaconf import OmegaConf
 from PIL import Image
 from pytorch_lightning import seed_everything

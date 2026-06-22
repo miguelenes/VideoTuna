@@ -13,7 +13,6 @@ from inspect import isfunction
 import torch
 import torch.distributed as dist
 import torch.nn as nn
-from torch import nn
 
 from videotuna.utils.common_utils import instantiate_from_config
 

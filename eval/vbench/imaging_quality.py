@@ -1,4 +1,3 @@
-import torch
 from pyiqa.archs.musiq_arch import MUSIQ
 from torchvision import transforms
 from tqdm import tqdm

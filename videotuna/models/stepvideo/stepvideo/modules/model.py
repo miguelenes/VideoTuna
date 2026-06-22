@@ -11,8 +11,7 @@
 # copies or substantial portions of the Software.
 # ==============================================================================
 import math
-import os
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Dict, Optional, Tuple
 
 import torch
 from diffusers.configuration_utils import ConfigMixin, register_to_config
@@ -21,7 +20,6 @@ from einops import rearrange, repeat
 from torch import nn
 from tqdm import tqdm
 
-from ..utils import with_empty_init
 
 
 class RMSNorm(nn.Module):

@@ -1,13 +1,8 @@
-import argparse
-import logging
-import math
-import os
-import shutil
 from pathlib import Path
-from typing import List, Optional, Tuple, Union
+from typing import Optional
 
 import torch
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import Dataset
 from torchvision import transforms
 
 

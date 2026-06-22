@@ -6,8 +6,7 @@ import sys
 import pytorch_lightning as pl
 import torch
 from omegaconf import DictConfig, OmegaConf
-from pytorch_lightning import Trainer, seed_everything
-from pytorch_lightning.cli import LightningCLI
+from pytorch_lightning import seed_everything
 from transformers import logging as transf_logging
 
 # sys.path.insert(1, os.path.join(sys.path[0], '..'))
@@ -15,16 +14,8 @@ sys.path.insert(0, os.getcwd())
 from videotuna.base.generation_base import GenerationBase
 from videotuna.utils.args_utils import prepare_train_args
 from videotuna.utils.common_utils import get_dist_info, instantiate_from_config
-from videotuna.utils.lightning_utils import add_trainer_args_to_parser
 from videotuna.utils.train_utils import (
-    check_config_attribute,
-    get_autoresume_path,
-    get_empty_params_comparedwith_sd,
-    get_trainer_callbacks,
-    get_trainer_logger,
-    get_trainer_strategy,
     init_workspace,
-    load_checkpoints,
     set_logger,
 )
 

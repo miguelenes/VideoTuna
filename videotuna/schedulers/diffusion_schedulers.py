@@ -7,7 +7,6 @@ import torch.nn as nn
 
 from videotuna.models.lvdm.modules.utils import (
     default,
-    disabled_train,
     exists,
     extract_into_tensor,
     noise_like,

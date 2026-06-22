@@ -5,7 +5,6 @@ import torch.nn as nn
 from loguru import logger
 from transformers import BertConfig, BertModel, BertTokenizer
 
-from ..utils import with_empty_init
 
 
 class HunyuanClip(nn.Module):

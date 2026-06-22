@@ -8,7 +8,6 @@ import re
 import torch
 import torch.nn as nn
 from torch import TensorType
-from torch.nn import functional as F
 
 try:
     import transformers
@@ -24,7 +23,7 @@ try:
         BaseModelOutputWithPooling,
         BaseModelOutputWithPoolingAndCrossAttentions,
     )
-except ImportError as e:
+except ImportError:
     transformers = None
 
     class BaseModelOutput:

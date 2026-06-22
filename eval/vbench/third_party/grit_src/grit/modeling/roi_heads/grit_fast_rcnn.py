@@ -3,7 +3,7 @@
 import fvcore.nn.weight_init as weight_init
 import torch
 from detectron2.config import configurable
-from detectron2.layers import ShapeSpec, batched_nms, cat, cross_entropy, nonzero_tuple
+from detectron2.layers import ShapeSpec, cat, nonzero_tuple
 from detectron2.modeling.roi_heads.fast_rcnn import (
     FastRCNNOutputLayers,
     _log_classification_stats,

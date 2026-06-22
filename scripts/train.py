@@ -5,10 +5,8 @@ import sys
 
 import pytorch_lightning as pl
 import torch
-from deepspeed.utils.zero_to_fp32 import get_fp32_state_dict_from_zero_checkpoint
 from omegaconf import OmegaConf
 from pytorch_lightning import Trainer, seed_everything
-from pytorch_lightning.cli import LightningCLI
 from transformers import logging as transf_logging
 
 sys.path.insert(0, os.getcwd())
@@ -269,7 +267,7 @@ if __name__ == "__main__":
             logger.info(f"<Training in {trainer.strategy.__class__.__name__} Mode>")
             if trainer.strategy.__class__.__name__ == "DeepSpeedStrategy":
                 logger.info(
-                    f"Make parameter contiguous in case deepseed does not allow non contigouous data"
+                    "Make parameter contiguous in case deepseed does not allow non contigouous data"
                 )
                 for param in model.parameters():
                     param.data = param.data.contiguous()

@@ -5,8 +5,6 @@ import re
 
 import numpy as np
 from rouge import Rouge
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
 
 spot_the_diff = ["Spot-the-Diff", "Birds-to-Words", "CLEVR-Change"]
 image_edit_instruct = ["IEdit", "HQ-Edit", "MagicBrush"]

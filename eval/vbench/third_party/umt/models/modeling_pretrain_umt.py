@@ -1,15 +1,13 @@
-import math
 from functools import partial
 
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.utils.checkpoint as checkpoint
 from timm.models.layers import trunc_normal_ as __call_trunc_normal_
 from timm.models.registry import register_model
 
-from .modeling_finetune import Block, DropPath, Mlp, PatchEmbed, _cfg
+from .modeling_finetune import Block, PatchEmbed, _cfg
 
 
 def trunc_normal_(tensor, mean=0.0, std=1.0):
@@ -388,10 +386,8 @@ def pretrain_umt_large_patch16_224(pretrained=False, **kwargs):
 
 
 if __name__ == "__main__":
-    import time
 
     import numpy as np
-    from fvcore.nn import FlopCountAnalysis, flop_count_table
 
     seed = 4217
     np.random.seed(seed)
