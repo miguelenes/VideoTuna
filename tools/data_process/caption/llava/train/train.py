@@ -49,7 +49,7 @@ from llava.mm_utils import (
 )
 from llava.model import *
 from llava.train.llava_trainer import LLaVATrainer
-from llava.utils import process_video_with_decord, rank0_print
+from llava.utils import process_video_with_av, rank0_print
 from packaging import version
 from PIL import Image, ImageFile
 from torch.utils.data import Dataset
@@ -1397,7 +1397,7 @@ class LazySupervisedDataset(Dataset):
                         except IOError:
                             print(f"Failed to read frame at path: {frame_path}")
                 else:
-                    video = process_video_with_decord(video_file, self.data_args)
+                    video = process_video_with_av(video_file, self.data_args)
 
                 processor = self.data_args.image_processor
                 image = processor.preprocess(video, return_tensors="pt")["pixel_values"]

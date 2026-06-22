@@ -12,7 +12,7 @@ from functools import partial
 import numpy as np
 import torch
 import torch.distributed as dist
-from decord import VideoReader
+from videotuna.utils.video_io import AvVideoReader as VideoReader
 from PIL import Image
 from safetensors import safe_open
 from torchvision import transforms

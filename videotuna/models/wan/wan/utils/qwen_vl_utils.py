@@ -217,49 +217,7 @@ def _read_video_torchvision(
     return video
 
 
-def is_decord_available() -> bool:
-    import importlib.util
-
-    return importlib.util.find_spec("decord") is not None
-
-
-def _read_video_decord(
-    ele: dict,
-) -> torch.Tensor:
-    """read video using decord.VideoReader
-
-    Args:
-        ele (dict): a dict contains the configuration of video.
-        support keys:
-            - video: the path of video. support "file://", "http://", "https://" and local path.
-            - video_start: the start time of video.
-            - video_end: the end time of video.
-    Returns:
-        torch.Tensor: the video tensor with shape (T, C, H, W).
-    """
-    import decord
-
-    video_path = ele["video"]
-    st = time.time()
-    vr = decord.VideoReader(video_path)
-    # TODO: support start_pts and end_pts
-    if "video_start" in ele or "video_end" in ele:
-        raise NotImplementedError(
-            "not support start_pts and end_pts in decord for now."
-        )
-    total_frames, video_fps = len(vr), vr.get_avg_fps()
-    logger.info(
-        f"decord:  {video_path=}, {total_frames=}, {video_fps=}, time={time.time() - st:.3f}s"
-    )
-    nframes = smart_nframes(ele, total_frames=total_frames, video_fps=video_fps)
-    idx = torch.linspace(0, total_frames - 1, nframes).round().long().tolist()
-    video = vr.get_batch(idx).asnumpy()
-    video = torch.tensor(video).permute(0, 3, 1, 2)  # Convert to TCHW format
-    return video
-
-
 VIDEO_READER_BACKENDS = {
-    "decord": _read_video_decord,
     "torchvision": _read_video_torchvision,
 }
 
@@ -270,8 +228,6 @@ FORCE_QWENVL_VIDEO_READER = os.getenv("FORCE_QWENVL_VIDEO_READER", None)
 def get_video_reader_backend() -> str:
     if FORCE_QWENVL_VIDEO_READER is not None:
         video_reader_backend = FORCE_QWENVL_VIDEO_READER
-    elif is_decord_available():
-        video_reader_backend = "decord"
     else:
         video_reader_backend = "torchvision"
     logger.info(

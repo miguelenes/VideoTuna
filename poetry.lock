@@ -1014,24 +1014,6 @@ files = [
 ]
 
 [[package]]
-name = "decord"
-version = "0.6.0"
-description = "Decord Video Loader"
-optional = false
-python-versions = "*"
-groups = ["main"]
-files = [
-    {file = "decord-0.6.0-cp36-cp36m-macosx_10_15_x86_64.whl", hash = "sha256:85ef90d2f872384657d7774cc486c237c5b12df62d4ac5cb5c8d6001fa611323"},
-    {file = "decord-0.6.0-cp37-cp37m-macosx_10_15_x86_64.whl", hash = "sha256:9c20674964fb1490c677bd911d2023d2a09fec7a58a4bb0b7ddf1ccc269f107a"},
-    {file = "decord-0.6.0-cp38-cp38-macosx_10_15_x86_64.whl", hash = "sha256:a0eb1258beade34dceb29d97856a7764d179db1b5182899b61874f3418a1abc8"},
-    {file = "decord-0.6.0-py3-none-manylinux2010_x86_64.whl", hash = "sha256:51997f20be8958e23b7c4061ba45d0efcd86bffd5fe81c695d0befee0d442976"},
-    {file = "decord-0.6.0-py3-none-win_amd64.whl", hash = "sha256:02665d7c4f1193a330205a791bc128f7e108eb6ae5b67144437a02f700943bad"},
-]
-
-[package.dependencies]
-numpy = ">=1.14.0"
-
-[[package]]
 name = "deepspeed"
 version = "0.19.2"
 description = "DeepSpeed library"
@@ -2327,28 +2309,29 @@ files = [
 
 [[package]]
 name = "moviepy"
-version = "1.0.3"
+version = "2.2.1"
 description = "Video editing with Python"
 optional = false
 python-versions = "*"
 groups = ["main"]
 files = [
-    {file = "moviepy-1.0.3.tar.gz", hash = "sha256:2884e35d1788077db3ff89e763c5ba7bfddbd7ae9108c9bc809e7ba58fa433f5"},
+    {file = "moviepy-2.2.1-py3-none-any.whl", hash = "sha256:6b56803fec2ac54b557404126ac1160e65448e03798fa282bd23e8fab3795060"},
+    {file = "moviepy-2.2.1.tar.gz", hash = "sha256:c80cb56815ece94e5e3e2d361aa40070eeb30a09d23a24c4e684d03e16deacb1"},
 ]
 
 [package.dependencies]
-decorator = ">=4.0.2,<5.0"
-imageio = {version = ">=2.5,<3.0", markers = "python_version >= \"3.4\""}
-imageio_ffmpeg = {version = ">=0.2.0", markers = "python_version >= \"3.4\""}
-numpy = {version = ">=1.17.3", markers = "python_version > \"2.7\""}
+decorator = ">=4.0.2,<6.0"
+imageio = ">=2.5,<3.0"
+imageio_ffmpeg = ">=0.2.0"
+numpy = ">=1.25.0"
+pillow = ">=9.2.0,<12.0"
 proglog = "<=1.0.0"
-requests = ">=2.8.1,<3.0"
-tqdm = ">=4.11.2,<5.0"
+python-dotenv = ">=0.10"
 
 [package.extras]
-doc = ["Sphinx (>=1.5.2,<2.0)", "numpydoc (>=0.6.0,<1.0)", "pygame (>=1.9.3,<2.0) ; python_version < \"3.8\"", "sphinx_rtd_theme (>=0.1.10b0,<1.0)"]
-optional = ["matplotlib (>=2.0.0,<3.0) ; python_version >= \"3.4\"", "opencv-python (>=3.0,<4.0) ; python_version != \"2.7\"", "scikit-image (>=0.13.0,<1.0) ; python_version >= \"3.4\"", "scikit-learn ; python_version >= \"3.4\"", "scipy (>=0.19.0,<1.5) ; python_version != \"3.3\"", "youtube_dl"]
-test = ["coverage (<5.0)", "coveralls (>=1.1,<2.0)", "pytest (>=3.0.0,<4.0)", "pytest-cov (>=2.5.1,<3.0)", "requests (>=2.8.1,<3.0)"]
+doc = ["Sphinx (==6.*)", "numpydoc (<2.0)", "pydata-sphinx-theme (==0.13)", "sphinx_design"]
+lint = ["black (>=23.7.0)", "flake8 (>=6.0.0)", "flake8-absolute-import (>=1.0)", "flake8-docstrings (>=1.7.0)", "flake8-implicit-str-concat (==0.4.0)", "flake8-rst-docstrings (>=0.3)", "isort (>=5.12)", "pre-commit (>=3.3)"]
+test = ["coveralls (>=3.0,<4.0)", "pytest (>=3.0.0,<7.0.0)", "pytest-cov (>=2.5.1,<3.0)"]
 
 [[package]]
 name = "mpmath"
@@ -5855,4 +5838,4 @@ rocm = []
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.11"
-content-hash = "7ffba148b17b1b39a7d79438f4b8004628fac88b23a8d750ba854f6f339bb898"
+content-hash = "9ef870fd5c6e8c8ee8fcf1b6427ae7923d446dc9b9fa99ffeb25f96dee9d9d2a"

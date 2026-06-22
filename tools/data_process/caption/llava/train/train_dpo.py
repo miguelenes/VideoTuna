@@ -33,7 +33,7 @@ import torch
 import transformers
 import yaml
 from data_processing.utils import load_json, load_jsonl
-from decord import VideoReader, cpu
+from videotuna.utils.video_io import AvVideoReader as VideoReader
 from llava import conversation as conversation_lib
 from llava.constants import (
     DEFAULT_IM_END_TOKEN,
@@ -1394,7 +1394,7 @@ class DPODataset(Dataset):
                 )
             else:  # using videoreader
                 if "shareVideoGPTV" not in video_file and "liangke" not in video_file:
-                    vr = VideoReader(video_file, ctx=cpu(0))
+                    vr = VideoReader(video_file)
                     total_frame_num = len(vr)
                     avg_fps = round(vr.get_avg_fps() / self.data_args.video_fps)
                     frame_idx = [i for i in range(0, total_frame_num, avg_fps)]

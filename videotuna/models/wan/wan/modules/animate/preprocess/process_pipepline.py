@@ -4,19 +4,13 @@ import shutil
 
 import cv2
 import numpy as np
+import sam2.modeling.sam.transformer as transformer
 import torch
 from diffusers import FluxKontextPipeline
-from loguru import logger
-from PIL import Image
-
-try:
-    import moviepy.editor as mpy
-except:
-    import moviepy as mpy
-
-import sam2.modeling.sam.transformer as transformer
-from decord import VideoReader
 from human_visualization import draw_aapose_by_meta_new
+from loguru import logger
+from moviepy import ImageSequenceClip
+from PIL import Image
 from pose2d import Pose2d
 from pose2d_utils import AAPoseMeta
 from retarget_pose import get_retarget_pose
@@ -28,6 +22,8 @@ from utils import (
     padding_resize,
     resize_by_area,
 )
+
+from videotuna.utils.video_io import AvVideoReader as VideoReader
 
 transformer.USE_FLASH_ATTN = False
 transformer.MATH_KERNEL_ON = True
@@ -157,20 +153,20 @@ class ProcessPipeline:
                 aug_masks.append(each_aug_mask)
 
             src_face_path = os.path.join(output_path, "src_face.mp4")
-            mpy.ImageSequenceClip(face_images, fps=fps).write_videofile(src_face_path)
+            ImageSequenceClip(face_images, fps=fps).write_videofile(src_face_path)
 
             src_pose_path = os.path.join(output_path, "src_pose.mp4")
-            mpy.ImageSequenceClip(cond_images, fps=fps).write_videofile(src_pose_path)
+            ImageSequenceClip(cond_images, fps=fps).write_videofile(src_pose_path)
 
             src_bg_path = os.path.join(output_path, "src_bg.mp4")
-            mpy.ImageSequenceClip(bg_images, fps=fps).write_videofile(src_bg_path)
+            ImageSequenceClip(bg_images, fps=fps).write_videofile(src_bg_path)
 
             aug_masks_new = [
                 np.stack([mask * 255, mask * 255, mask * 255], axis=2)
                 for mask in aug_masks
             ]
             src_mask_path = os.path.join(output_path, "src_mask.mp4")
-            mpy.ImageSequenceClip(aug_masks_new, fps=fps).write_videofile(src_mask_path)
+            ImageSequenceClip(aug_masks_new, fps=fps).write_videofile(src_mask_path)
             return True
         else:
             logger.info(f"Processing reference image: {refer_image_path}")
@@ -305,10 +301,10 @@ class ProcessPipeline:
                 cond_images.append(conditioning_image)
 
             src_face_path = os.path.join(output_path, "src_face.mp4")
-            mpy.ImageSequenceClip(face_images, fps=fps).write_videofile(src_face_path)
+            ImageSequenceClip(face_images, fps=fps).write_videofile(src_face_path)
 
             src_pose_path = os.path.join(output_path, "src_pose.mp4")
-            mpy.ImageSequenceClip(cond_images, fps=fps).write_videofile(src_pose_path)
+            ImageSequenceClip(cond_images, fps=fps).write_videofile(src_pose_path)
             return True
 
     def get_editing_prompts(self, tpl_pose_metas, refer_pose_meta):

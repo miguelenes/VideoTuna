@@ -7,11 +7,11 @@ import numpy as np
 import torch
 import torchvision
 import torchvision.transforms as transforms
-from decord import VideoReader, cpu
 from einops import rearrange, repeat
 from PIL import Image
 
 from videotuna.utils.load_weights import init_weights_on_device, load_safetensors
+from videotuna.utils.video_io import AvVideoReader as VideoReader
 
 
 def get_target_filelist(data_dir, ext):
@@ -157,10 +157,10 @@ def load_inputs_v2v(input_dir, video_size=None, video_frames=None):
 def open_video_to_tensor(filepath, video_width=None, video_height=None):
     if video_width is None and video_height is None:
         vidreader = VideoReader(
-            filepath, ctx=cpu(0), width=video_width, height=video_height
+            filepath, width=video_width, height=video_height
         )
     else:
-        vidreader = VideoReader(filepath, ctx=cpu(0))
+        vidreader = VideoReader(filepath)
     frame_indices = list(range(len(vidreader)))
     frames = vidreader.get_batch(frame_indices)
     frame_tensor = torch.tensor(frames.asnumpy()).permute(3, 0, 1, 2).float()
@@ -182,7 +182,7 @@ def load_video_batch(
     for filepath in filepath_list:
         padding_num = 0
         vidreader = VideoReader(
-            filepath, ctx=cpu(0), width=video_size[1], height=video_size[0]
+            filepath, width=video_size[1], height=video_size[0]
         )
         fps = vidreader.get_avg_fps()
         total_frames = len(vidreader)
@@ -222,7 +222,7 @@ def load_image_batch(filepath_list, image_size=(256, 256)):
         _, ext = os.path.splitext(filename)
         if ext == ".mp4":
             vidreader = VideoReader(
-                filepath, ctx=cpu(0), width=image_size[1], height=image_size[0]
+                filepath, width=image_size[1], height=image_size[0]
             )
             frame = vidreader.get_batch([0])
             img_tensor = (

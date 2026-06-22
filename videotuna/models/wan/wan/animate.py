@@ -11,10 +11,11 @@ import numpy as np
 import torch
 import torch.distributed as dist
 import torch.nn.functional as F
-from decord import VideoReader
 from einops import rearrange
 from peft import set_peft_model_state_dict
 from tqdm import tqdm
+
+from videotuna.utils.video_io import AvVideoReader as VideoReader
 
 from .distributed.fsdp import shard_model
 from .distributed.sequence_parallel import sp_attn_forward
