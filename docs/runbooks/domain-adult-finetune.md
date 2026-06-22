@@ -24,6 +24,7 @@ huggingface-cli login                    # FLUX.1-dev is gated on Hugging Face
 |-------|-------|-----------|------|------------|------------|
 | 1 — T2I | Flux LoRA @ 512px | ~24–40 GB | 1 | 2000 steps ≈ hours on A100-class | Trains **FLUX.1-dev** |
 | 2 — T2V | Wan 2.1 T2V LoRA @ 480×832×81 | ~38 GB | 1 + DeepSpeed | ~41 s/epoch on H800 | Trains **Wan 2.1**; validates on **Wan 2.2** Diffusers 720p |
+| 2.5 — I2V (optional) | Wan 2.1 I2V LoRA @ 480×832×81 | ~40–44 GB | 1 + DeepSpeed | Similar to T2V | Reference image + clip pairs; validates on **Wan 2.2 I2V** Diffusers 720p |
 
 ---
 
@@ -182,6 +183,92 @@ poetry run python scripts/inference_new.py \
 
 ---
 
+## Phase 2.5 — Wan 2.1 I2V LoRA (optional)
+
+Optional when you need **reference-frame control** (e.g. Flux still → motion). **LoRA-only** — full Wan fine-tune is out of platform scope.
+
+### Dataset layout (primary: image + video pairs)
+
+```
+data/i2v/domain/
+  metadata.csv
+  images/
+    ref001.jpg
+  videos/
+    clip001.mp4
+```
+
+`metadata.csv`:
+
+```csv
+image_path,video_path,caption
+data/i2v/domain/images/ref001.jpg,data/i2v/domain/videos/clip001.mp4,"sks_style, slow pan, cinematic lighting"
+```
+
+**Secondary (first-frame conditioning):** use `path,caption` only and set `image_to_video: true` in `configs/domain/wan_i2v_lora.yaml`.
+
+Normalize clips (same as T2V):
+
+```bash
+ffmpeg -i in.mp4 -vf scale=832:480 -r 16 -frames:v 81 data/i2v/domain/videos/clip001.mp4
+```
+
+Extract a reference frame from a clip:
+
+```bash
+ffmpeg -i data/i2v/domain/videos/clip001.mp4 -vf scale=832:480 -frames:v 1 \
+  data/i2v/domain/images/ref001.jpg
+```
+
+From a Flux still:
+
+```bash
+ffmpeg -i flux_output.png -vf scale=832:480 data/i2v/domain/images/ref001.jpg
+```
+
+### Config
+
+`configs/domain/wan_i2v_lora.yaml`
+
+### Download base weights
+
+```bash
+mkdir -p checkpoints/wan
+hf download Wan-AI/Wan2.1-I2V-14B-480P --local-dir checkpoints/wan/Wan2.1-I2V-14B-480P
+```
+
+### Train
+
+```bash
+poetry run train-domain-i2v
+```
+
+Legacy alias: `poetry run train-wan2-1-i2v-lora`
+
+### Validation
+
+**Wan 2.2 I2V Diffusers (primary):**
+
+```bash
+poetry run validate-domain-i2v \
+  --trained_ckpt results/train/train_wan_domain_i2v_lora_<ts>/checkpoints/only_trained_model/denoiser-000-000000025.ckpt \
+  --prompt_dir inputs/i2v/domain_smoke
+```
+
+`inputs/i2v/domain_smoke/` must contain paired `.txt` prompts and images (`.jpg`/`.png`), one line per prompt.
+
+**Wan 2.1 native smoke (debug):**
+
+```bash
+poetry run python scripts/inference_new.py \
+  --config configs/inference/presets/wan_domain_i2v_smoke.yaml \
+  --trained_ckpt results/train/train_wan_domain_i2v_lora_<ts>/checkpoints/only_trained_model/denoiser-000-000000025.ckpt \
+  --prompt_dir inputs/i2v/domain_smoke \
+  --enable_model_cpu_offload
+```
+
+---
+
 ## CPU stub (no GPU)
 
 When no CUDA/ROCm GPU is available locally:
@@ -193,7 +280,11 @@ When no CUDA/ROCm GPU is available locally:
 poetry run test tests/test_domain_finetune_configs.py -q
 poetry run test tests/test_flux_lora_train_smoke.py -q
 poetry run test tests/test_wan_lora_bridge.py -q
+poetry run test tests/test_wan_i2v_lora_bridge.py -q
 poetry run test tests/test_wan_domain_lora_smoke_22_config.py -q
+poetry run test tests/test_wan_domain_i2v_smoke_22_config.py -q
+poetry run test tests/test_wan_i2v_dataset.py -q
+poetry run test tests/test_wan_training_step.py -q
 poetry run test tests/test_import_smoke.py -q
 poetry run test tests/test_poetry_scripts.py -q
 ```

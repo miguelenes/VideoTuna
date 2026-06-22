@@ -13,6 +13,7 @@ current_time = datetime.now().strftime("%Y%m%d%H%M%S")
 FLUX_T2I_CONFIG = "configs/domain/flux_t2i.json"
 FLUX_T2I_DATA_CONFIG = "configs/domain/flux_t2i_data.json"
 WAN_T2V_LORA_CONFIG = "configs/domain/wan_t2v_lora.yaml"
+WAN_I2V_LORA_CONFIG = "configs/domain/wan_i2v_lora.yaml"
 
 
 def _require_cuda_backend(installer_name: str) -> None:
@@ -523,6 +524,40 @@ def train_domain_t2v():
     train_wan2_1_t2v_lora()
 
 
+def train_wan2_1_i2v_lora():
+    os.environ["TOKENIZERS_PARALLELISM"] = "false"
+    ckpt = "checkpoints/wan/Wan2.1-I2V-14B-480P"
+    config = WAN_I2V_LORA_CONFIG
+    resroot = "results/train"
+    expname = "train_wan_domain_i2v_lora"
+    result = subprocess.run(
+        [
+            "python",
+            "scripts/train_new.py",
+            "-t",
+            "--ckpt",
+            ckpt,
+            "--base",
+            config,
+            "--logdir",
+            resroot,
+            "--name",
+            f"{expname}_{current_time}",
+            "--devices",
+            "0,",
+            "--auto_resume",
+        ]
+        + sys.argv[1:],
+        check=False,
+    )
+    exit(result.returncode)
+
+
+def train_domain_i2v():
+    """Canonical alias for Wan 2.1 I2V domain LoRA training."""
+    train_wan2_1_i2v_lora()
+
+
 def inference_domain_t2i():
     """Canonical alias for Flux domain LoRA smoke inference."""
     inference_flux_lora()
@@ -550,6 +585,50 @@ def validate_domain_t2v():
         check=False,
     )
     raise SystemExit(result.returncode)
+
+
+def validate_domain_i2v():
+    """Canonical Wan 2.2 domain I2V LoRA validation after training."""
+    if not any(arg.startswith("--trained_ckpt") for arg in sys.argv[1:]) and not any(
+        arg.startswith("--lorackpt") for arg in sys.argv[1:]
+    ):
+        print(
+            "Error: validate-domain-i2v requires --trained_ckpt <denoiser.ckpt>",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+    if not any(arg.startswith("--prompt_dir") for arg in sys.argv[1:]):
+        print(
+            "Error: validate-domain-i2v requires --prompt_dir <image+prompt pairs>",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+    result = subprocess.run(
+        [
+            "python",
+            "scripts/inference_new.py",
+            "--config",
+            "configs/inference/presets/wan_domain_i2v_smoke_22.yaml",
+            "--enable_model_cpu_offload",
+        ]
+        + sys.argv[1:],
+        check=False,
+    )
+    raise SystemExit(result.returncode)
+
+
+def inference_wan2_2_i2v_720p():
+    result = subprocess.run(
+        [
+            "python",
+            "scripts/inference_new.py",
+            "--config",
+            "configs/inference/presets/wan_domain_i2v_smoke_22.yaml",
+        ]
+        + sys.argv[1:],
+        check=False,
+    )
+    exit(result.returncode)
 
 
 def benchmark_attn_backends():

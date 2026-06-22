@@ -47,6 +47,12 @@ def main() -> int:
         type=Path,
         help="Directory for high_noise.safetensors and low_noise.safetensors",
     )
+    parser.add_argument(
+        "--mode",
+        choices=("t2v", "i2v"),
+        default="t2v",
+        help="Wan task mode (T2V default; I2V uses same block remap)",
+    )
     args = parser.parse_args()
 
     if not is_native_wan_lora_ckpt(args.input):
@@ -64,6 +70,7 @@ def main() -> int:
 
     manifest = {
         "source": str(args.input),
+        "mode": args.mode,
         "high_noise": str(high_path),
         "low_noise": str(low_path),
         "analysis": meta,

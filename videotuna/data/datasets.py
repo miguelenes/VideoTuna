@@ -10,6 +10,7 @@ import pandas as pd
 import torch
 from torchvision.datasets.folder import pil_loader
 from torchvision.transforms import Compose
+from torchvision.transforms.functional import pil_to_tensor
 
 from videotuna.data.datasets_utils import (
     is_image,
@@ -152,10 +153,20 @@ class DatasetFromCSV(torch.utils.data.Dataset):
         for i, path in enumerate(csv_path):
             df = pd.read_csv(path)
             self.check_df(df, path)
+            pair_mode = (
+                "video_path" in df.columns
+                and "image_path" in df.columns
+                and "path" not in df.columns
+            )
             for _, row in df.iterrows():
-                video_path = row.get(
-                    "path", row.get("video_path", row.get("image_path"))
-                )
+                if pair_mode:
+                    video_path = row["video_path"]
+                    image_path = row["image_path"]
+                else:
+                    video_path = row.get(
+                        "path", row.get("video_path", row.get("image_path"))
+                    )
+                    image_path = row.get("image_path", None)
                 caption = row["caption"]
 
                 if not self._is_valid_data(row):
@@ -163,7 +174,11 @@ class DatasetFromCSV(torch.utils.data.Dataset):
 
                 if data_root[i]:
                     video_path = os.path.join(data_root[i], video_path)
+                    if image_path is not None:
+                        image_path = os.path.join(data_root[i], image_path)
                 data_dict = {"path": video_path, "caption": caption}
+                if image_path is not None:
+                    data_dict["image_path"] = image_path
                 data_dict["fps"] = (
                     row.get("fps") / self.frame_interval
                     if row.get("fps", None)
@@ -175,9 +190,10 @@ class DatasetFromCSV(torch.utils.data.Dataset):
 
                 self.data_list.append(data_dict)
 
-    def getitem(self, index):
+    def getitem(self, index):  # noqa: C901
         data = copy.deepcopy(self.data_list[index])
         path = data.pop("path")
+        image_path = data.pop("image_path", None)
         if is_video(path):
             total_frames = get_video_frame_count(path)
             if total_frames < self.frame_limit:
@@ -226,7 +242,26 @@ class DatasetFromCSV(torch.utils.data.Dataset):
 
         if self.image_to_video:
             data["image"] = data["video"][:, :1, :, :].clone()  # CTHW (3，1，H, W)
+        elif image_path is not None:
+            data["image"] = self._load_conditioning_image(image_path)
         return data
+
+    def _load_conditioning_image(self, image_path: str) -> torch.Tensor:
+        if not is_image(image_path):
+            raise ValueError(f"Unsupported conditioning image format: {image_path}")
+        frame = pil_to_tensor(pil_loader(image_path)).unsqueeze(0)
+        if "video" in self.transform:
+            spatial = [
+                t
+                for t in self.transform["video"].transforms
+                if t.__class__.__name__ != "TemporalRandomCrop"
+            ]
+            frame = Compose(spatial)(frame)
+        else:
+            frame = self.transform["image"](pil_loader(image_path))
+            if frame.dim() == 4:
+                frame = frame.unsqueeze(0)
+        return frame.permute(1, 0, 2, 3)
 
     def __getitem__(self, index):
         cnt = 100
@@ -280,9 +315,13 @@ class DatasetFromCSV(torch.utils.data.Dataset):
             and "image_path" not in df.columns
         ):
             raise ValueError(f"The csv file {df_path} must have a column named 'path'.")
-        elif "caption" not in df.columns:
+        if "caption" not in df.columns:
             raise ValueError(
                 f"The csv file {df_path} must have a column named 'caption'."
+            )
+        if "video_path" in df.columns and "image_path" not in df.columns:
+            raise ValueError(
+                f"The csv file {df_path} pair mode requires an 'image_path' column."
             )
 
 

@@ -6,7 +6,9 @@ PrivTune supports three model families: two for **training** and one for **valid
 |-------|--------|------|
 | FLUX.1-dev | `black-forest-labs/FLUX.1-dev` | **Train** — Phase 1 T2I LoRA |
 | Wan 2.1 T2V 14B | `Wan-AI/Wan2.1-T2V-14B` | **Train** — Phase 2 T2V LoRA |
+| Wan 2.1 I2V 14B 480P | `Wan-AI/Wan2.1-I2V-14B-480P` | **Train** — Phase 2.5 I2V LoRA (optional) |
 | Wan 2.2 T2V A14B Diffusers | `Wan-AI/Wan2.2-T2V-A14B-Diffusers` | **Validate** — Phase 2 production inference |
+| Wan 2.2 I2V A14B Diffusers | `Wan-AI/Wan2.2-I2V-A14B-Diffusers` | **Validate** — Phase 2.5 I2V production inference |
 
 ## Training configs
 
@@ -14,8 +16,9 @@ PrivTune supports three model families: two for **training** and one for **valid
 |-------|--------|
 | Flux T2I | `configs/domain/flux_t2i.json` + `configs/domain/flux_t2i_data.json` |
 | Wan T2V | `configs/domain/wan_t2v_lora.yaml` |
+| Wan I2V (optional) | `configs/domain/wan_i2v_lora.yaml` |
 
-Commands: `poetry run train-domain-t2i` / `poetry run train-domain-t2v`
+Commands: `poetry run train-domain-t2i` / `poetry run train-domain-t2v` / `poetry run train-domain-i2v`
 
 Wan training requires DeepSpeed ZeRO-3: `poetry run install-deepspeed`
 
@@ -25,8 +28,10 @@ Wan training requires DeepSpeed ZeRO-3: `poetry run install-deepspeed`
 |-------|--------|---------|
 | Flux LoRA | `configs/inference/presets/flux_domain_lora_smoke.yaml` | `poetry run inference-domain-t2i` |
 | Wan 2.2 domain LoRA | `configs/inference/presets/wan_domain_lora_smoke_22.yaml` | `poetry run validate-domain-t2v --trained_ckpt <ckpt>` |
+| Wan 2.2 domain I2V LoRA | `configs/inference/presets/wan_domain_i2v_smoke_22.yaml` | `poetry run validate-domain-i2v --trained_ckpt <ckpt> --prompt_dir <dir>` |
 | Wan 2.2 (general) | `configs/inference/presets/balanced_wan2_2_720p.yaml` | `poetry run inference-wan2.2-t2v-720p` |
 | Wan 2.1 LoRA (optional) | `configs/inference/presets/wan_domain_lora_smoke.yaml` | `inference_new` + `--trained_ckpt` |
+| Wan 2.1 I2V LoRA (optional) | `configs/inference/presets/wan_domain_i2v_smoke.yaml` | `inference_new` + `--prompt_dir` |
 
 LoRA bridge (Wan 2.1 native → 2.2 Diffusers): `videotuna/utils/wan_lora_bridge.py`
 
@@ -41,7 +46,11 @@ poetry run test tests/test_import_smoke.py -q
 poetry run test tests/test_domain_finetune_configs.py -q
 poetry run test tests/test_flux_lora_train_smoke.py -q
 poetry run test tests/test_wan_lora_bridge.py -q
+poetry run test tests/test_wan_i2v_lora_bridge.py -q
 poetry run test tests/test_wan_domain_lora_smoke_22_config.py -q
+poetry run test tests/test_wan_domain_i2v_smoke_22_config.py -q
+poetry run test tests/test_wan_i2v_dataset.py -q
+poetry run test tests/test_wan_training_step.py -q
 poetry run test tests/test_poetry_scripts.py -q
 ```
 

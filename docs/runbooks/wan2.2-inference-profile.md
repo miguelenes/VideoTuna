@@ -162,6 +162,23 @@ poetry run validate-domain-t2v \
 
 The bridge loads adapters onto both `transformer` (high-noise) and `transformer_2` (low-noise). Run `poetry run test tests/test_wan_lora_bridge.py -q` on CPU; full visual QA requires a rental GPU.
 
+## Domain I2V LoRA validation (Wan 2.1 → 2.2 I2V bridge)
+
+After optional Phase 2.5 I2V training:
+
+```bash
+poetry run validate-domain-i2v \
+  --trained_ckpt results/train/train_wan_domain_i2v_lora_<ts>/checkpoints/only_trained_model/denoiser-000-000000025.ckpt \
+  --prompt_dir inputs/i2v/domain_smoke \
+  --enable_model_cpu_offload
+```
+
+Preset: `configs/inference/presets/wan_domain_i2v_smoke_22.yaml` (720×1280, 4 steps, ~24 GB with offload).
+
+`--prompt_dir` must contain paired `.txt` prompts and reference images (same contract as native Wan I2V inference).
+
+Export LoRA for reuse: `poetry run python tools/convert_wan_lora_21_to_22.py --input <ckpt> --output-dir results/lora/wan22-i2v-export/ --mode i2v`
+
 ## Multi-GPU (2× A100)
 
 Wan 2.2 via `inference-wan2.2-t2v-720p` uses **Diffusers** (`DiffusersVideoFlow`).

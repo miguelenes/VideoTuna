@@ -27,6 +27,10 @@ from videotuna.models.wan.wan.utils.prompt_extend import (
 )
 from videotuna.utils.args_utils import VideoMode
 from videotuna.utils.attention import maybe_compile_denoiser
+from videotuna.utils.wan_training import (
+    compute_wan_flow_matching_loss,
+    init_wan_training_denoisers,
+)
 
 EXAMPLE_PROMPT = {
     "t2v-1.3B": {
@@ -222,6 +226,8 @@ class WanVideoModelFlow(GenerationBase):
                 use_sp=use_sp,
                 t5_cpu=t5_cpu,
             )
+
+        init_wan_training_denoisers(self)
 
     def _validate_args(self, args):
         # Size reassign and check
@@ -467,9 +473,9 @@ class WanVideoModelFlow(GenerationBase):
         )
 
     def training_step(self, batch, batch_idx):
-        raise NotImplementedError(
-            "Wan training is not yet wired to upstream WanT2V/WanI2V"
-        )
+        loss = compute_wan_flow_matching_loss(self, batch)
+        self.log("train/loss", loss, prog_bar=True, on_step=True, on_epoch=True)
+        return loss
 
     @torch.no_grad()
     def log_images(self, batch, **kwargs):

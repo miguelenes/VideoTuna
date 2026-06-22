@@ -6,6 +6,7 @@
 
 - **Phase 1:** Flux T2I LoRA (`videotuna/training/flux_lora/`, `train-domain-t2i`)
 - **Phase 2:** Wan 2.1 T2V LoRA (`videotuna/flow/wanvideo.py`, `train-domain-t2v`)
+- **Phase 2.5 (optional):** Wan 2.1 I2V LoRA (`train-domain-i2v`) — LoRA-only; full Wan fine-tune is out of scope
 - **Phase 3:** Wan 2.2 Diffusers validation inference — **deferred** (see Prompt 4 / `wan2.2-inference-profile.md`)
 
 Canonical runbook: [`docs/runbooks/domain-adult-finetune.md`](docs/runbooks/domain-adult-finetune.md)

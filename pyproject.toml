@@ -201,8 +201,12 @@ train-flux-lora = 'scripts:train_flux_lora'
 train-wan2-1-t2v-lora = 'scripts:train_wan2_1_t2v_lora'
 train-domain-t2i = 'scripts:train_domain_t2i'
 train-domain-t2v = 'scripts:train_domain_t2v'
+train-wan2-1-i2v-lora = 'scripts:train_wan2_1_i2v_lora'
+train-domain-i2v = 'scripts:train_domain_i2v'
 inference-domain-t2i = 'scripts:inference_domain_t2i'
 validate-domain-t2v = 'scripts:validate_domain_t2v'
+validate-domain-i2v = 'scripts:validate_domain_i2v'
+"inference-wan2.2-i2v-720p" = 'scripts:inference_wan2_2_i2v_720p'
 
 [tool.pytest.ini_options]
 markers = [

@@ -10,6 +10,6 @@ alwaysApply: true
 Primary instructions: [`AGENTS.md`](../AGENTS.md) at the repo root.
 
 - Python 3.11+ · Poetry default (`poetry run …`) · optional uv
-- **Before finishing (required):** `poetry run lint`, `poetry run format-check`, `poetry run test tests/test_import_smoke.py -q`, `poetry run test tests/test_domain_finetune_configs.py -q`, `poetry run test tests/test_flux_lora_train_smoke.py -q`, `poetry run test tests/test_wan_lora_bridge.py -q`, `poetry run test tests/test_wan_domain_lora_smoke_22_config.py -q`, `poetry run test tests/test_poetry_scripts.py -q`
+- **Before finishing (required):** `poetry run lint`, `poetry run format-check`, `poetry run test tests/test_import_smoke.py -q`, `poetry run test tests/test_domain_finetune_configs.py -q`, `poetry run test tests/test_flux_lora_train_smoke.py -q`, `poetry run test tests/test_wan_lora_bridge.py -q`, `poetry run test tests/test_wan_i2v_lora_bridge.py -q`, `poetry run test tests/test_wan_domain_lora_smoke_22_config.py -q`, `poetry run test tests/test_wan_domain_i2v_smoke_22_config.py -q`, `poetry run test tests/test_wan_i2v_dataset.py -q`, `poetry run test tests/test_wan_training_step.py -q`, `poetry run test tests/test_poetry_scripts.py -q`
 - Env vars: [`.env.example`](../.env.example) (`VIDEOTUNA_*` retained) · Vendor policy: [`docs/vendor-policy.md`](../docs/vendor-policy.md)
 - Never commit `.env`, checkpoints, `outputs/`, weights, or secrets

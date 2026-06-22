@@ -13,6 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 FLUX_TRAIN_CONFIG = REPO_ROOT / "configs" / "domain" / "flux_t2i.json"
 FLUX_DATA_CONFIG = REPO_ROOT / "configs" / "domain" / "flux_t2i_data.json"
 WAN_DOMAIN_CONFIG = REPO_ROOT / "configs" / "domain" / "wan_t2v_lora.yaml"
+WAN_I2V_DOMAIN_CONFIG = REPO_ROOT / "configs" / "domain" / "wan_i2v_lora.yaml"
 FLUX_INFER_SMOKE = (
     REPO_ROOT / "configs" / "inference" / "presets" / "flux_domain_lora_smoke.yaml"
 )
@@ -52,6 +53,17 @@ def test_wan_domain_yaml_parses():
     ckpt_cb = cfg.train.lightning.callbacks.model_checkpoint.params
     assert ckpt_cb.every_n_train_steps == 25
     assert cfg.flow.params.ckpt_path == "checkpoints/wan/Wan2.1-T2V-14B"
+
+
+def test_wan_i2v_domain_yaml_parses():
+    cfg = OmegaConf.load(WAN_I2V_DOMAIN_CONFIG)
+    assert cfg.train.name == "train_wan_domain_i2v_lora"
+    assert cfg.flow.params.task == "i2v-14B"
+    csv_path = cfg.train.data.params.train.params.csv_path
+    assert csv_path == "data/i2v/domain/metadata.csv"
+    assert cfg.train.data.params.train.params.image_to_video is False
+    assert cfg.inference.mode == "i2v"
+    assert cfg.flow.params.ckpt_path == "checkpoints/wan/Wan2.1-I2V-14B-480P"
 
 
 def test_flux_domain_inference_smoke_yaml():

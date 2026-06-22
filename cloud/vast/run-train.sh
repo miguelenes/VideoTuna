@@ -57,9 +57,17 @@ case "${TRAIN_PROFILE}" in
   fi
   run_cmd "${ARGS[@]}"
   ;;
+  wan-i2v-lora)
+  CONFIG_PATH="${CONFIG_PATH:-configs/domain/wan_i2v_lora.yaml}"
+  ARGS=(poetry run train-wan2-1-i2v-lora --base "${CONFIG_PATH}")
+  if [[ -n "${RESUME_CKPT}" ]]; then
+    ARGS+=(--resume_ckpt "${RESUME_CKPT}")
+  fi
+  run_cmd "${ARGS[@]}"
+  ;;
   *)
   echo "Unknown TRAIN_PROFILE=${TRAIN_PROFILE}" | tee -a "${LOG_ERR}"
-  echo "Valid: flux-lora, wan-t2v-lora" | tee -a "${LOG_ERR}"
+  echo "Valid: flux-lora, wan-t2v-lora, wan-i2v-lora" | tee -a "${LOG_ERR}"
   exit 1
   ;;
 esac

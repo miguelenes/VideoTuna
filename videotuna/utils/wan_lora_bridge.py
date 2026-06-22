@@ -317,6 +317,27 @@ def apply_native_wan_lora_to_pipeline(
     return reports
 
 
+def apply_native_wan_lora_to_i2v_pipeline(
+    pipeline: Any,
+    ckpt_path: str | Path,
+    *,
+    lora_scale: float = 1.0,
+    lora_scale_2: Optional[float] = None,
+) -> List[WanLoraLoadReport]:
+    """
+    Attach Wan 2.1 native I2V LoRA weights to a Wan 2.2 I2V Diffusers pipeline.
+
+    Uses the same block-level key remap as T2V; both transformer experts receive
+    identical adapter weights when ``transformer_2`` is present.
+    """
+    return apply_native_wan_lora_to_pipeline(
+        pipeline,
+        ckpt_path,
+        lora_scale=lora_scale,
+        lora_scale_2=lora_scale_2,
+    )
+
+
 def export_diffusers_lora_state_dicts(
     ckpt_path: str | Path,
 ) -> Dict[str, Dict[str, torch.Tensor]]:
