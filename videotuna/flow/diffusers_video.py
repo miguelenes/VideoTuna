@@ -20,6 +20,12 @@ from videotuna.utils.diffusers_optimizations import (
     apply_diffusers_optimizations,
     transformer_cache_context,
 )
+from videotuna.utils.diffusers_quantization import (
+    build_pipeline_quantization_config,
+    normalize_quant_backend,
+    normalize_transformer_quant,
+    resolve_quant_components,
+)
 from videotuna.utils.wan_lora_bridge import (
     apply_native_wan_lora_to_pipeline,
     is_native_wan_lora_ckpt,
@@ -127,6 +133,8 @@ class DiffusersVideoFlow(GenerationBase):
         self._lora_path: Optional[str] = None
         self._dtype = torch.bfloat16
         self._inference_device: Optional[str] = None
+        self._transformer_quant = "none"
+        self._quant_backend = "torchao"
 
     def from_pretrained(
         self,
@@ -173,7 +181,22 @@ class DiffusersVideoFlow(GenerationBase):
         key = (self.model_family, self.mode)
         entry = MODEL_REGISTRY[key]
         pipeline_cls = entry["pipeline_cls"]
-        self.pipeline = pipeline_cls.from_pretrained(self._model_id, torch_dtype=dtype)
+        load_kwargs: Dict[str, Any] = {"torch_dtype": dtype}
+        quant = normalize_transformer_quant(self._transformer_quant)
+        if quant != "none":
+            components = resolve_quant_components(
+                self.model_family,
+                self.model_variant,
+                self.mode,
+            )
+            quant_config = build_pipeline_quantization_config(
+                transformer_quant=quant,
+                quant_backend=normalize_quant_backend(self._quant_backend),
+                components=components,
+            )
+            if quant_config is not None:
+                load_kwargs["quantization_config"] = quant_config
+        self.pipeline = pipeline_cls.from_pretrained(self._model_id, **load_kwargs)
         self._load_lora_weights()
 
     def _load_lora_weights(self) -> None:
@@ -232,6 +255,12 @@ class DiffusersVideoFlow(GenerationBase):
             self._lora_path = args.lorackpt
         if getattr(args, "trained_ckpt", None) and self.model_family == "wan":
             self._lora_path = args.trained_ckpt
+        self._transformer_quant = normalize_transformer_quant(
+            getattr(args, "transformer_quant", None)
+        )
+        self._quant_backend = normalize_quant_backend(
+            getattr(args, "quant_backend", None)
+        )
         self._dtype = resolve_torch_dtype(getattr(args, "dtype", None))
         if self.pipeline is None:
             self._load_pipeline(self._dtype)

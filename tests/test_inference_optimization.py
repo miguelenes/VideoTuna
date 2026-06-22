@@ -37,7 +37,8 @@ def test_standard_inference_options_to_namespace():
         ulysses_degree=2,
         ring_degree=2,
         compile=True,
-        enable_fp8=True,
+        transformer_quant="int8_wo",
+        quant_backend="torchao",
     )
     args = inference_options_to_namespace(standard=standard)
     assert args.device == "cuda:1"
@@ -48,7 +49,9 @@ def test_standard_inference_options_to_namespace():
     assert args.dtype == "bf16"
     assert args.ulysses_degree == 2
     assert args.compile is True
-    assert args.enable_fp8 is True
+    assert args.transformer_quant == "int8_wo"
+    assert args.quant_backend == "torchao"
+    assert not hasattr(args, "enable_fp8")
 
 
 def test_apply_memory_preset_low_vram():

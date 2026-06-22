@@ -34,6 +34,12 @@ from videotuna.utils.device_utils import (
     snapshot_nvidia_smi,
 )
 from videotuna.utils.diffusers_optimizations import apply_flow_memory_config
+from videotuna.utils.diffusers_quantization import (
+    is_hunyuan_fp8_flow,
+    maybe_adjust_offload_for_quant,
+    reject_enable_fp8_for_non_hunyuan,
+    validate_transformer_quant,
+)
 from videotuna.utils.fp8_utils import validate_fp8_inference
 from videotuna.utils.inference_cli import (
     apply_compile_env,
@@ -53,6 +59,38 @@ def run_inference(args, gpu_num=1, rank=0, **kwargs):
         if smi:
             logger.error("nvidia-smi snapshot:\n{}", smi)
         raise exc
+
+
+def _prepare_inference_quant_and_fp8(
+    args,
+    inference_config,
+    flow_target: str,
+) -> None:
+    """Validate FP8 and transformer quant settings before model load."""
+    enable_fp8 = bool(getattr(inference_config, "enable_fp8", False)) or bool(
+        getattr(args, "enable_fp8", False)
+    )
+    if enable_fp8:
+        reject_enable_fp8_for_non_hunyuan(str(flow_target), inference_config)
+    if enable_fp8 and is_hunyuan_fp8_flow(str(flow_target), inference_config):
+        dit_weight = getattr(inference_config, "dit_weight", None) or getattr(
+            inference_config, "trained_ckpt", None
+        )
+        validate_fp8_inference(str(dit_weight) if dit_weight else "")
+
+    has_lora = bool(
+        getattr(inference_config, "trained_ckpt", None)
+        or getattr(inference_config, "lorackpt", None)
+    )
+    transformer_quant = validate_transformer_quant(
+        transformer_quant=getattr(inference_config, "transformer_quant", None),
+        quant_backend=getattr(inference_config, "quant_backend", None),
+        offload_mode=resolve_offload_mode(inference_config),
+        compile_enabled=bool(getattr(args, "compile", False)),
+        has_lora=has_lora,
+    )
+    if transformer_quant != "none":
+        maybe_adjust_offload_for_quant(inference_config, transformer_quant)
 
 
 def _run_inference_impl(args, gpu_num=1, rank=0, **kwargs):
@@ -87,11 +125,7 @@ def _run_inference_impl(args, gpu_num=1, rank=0, **kwargs):
     logger.info("Compute environment: {}", describe_compute_environment())
 
     apply_compile_env(bool(getattr(args, "compile", False)))
-    if getattr(args, "enable_fp8", False):
-        dit_weight = getattr(inference_config, "dit_weight", None) or getattr(
-            inference_config, "trained_ckpt", None
-        )
-        validate_fp8_inference(str(dit_weight) if dit_weight else "")
+    _prepare_inference_quant_and_fp8(args, inference_config, flow_target)
 
     require_accelerator_for_flow(
         flow_target,

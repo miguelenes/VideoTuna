@@ -43,7 +43,8 @@ class StandardInferenceOptions:
     compile: Annotated[bool | None, Parameter(name="compile")] = None
     fuse_qkv: bool | None = None
     enable_attention_cache: bool | None = None
-    enable_fp8: bool | None = None
+    transformer_quant: Annotated[str | None, Parameter(name="transformer-quant")] = None
+    quant_backend: Annotated[str | None, Parameter(name="quant-backend")] = None
 
 
 @Parameter(name="*")
@@ -134,7 +135,6 @@ def inference_options_to_namespace(
         "compile",
         "fuse_qkv",
         "enable_attention_cache",
-        "enable_fp8",
     )
     for key in bool_defaults:
         if key not in merged:

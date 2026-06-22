@@ -28,3 +28,6 @@ inference:
   enable_vae_tiling: true
   dtype: fp16
   min_vram_gb: 10
+  # Optional transformer quant for base inference (LoRA+quant is attempted; use none if bridge fails):
+  # transformer_quant: int8_wo
+  # quant_backend: torchao

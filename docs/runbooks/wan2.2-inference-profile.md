@@ -16,6 +16,7 @@ Optimized inference presets for **Wan-AI/Wan2.2-T2V-A14B-Diffusers** (Diffusers 
 | Preset file | Tier | Est. peak VRAM |
 |-------------|------|----------------|
 | [`configs/inference/presets/low_vram_wan2_2_720p.yaml`](../../configs/inference/presets/low_vram_wan2_2_720p.yaml) | Minimum | 12–16 GB |
+| [`configs/inference/presets/low_vram_wan2_2_720p_int8.yaml`](../../configs/inference/presets/low_vram_wan2_2_720p_int8.yaml) | Minimum + int8 quant | 10–14 GB (CUDA) |
 | [`configs/inference/presets/balanced_wan2_2_720p.yaml`](../../configs/inference/presets/balanced_wan2_2_720p.yaml) | Recommended | ~24 GB |
 | [`configs/inference/presets/max_speed_wan2_2_720p.yaml`](../../configs/inference/presets/max_speed_wan2_2_720p.yaml) | Max speed | 40–48 GB |
 | [`configs/inference/presets/wan2_2_cpu_smoke.yaml`](../../configs/inference/presets/wan2_2_cpu_smoke.yaml) | Home dev only | RAM (not practical) |
@@ -32,6 +33,32 @@ poetry run inference-wan2.2-t2v-720p \
 ```
 
 Settings: sequential CPU offload, fp16, VAE tiling.
+
+Optional **transformer weight-only quantization** (CUDA only, torchao):
+
+```bash
+poetry run inference-wan2.2-t2v-720p \
+  --config configs/inference/presets/low_vram_wan2_2_720p_int8.yaml \
+  --min-vram-gb 10
+```
+
+Or add to any preset / CLI:
+
+```bash
+--transformer-quant int8_wo --quant-backend torchao
+```
+
+| Scheme | VRAM impact | GPU requirement | LoRA |
+|--------|-------------|-----------------|------|
+| `int8_wo` (default quant) | Lower transformer weight memory | NVIDIA CUDA | Attempted; use `none` if PEFT bridge fails |
+| `int4_wo` | Further weight savings | NVIDIA CUDA | Same as int8 |
+| `fp8_wo` | Best speed/memory on Ada+ | sm ≥ 8.9 (RTX 4090, Hopper) | Same as int8 |
+
+**Not the same as legacy `--enable_fp8`:** Hunyuan native FP8 used pre-quantized `.pt` + `*_map.pt` scale files. Wan 2.2 Diffusers uses **torchao dynamic weight-only FP8** via `--transformer-quant fp8_wo`. The Hunyuan `--enable_fp8` flag is removed from inference CLI.
+
+**optimum-quanto:** evaluated via `tools/spike_wan_quant_compare.py` on rental GPU; not added as a default dependency. Use `--quant-backend quanto` only after installing `optimum-quanto>=0.2.6` manually if torchao is insufficient.
+
+When `transformer_quant` is enabled, sequential CPU offload is upgraded to **model CPU offload** automatically for Diffusers quant compatibility.
 
 ### Recommended (~24 GB)
 
