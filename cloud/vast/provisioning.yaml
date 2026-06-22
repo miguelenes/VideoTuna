@@ -2,12 +2,17 @@
 # Set: PROVISIONING_MANIFEST=https://raw.githubusercontent.com/miguelenes/VideoTuna/main/cloud/vast/provisioning.yaml
 version: 1
 
+# settings.retry — per-download backoff for manifest phases (apt, git, conditional_downloads).
+# post_commands (bootstrap.sh) are fail-fast at the provisioner; bootstrap uses provision_retry.py
+# with the same backoff for poetry install / hf download. See docs/runbooks/cloud-gpu-training.md.
 settings:
   retry:
     max_attempts: 5
     initial_delay: 2
     backoff_multiplier: 2
 
+# on_failure — whole-pipeline retry when any phase exits non-zero (including bootstrap.sh).
+# action: continue keeps the instance up after retries are exhausted. Override via PROVISIONER_* env.
 on_failure:
   action: continue
   max_retries: 3

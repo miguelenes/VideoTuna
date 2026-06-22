@@ -51,6 +51,24 @@ Fallback imperative provisioner:
 PROVISIONING_SCRIPT=https://raw.githubusercontent.com/miguelenes/VideoTuna/main/cloud/vast/bootstrap.sh
 ```
 
+### Provisioning retries
+
+Two independent retry layers apply during first boot:
+
+**Manifest-level (Vast provisioner)** — configured in [`cloud/vast/provisioning.yaml`](../../cloud/vast/provisioning.yaml):
+
+| Key | Behavior |
+|-----|----------|
+| `settings.retry` | Exponential backoff on manifest-phase downloads (`conditional_downloads`, wget, apt). Default: 5 attempts, delays 2s → 4s → 8s → 16s. |
+| `post_commands` | **No per-command retry.** `bootstrap.sh` is fail-fast; a non-zero exit aborts the phase. |
+| `on_failure` | Whole-pipeline retry: sleep **60s**, re-run from the failed phase (idempotent hash skip), up to **3** times; then `action: continue` (log + exit 1, instance stays up). |
+
+Override manifest failure behavior at rent time: `PROVISIONER_RETRY_MAX`, `PROVISIONER_RETRY_DELAY`, `PROVISIONER_FAILURE_ACTION`.
+
+**Bootstrap-level (tenacity)** — [`cloud/vast/provision_retry.py`](../../cloud/vast/provision_retry.py) mirrors `settings.retry` for network-heavy steps inside `bootstrap.sh`: Poetry install, DeepSpeed install, and bootstrap-phase `hf download`. This catches transient flakes without waiting 60s for a full manifest retry.
+
+Manual recovery (idempotent): `bash /workspace/VideoTuna/cloud/vast/bootstrap.sh`
+
 3. **SSH in** (preferred) or use the Jupyter terminal on port 8080.
 4. Wait for provisioning to finish:
    - Template marker: `/.provisioning_complete`
@@ -141,7 +159,7 @@ export RESUME_CKPT=/workspace/results/train/.../checkpoints/...
 | flash-attn build fail | `export VIDEOTUNA_ATTN_BACKEND=sdpa` in `.env`; do not run `install-flash-attn` |
 | DeepSpeed build fail | Check CUDA toolkit / nvcc; re-run `poetry run install-deepspeed` |
 | Wan grey preview | Use `unconditional_guidance_scale: 12.0` in training YAML `image_logger` |
-| Provisioning retry | Re-run `bash /workspace/VideoTuna/cloud/vast/bootstrap.sh` (idempotent) |
+| Provisioning retry | Manifest `on_failure` retries the whole pipeline (60s delay); bootstrap uses `provision_retry.py` for finer-grained retries on poetry/HF steps. Re-run `bash /workspace/VideoTuna/cloud/vast/bootstrap.sh` manually. |
 | Slow HF weight download | Set `VIDEOTUNA_FAST_HF_DOWNLOAD=1` at rent time (see [Fast model downloads](#fast-model-downloads-opt-in)) |
 
 ## G. Cost control

@@ -65,6 +65,8 @@ def test_no_hardcoded_secrets_in_cloud_vast():
             continue
         if path.name.endswith(".example"):
             continue
+        if "__pycache__" in path.parts or path.suffix == ".pyc":
+            continue
         text = path.read_text(encoding="utf-8")
         for pattern in SECRET_PATTERNS:
             match = pattern.search(text)
@@ -134,4 +136,23 @@ def test_bootstrap_enables_hf_xet_high_performance():
     assert "VIDEOTUNA_FAST_HF_DOWNLOAD" in text
     assert "HF_XET_HIGH_PERFORMANCE" in text
     assert "enable_fast_hf_download" in text
-    assert " download " in text
+    assert "provision_retry.py" in text
+
+
+def test_bootstrap_retry_artifacts_exist():
+    assert (CLOUD_VAST / "provision_retry.py").is_file()
+    assert (CLOUD_VAST / "bootstrap-requirements.txt").is_file()
+    reqs = (CLOUD_VAST / "bootstrap-requirements.txt").read_text(encoding="utf-8")
+    assert "tenacity" in reqs
+    assert "pyyaml" in reqs
+
+
+def test_provisioning_yaml_documents_retry_layers():
+    prov_path = CLOUD_VAST / "provisioning.yaml"
+    text = prov_path.read_text(encoding="utf-8")
+    assert "settings:" in text
+    assert "on_failure:" in text
+    assert "provision_retry.py" in text
+    data = yaml.safe_load(text)
+    assert data["settings"]["retry"]["max_attempts"] == 5
+    assert data["on_failure"]["action"] == "continue"
