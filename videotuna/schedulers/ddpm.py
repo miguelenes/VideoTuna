@@ -4,7 +4,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from videotuna.models.lvdm.modules.utils import (
+from videotuna.utils.sched_utils import (
     default,
     exists,
     noise_like,

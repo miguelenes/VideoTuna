@@ -3,7 +3,7 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-from videotuna.models.lvdm.modules.utils import extract_into_tensor, noise_like
+from videotuna.utils.sched_utils import extract_into_tensor, noise_like
 from videotuna.utils.diffusion_utils import (
     make_ddim_sampling_parameters,
     make_ddim_timesteps,

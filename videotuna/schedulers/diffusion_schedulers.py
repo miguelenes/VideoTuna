@@ -5,7 +5,7 @@ import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 
-from videotuna.models.lvdm.modules.utils import (
+from videotuna.utils.sched_utils import (
     default,
     exists,
     extract_into_tensor,
