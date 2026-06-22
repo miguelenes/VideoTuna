@@ -28,6 +28,24 @@ Never commit datasets, weights, API keys, or `results/` to git.
 | `WANDB_API_KEY` | optional |
 | `VIDEOTUNA_ATTN_BACKEND` | `auto` or `sdpa` if flash-attn not installed |
 
+### Fast model downloads (opt-in)
+
+Multi-GB first-boot pulls (FLUX.1-dev, Wan 2.1-T2V-14B) can dominate rental cost on datacenter GPUs with fast network and NVMe storage. PrivTune exposes an **opt-in** cloud knob:
+
+| Variable | Value |
+|----------|-------|
+| `VIDEOTUNA_FAST_HF_DOWNLOAD` | `1` |
+
+When set at **rent time**, bootstrap exports `HF_XET_HIGH_PERFORMANCE=1` (modern `hf-xet` high-bandwidth mode; **not** deprecated `hf_transfer`) and persists it into `.env` for training-time hub pulls.
+
+**Important:** `conditional_downloads` in the manifest run **before** `bootstrap.sh`. Set `VIDEOTUNA_FAST_HF_DOWNLOAD=1` when launching the instance so both manifest-phase and bootstrap-phase pulls benefit.
+
+**When to use:** datacenter GPU + NVMe, multi-GB weight pre-downloads.
+
+**Caveats:** higher CPU/RAM use; best on SSD/NVMe. On spinning disks, consider `HF_XET_RECONSTRUCT_WRITE_SEQUENTIALLY=1`. Leave unset for local dev (default adaptive `hf-xet` only).
+
+See [HF Xet env vars](https://huggingface.co/docs/huggingface_hub/en/package_reference/environment_variables#hfxethighperformance).
+
 Fallback imperative provisioner:
 
 ```text
@@ -120,6 +138,7 @@ export RESUME_CKPT=/workspace/results/train/.../checkpoints/...
 | DeepSpeed build fail | Check CUDA toolkit / nvcc; re-run `poetry run install-deepspeed` |
 | Wan grey preview | Use `unconditional_guidance_scale: 12.0` in training YAML `image_logger` |
 | Provisioning retry | Re-run `bash /workspace/VideoTuna/cloud/vast/bootstrap.sh` (idempotent) |
+| Slow HF weight download | Set `VIDEOTUNA_FAST_HF_DOWNLOAD=1` at rent time (see [Fast model downloads](#fast-model-downloads-opt-in)) |
 
 ## G. Cost control
 

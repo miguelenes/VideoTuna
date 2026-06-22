@@ -10,6 +10,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 log() { echo "[videotuna-bootstrap] $*"; }
 
+enable_fast_hf_download() {
+  if [[ "${VIDEOTUNA_FAST_HF_DOWNLOAD:-0}" == "1" ]]; then
+    export HF_XET_HIGH_PERFORMANCE=1
+    log "Fast HF downloads enabled (HF_XET_HIGH_PERFORMANCE=1 via VIDEOTUNA_FAST_HF_DOWNLOAD)"
+  fi
+}
+
 ensure_poetry() {
   export PATH="${HOME}/.local/bin:${PATH}"
   if command -v poetry >/dev/null 2>&1; then
@@ -80,6 +87,13 @@ EOF
     sed -i "s|^VIDEOTUNA_ATTN_BACKEND=.*|VIDEOTUNA_ATTN_BACKEND=${VIDEOTUNA_ATTN_BACKEND}|" \
       "${env_file}" || echo "VIDEOTUNA_ATTN_BACKEND=${VIDEOTUNA_ATTN_BACKEND}" >>"${env_file}"
   fi
+  if [[ "${VIDEOTUNA_FAST_HF_DOWNLOAD:-0}" == "1" ]]; then
+    if grep -q '^HF_XET_HIGH_PERFORMANCE=' "${env_file}"; then
+      sed -i "s|^HF_XET_HIGH_PERFORMANCE=.*|HF_XET_HIGH_PERFORMANCE=1|" "${env_file}"
+    else
+      echo "HF_XET_HIGH_PERFORMANCE=1" >>"${env_file}"
+    fi
+  fi
   log "Wrote ${env_file}"
 }
 
@@ -94,6 +108,9 @@ install_videotuna() {
 
   log "Running poetry install -E cuda --with training..."
   poetry install -E cuda --with training --no-interaction
+
+  poetry run python -c "import hf_xet" 2>/dev/null \
+    || log "WARNING: hf-xet not importable; HF downloads use fallback path"
 
   log "Installing DeepSpeed (required for Wan / CogVideoX LoRA)..."
   if ! poetry run install-deepspeed; then
@@ -165,6 +182,7 @@ run_smoke_validation() {
 
 main() {
   log "Starting VideoTuna bootstrap (workspace=${WORKSPACE})"
+  enable_fast_hf_download
   ensure_poetry
   setup_workspace_layout
   write_env_file

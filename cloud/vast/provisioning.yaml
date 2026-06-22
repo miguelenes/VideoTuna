@@ -33,6 +33,8 @@ git_repos:
     ref: main
     pull_if_exists: true
 
+# Manifest-phase HF pulls honor instance env HF_XET_HIGH_PERFORMANCE=1.
+# Set VIDEOTUNA_FAST_HF_DOWNLOAD=1 at rent time (bootstrap maps it for post_commands + .env).
 conditional_downloads:
   - when: hf_token_valid
     downloads:

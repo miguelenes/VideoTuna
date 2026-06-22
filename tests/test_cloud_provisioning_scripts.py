@@ -119,3 +119,19 @@ def test_supervisor_config_exists():
     text = conf.read_text(encoding="utf-8")
     assert "videotuna-train" in text
     assert "run-train.sh" in text
+
+
+def test_env_cloud_example_documents_fast_hf_download():
+    example = CLOUD_VAST / ".env.cloud.example"
+    text = example.read_text(encoding="utf-8")
+    assert "VIDEOTUNA_FAST_HF_DOWNLOAD" in text
+    assert "HF_XET_HIGH_PERFORMANCE" in text
+
+
+def test_bootstrap_enables_hf_xet_high_performance():
+    bootstrap = CLOUD_VAST / "bootstrap.sh"
+    text = bootstrap.read_text(encoding="utf-8")
+    assert "VIDEOTUNA_FAST_HF_DOWNLOAD" in text
+    assert "HF_XET_HIGH_PERFORMANCE" in text
+    assert "enable_fast_hf_download" in text
+    assert " download " in text
