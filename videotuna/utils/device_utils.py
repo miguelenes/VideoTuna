@@ -12,14 +12,16 @@ import torch
 import torch.version
 from loguru import logger
 
+from videotuna.settings import (
+    ENV_ALLOW_CPU_INFERENCE,
+    ENV_CPU_MODE,
+    get_settings,
+)
+
 ComputeBackend = Literal["cuda", "rocm", "cpu", "mps"]
 InferenceDtype = Literal["bf16", "fp16", "fp32"]
 FlowCapabilityTier = Literal["cpu_ok", "cpu_smoke", "gpu_required"]
 CpuMode = Literal["off", "smoke", "force"]
-
-_COMPUTE_BACKEND_ENV = "VIDEOTUNA_COMPUTE_BACKEND"
-_CPU_MODE_ENV = "VIDEOTUNA_CPU_MODE"
-_LEGACY_ALLOW_CPU_ENV = "VIDEOTUNA_ALLOW_CPU_INFERENCE"
 
 _DIFFUSERS_FLOW = "videotuna.flow.diffusers_video.DiffusersVideoFlow"
 _WAN_FLOW = "videotuna.flow.wanvideo.WanVideoModelFlow"
@@ -57,14 +59,9 @@ def _detect_compute_backend_raw() -> ComputeBackend:
 
 def detect_compute_backend() -> ComputeBackend:
     """Return the active compute backend (cuda, rocm, cpu, or mps)."""
-    requested = os.environ.get(_COMPUTE_BACKEND_ENV, "auto").strip().lower()
+    requested = get_settings().compute_backend
     if requested == "auto":
         return _detect_compute_backend_raw()
-    if requested not in ("cuda", "rocm", "cpu", "mps"):
-        raise ValueError(
-            f"Invalid {_COMPUTE_BACKEND_ENV}={requested!r}. "
-            "Expected auto, cuda, rocm, cpu, or mps."
-        )
     if requested == "mps":
         return "mps"
     if requested == "cpu":
@@ -138,20 +135,13 @@ def resolve_cpu_mode(*, cli_smoke: bool = False) -> CpuMode:
     """Resolve CPU inference mode from CLI flag, env, or legacy allow_cpu."""
     if cli_smoke:
         return "smoke"
-    raw = os.environ.get(_CPU_MODE_ENV, "off").strip().lower()
-    if raw in ("off", "smoke", "force"):
-        mode: CpuMode = raw  # type: ignore[assignment]
-    elif raw:
-        raise ValueError(
-            f"Invalid {_CPU_MODE_ENV}={raw!r}. Expected off, smoke, or force."
-        )
-    else:
-        mode = "off"
-    if os.environ.get(_LEGACY_ALLOW_CPU_ENV, "0") == "1":
+    settings = get_settings()
+    mode: CpuMode = settings.cpu_mode
+    if settings.allow_cpu_inference:
         logger.warning(
             "{} is deprecated; use {}=force or --cpu-smoke instead.",
-            _LEGACY_ALLOW_CPU_ENV,
-            _CPU_MODE_ENV,
+            ENV_ALLOW_CPU_INFERENCE,
+            ENV_CPU_MODE,
         )
         return "force"
     return mode
@@ -479,11 +469,11 @@ def _tiered_cpu_error_message(
     if tier == "gpu_required":
         lines.append(
             "  - Debug init only (≤256px, ≤2 frames): --cpu-smoke with a tiny preset\n"
-            f"  - Full override (not recommended): {_CPU_MODE_ENV}=force\n"
+            f"  - Full override (not recommended): {ENV_CPU_MODE}=force\n"
         )
     elif tier == "cpu_smoke" and cpu_mode == "off":
         lines.append(
-            f"  - Enable CPU smoke: --cpu-smoke or {_CPU_MODE_ENV}=smoke\n"
+            f"  - Enable CPU smoke: --cpu-smoke or {ENV_CPU_MODE}=smoke\n"
         )
     lines.append("See docs/install-cpu.md and docs/capability-matrix.md.")
     return "".join(lines)

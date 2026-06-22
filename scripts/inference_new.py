@@ -11,6 +11,7 @@ from pytorch_lightning import seed_everything
 sys.path.insert(0, os.getcwd())
 sys.path.insert(1, f"{os.getcwd()}/src")
 
+from videotuna.settings import get_settings
 from videotuna.base.generation_base import GenerationBase
 from videotuna.utils.args_utils import prepare_inference_args
 from videotuna.utils.attention import (
@@ -302,7 +303,7 @@ def _run_inference_impl(args, gpu_num=1, rank=0, **kwargs):
         resolve_offload_mode(inference_config),
         attn_backend_requested=get_attn_backend_requested(),
         memory_preset=getattr(inference_config, "memory_preset", None),
-        compile_enabled=os.environ.get("VIDEOTUNA_TORCH_COMPILE", "0") == "1",
+        compile_enabled=get_settings().torch_compile,
         compile_mode=get_torch_compile_mode(),
     )
 
@@ -337,7 +338,7 @@ def _run_inference_impl(args, gpu_num=1, rank=0, **kwargs):
     )(flow.inference)
     metrics = decorated_inference(inference_config)
     if metrics and inference_config.savedir:
-        if os.environ.get("VIDEOTUNA_METRICS_OWNER", "script") == "script":
+        if get_settings().metrics_owner == "script":
             save_metrics(
                 metrics=metrics,
                 savedir=inference_config.savedir,

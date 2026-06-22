@@ -2,12 +2,12 @@
 
 import argparse
 import logging
-from os import environ
 
+from videotuna.settings import get_settings
 from videotuna.training.flux_lora.train import run_training
 
 logger = logging.getLogger("FluxLoraTrainer")
-logger.setLevel(environ.get("VIDEOTUNA_LOG_LEVEL", "INFO"))
+logger.setLevel(get_settings().log_level)
 
 
 def main(args: argparse.Namespace) -> None:

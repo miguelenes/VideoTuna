@@ -1,11 +1,7 @@
 """
 Unified attention backend selection for VideoTuna model families.
 
-Environment variables:
-    VIDEOTUNA_ATTN_BACKEND: auto | flash | sdpa | eager  (default: auto)
-    VIDEOTUNA_ATTN_BACKEND_STRICT: 0 | 1  (default: 0)
-    VIDEOTUNA_TORCH_COMPILE: 0 | 1  (default: 0)
-    VIDEOTUNA_TORCH_COMPILE_MODE: reduce-overhead | max-autotune  (default: reduce-overhead)
+See ``videotuna.settings.PrivTuneSettings`` for VIDEOTUNA_* env vars.
 """
 
 from __future__ import annotations
@@ -21,15 +17,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 from loguru import logger
 
+from videotuna.settings import ENV_ATTN_BACKEND, get_settings
 from videotuna.utils.device_utils import detect_compute_backend, gpu_is_available
 
 AttnBackend = Literal["flash", "sdpa", "eager"]
 AttnLayout = Literal["bsnd", "bhsd"]
-
-_ATTN_BACKEND_ENV = "VIDEOTUNA_ATTN_BACKEND"
-_TORCH_COMPILE_ENV = "VIDEOTUNA_TORCH_COMPILE"
-_TORCH_COMPILE_MODE_ENV = "VIDEOTUNA_TORCH_COMPILE_MODE"
-_VALID_COMPILE_MODES = ("reduce-overhead", "max-autotune")
 
 def _optional_attr(module_name: str, attr_name: str):
     try:
@@ -63,12 +55,13 @@ def _resolve_auto_backend() -> AttnBackend:
 
 def get_attn_backend_requested() -> str:
     """Return the attention backend requested via env (before fallback)."""
-    return os.environ.get(_ATTN_BACKEND_ENV, "auto").strip().lower()
+    return get_settings().attn_backend
 
 
 def get_attn_backend() -> AttnBackend:
     """Resolve the active attention backend from env or auto-detection."""
-    requested = os.environ.get(_ATTN_BACKEND_ENV, "auto").strip().lower()
+    settings = get_settings()
+    requested = settings.attn_backend
     if requested == "auto":
         return _resolve_auto_backend()
     if requested in ("flash", "sdpa", "eager"):
@@ -81,8 +74,7 @@ def get_attn_backend() -> AttnBackend:
                     "See docs/install-rocm.md or docs/install-cpu.md."
                 )
             if not _FLASH_ATTN_AVAILABLE:
-                strict = os.environ.get("VIDEOTUNA_ATTN_BACKEND_STRICT", "0") == "1"
-                if strict:
+                if settings.attn_backend_strict:
                     raise RuntimeError(
                         "VIDEOTUNA_ATTN_BACKEND=flash requires flash-attn. "
                         "Install with: poetry run install-flash-attn"
@@ -97,7 +89,7 @@ def get_attn_backend() -> AttnBackend:
             return "eager"
         return requested  # type: ignore[return-value]
     raise ValueError(
-        f"Invalid {_ATTN_BACKEND_ENV}={requested!r}. "
+        f"Invalid {ENV_ATTN_BACKEND}={requested!r}. "
         "Expected auto, flash, sdpa, or eager."
     )
 
@@ -108,15 +100,7 @@ def get_resolved_attn_backend() -> AttnBackend:
 
 
 def get_torch_compile_mode() -> str:
-    mode = os.environ.get(_TORCH_COMPILE_MODE_ENV, "reduce-overhead").strip()
-    if mode not in _VALID_COMPILE_MODES:
-        logger.warning(
-            "Invalid {}={!r}; using reduce-overhead",
-            _TORCH_COMPILE_MODE_ENV,
-            mode,
-        )
-        return "reduce-overhead"
-    return mode
+    return get_settings().torch_compile_mode
 
 
 def _to_bhsd(
@@ -371,7 +355,7 @@ _COMPILE_WARNED_ROCM = False
 def maybe_compile_denoiser(module: nn.Module) -> nn.Module:
     """Optionally compile a denoiser module when VIDEOTUNA_TORCH_COMPILE=1."""
     global _COMPILE_WARNED_ROCM
-    if os.environ.get(_TORCH_COMPILE_ENV, "0") != "1":
+    if not get_settings().torch_compile:
         return module
     if not gpu_is_available():
         return module

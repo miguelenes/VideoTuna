@@ -15,6 +15,7 @@ from colorama import Fore, Style
 from loguru import logger
 from omegaconf import DictConfig, OmegaConf
 
+from videotuna.settings import get_settings
 from videotuna.utils.attention import (
     get_attn_backend_requested,
     get_resolved_attn_backend,
@@ -271,7 +272,7 @@ def monitor_resources(
                 sample["attention_backend_requested"] = get_attn_backend_requested()
                 sample["attention_backend_resolved"] = get_resolved_attn_backend()
                 sample["compute_backend"] = detect_compute_backend()
-                compile_on = os.environ.get("VIDEOTUNA_TORCH_COMPILE", "0") == "1"
+                compile_on = get_settings().torch_compile
                 sample["torch_compile"] = compile_on
                 sample["compile_mode"] = get_torch_compile_mode() if compile_on else None
                 sample["result"] = result
@@ -343,7 +344,7 @@ def save_metrics(
             "attention_backend": get_resolved_attn_backend(),
             "attention_backend_requested": get_attn_backend_requested(),
             "attention_backend_resolved": get_resolved_attn_backend(),
-            "torch_compile": os.environ.get("VIDEOTUNA_TORCH_COMPILE", "0") == "1",
+            "torch_compile": get_settings().torch_compile,
         }
         if config is not None:
             metrics["offload_mode"] = resolve_offload_mode(config)

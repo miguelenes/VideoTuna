@@ -11,9 +11,12 @@ from omegaconf import DictConfig, OmegaConf
 
 from videotuna.utils.memory_presets import apply_memory_preset
 
-_CPU_MODE_ENV = "VIDEOTUNA_CPU_MODE"
-_ATTN_BACKEND_ENV = "VIDEOTUNA_ATTN_BACKEND"
-_TORCH_COMPILE_ENV = "VIDEOTUNA_TORCH_COMPILE"
+from videotuna.settings import (
+    ENV_ATTN_BACKEND,
+    ENV_CPU_MODE,
+    ENV_TORCH_COMPILE,
+    get_settings,
+)
 
 
 def add_standard_inference_flags(
@@ -130,19 +133,19 @@ def add_standard_inference_flags(
 
 def apply_compile_env(compile_flag: bool) -> None:
     """Set VIDEOTUNA_TORCH_COMPILE before model load when --compile is passed."""
-    if os.environ.get(_CPU_MODE_ENV) == "smoke":
-        os.environ[_TORCH_COMPILE_ENV] = "0"
+    if get_settings().cpu_mode == "smoke":
+        os.environ[ENV_TORCH_COMPILE] = "0"
         return
-    os.environ[_TORCH_COMPILE_ENV] = "1" if compile_flag else "0"
+    os.environ[ENV_TORCH_COMPILE] = "1" if compile_flag else "0"
 
 
 def apply_cpu_smoke_env(args: argparse.Namespace) -> None:
     """Set environment for CPU smoke mode from --cpu-smoke."""
     if not getattr(args, "cpu_smoke", False):
         return
-    os.environ[_CPU_MODE_ENV] = "smoke"
-    os.environ[_ATTN_BACKEND_ENV] = "eager"
-    os.environ[_TORCH_COMPILE_ENV] = "0"
+    os.environ[ENV_CPU_MODE] = "smoke"
+    os.environ[ENV_ATTN_BACKEND] = "eager"
+    os.environ[ENV_TORCH_COMPILE] = "0"
 
 
 def validate_cpu_offload_flags(args: Any) -> None:

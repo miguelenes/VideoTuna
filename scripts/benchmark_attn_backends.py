@@ -22,6 +22,7 @@ from typing import Any, Dict, List
 import torch
 from diffusers import WanPipeline
 
+from videotuna.settings import ENV_ATTN_BACKEND, get_settings
 from videotuna.utils.attention import (
     apply_diffusers_attention_backend,
     is_flash_attn_available,
@@ -81,7 +82,7 @@ def _run_backend(
     num_frames: int = DEFAULT_NUM_FRAMES,
     enable_offload: bool = False,
 ) -> Dict[str, Any]:
-    os.environ["VIDEOTUNA_ATTN_BACKEND"] = backend
+    os.environ[ENV_ATTN_BACKEND] = backend
 
     if not gpu_is_available():
         raise RuntimeError(
@@ -213,9 +214,7 @@ def main(argv: List[str] | None = None) -> int:  # noqa: C901
     args = parser.parse_args(argv)
 
     _verify_torch_vision_stack()
-    model_path = args.model_path or os.environ.get(
-        "VIDEOTUNA_BENCH_MODEL", DEFAULT_MODEL
-    )
+    model_path = args.model_path or get_settings().bench_model or DEFAULT_MODEL
 
     compute_backend = detect_compute_backend()
     backends = args.backends or ["eager", "sdpa"]
