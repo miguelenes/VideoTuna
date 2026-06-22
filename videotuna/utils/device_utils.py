@@ -84,3 +84,24 @@ def checkpoints_exist(path: str | None) -> bool:
 
     p = Path(path)
     return p.exists() and (p.is_dir() or p.is_file())
+
+
+def looks_like_hf_model_id(path: str) -> bool:
+    """True for org/model repo ids that are not local paths."""
+    if not path or path.startswith(("/", "./", "../")):
+        return False
+    if Path(path).exists():
+        return False
+    parts = path.replace("\\", "/").split("/")
+    return len(parts) == 2 and all(parts) and " " not in path
+
+
+def checkpoint_available(path: str | None, *, flow_target: str = "") -> bool:
+    """Local checkpoint exists, or path is a Hugging Face model id."""
+    if not path:
+        return True
+    if checkpoints_exist(path):
+        return True
+    if "diffusers_video" in flow_target and looks_like_hf_model_id(path):
+        return True
+    return looks_like_hf_model_id(path)

@@ -1,0 +1,24 @@
+flow:
+  target: videotuna.flow.diffusers_video.DiffusersVideoFlow
+  params:
+    model_family: cogvideox
+    mode: t2v
+    pipeline_only: true
+    model_variant: "1.5"
+    pretrained_model_name_or_path: THUDM/CogVideoX1.5-5B
+inference:
+  mode: t2v
+  ckpt_path: THUDM/CogVideoX1.5-5B
+  savedir: results/t2v/cogvideox1.5-5b
+  prompt_file: inputs/t2v/prompts.txt
+  frames: 81
+  height: 768
+  width: 1360
+  num_inference_steps: 50
+  unconditional_guidance_scale: 6.0
+  seed: 42
+  savefps: 16
+  enable_model_cpu_offload: true
+  enable_vae_tiling: true
+  enable_vae_slicing: true
+  dtype: bf16

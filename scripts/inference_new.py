@@ -24,7 +24,10 @@ from videotuna.utils.common_utils import (
     monitor_resources,
     save_metrics,
 )
-from videotuna.utils.device_utils import checkpoints_exist, require_nvidia_cuda_for_flow
+from videotuna.utils.device_utils import (
+    checkpoint_available,
+    require_nvidia_cuda_for_flow,
+)
 from videotuna.utils.fp8_utils import validate_fp8_inference
 from videotuna.utils.inference_cli import (
     add_standard_inference_flags,
@@ -193,6 +196,12 @@ def get_parser():
         default=None,
         help="target resolution",
     )
+    parser.add_argument(
+        "--lora_rank",
+        type=int,
+        default=None,
+        help="LoRA rank for CogVideoX adapter scaling (default: 128).",
+    )
     add_standard_inference_flags(parser)
     return parser
 
@@ -224,11 +233,11 @@ def run_inference(args, gpu_num=1, rank=0, **kwargs):
     require_nvidia_cuda_for_flow(flow_target, allow_cpu=allow_cpu)
 
     ckpt_path = getattr(inference_config, "ckpt_path", None)
-    if ckpt_path and not checkpoints_exist(ckpt_path):
+    if ckpt_path and not checkpoint_available(ckpt_path, flow_target=flow_target):
         raise FileNotFoundError(
             f"Checkpoint path not found: {ckpt_path}\n"
-            "Download model weights into checkpoints/ before running inference. "
-            "See README.md for checkpoint setup."
+            "Download model weights into checkpoints/ or pass a Hugging Face model id "
+            "(org/model). See docs/checkpoints.md for setup."
         )
 
     # 1. create flow

@@ -100,10 +100,15 @@ def instantiate_from_config(config, resolve=False):
         elif config == "__is_unconditional__":
             return None
         raise KeyError("Expected key `target` to instantiate.")
+    target = config["target"]
+    is_videotuna_diffusers_flow = target.endswith("DiffusersVideoFlow")
     if (
-        "diffusers" in config["target"]
-        or config["target"].startswith("transformers")
-        or config.get("use_from_pretrained", False)
+        not is_videotuna_diffusers_flow
+        and (
+            "diffusers" in target
+            or target.startswith("transformers")
+            or config.get("use_from_pretrained", False)
+        )
     ):
         params = get_params(config, resolve)
         if isinstance(params.get("pretrained_model_name_or_path"), str):

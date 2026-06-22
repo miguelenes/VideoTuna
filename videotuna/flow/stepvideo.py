@@ -453,8 +453,8 @@ class StepVideoModelFlow(GenerationBase):
             tp_applicator.apply_to_model(self.denoiser)
 
     def training_step(self, batch, batch_idx):
-        model_offload: bool = (True,)
-        dtype: torch.dtype = (torch.bfloat16,)
+        model_offload: bool = True
+        dtype: torch.dtype = torch.bfloat16
         device: str = "cuda"
         first_stage_key = self.first_stage_key
         cond_stage_key = self.cond_stage_key

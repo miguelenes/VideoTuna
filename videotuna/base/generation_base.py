@@ -21,6 +21,8 @@ from videotuna.utils.common_utils import (
     print_green,
     print_yellow,
 )
+from peft import get_peft_model
+
 from videotuna.utils.lora_utils import (
     collect_lora_parameter_names,
     resolve_lora_target_modules,
@@ -69,13 +71,14 @@ class GenerationBase(TrainBase, InferenceBase):
 
     def __init__(
         self,
-        first_stage_config: Dict[str, Any],
-        cond_stage_config: Dict[str, Any],
-        denoiser_config: Dict[str, Any],
+        first_stage_config: Optional[Dict[str, Any]] = None,
+        cond_stage_config: Optional[Dict[str, Any]] = None,
+        denoiser_config: Optional[Dict[str, Any]] = None,
         scheduler_config: Dict[str, Any] = None,
         cond_stage_2_config: Dict[str, Any] = None,
         lora_config: Dict[str, Any] = None,
         trainable_components: Union[str, List[str]] = [],
+        pipeline_only: bool = False,
     ):
         """
         Initializes the GenerationFlow class with configurations for different stages and components.
@@ -86,11 +89,17 @@ class GenerationBase(TrainBase, InferenceBase):
         :param denoiser_config: Dictionary containing configuration for the denoiser model.
         :param scheduler_config: Dictionary containing configuration for the diffusion scheduler.
         :param trainable_components: The components of the model that should be trainable.
+        :param pipeline_only: When True, skip stage instantiation (Diffusers pipeline flows).
         """
         super().__init__()
 
         # instantiate the modules
         self.components = []
+        self.pipeline_only = pipeline_only
+        if pipeline_only:
+            self.use_lora = False
+            self.pipeline = None
+            return
         # 1. denoiser
         self.instantiate_denoiser(denoiser_config)
 
@@ -140,6 +149,9 @@ class GenerationBase(TrainBase, InferenceBase):
             self.denoiser = get_peft_model(self.denoiser, transformer_adapter_config)
             self.lora_params = collect_lora_parameter_names(self.denoiser)
             self.denoiser.requires_grad_(False)
+            for name, param in self.denoiser.named_parameters():
+                if name in self.lora_params:
+                    param.requires_grad_(True)
             self.use_lora = True
             self.lora_path = config.get("ckpt_path")
             logger.info(

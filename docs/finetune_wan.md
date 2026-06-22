@@ -32,6 +32,8 @@ Make sure the data is putted at `data/apply_lipstick/metadata.csv`
 mkdir -p checkpoints/wan
 hf download Wan-AI/Wan2.1-T2V-14B --local-dir checkpoints/wan/Wan2.1-T2V-14B
 hf download Wan-AI/Wan2.1-I2V-14B-480P --local-dir checkpoints/wan/Wan2.1-I2V-14B-480P
+hf download Wan-AI/Wan2.2-T2V-A14B --local-dir checkpoints/wan/Wan2.2-T2V-A14B
+hf download Wan-AI/Wan2.2-I2V-A14B --local-dir checkpoints/wan/Wan2.2-I2V-A14B
 ```
 
 Verify the download:

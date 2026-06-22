@@ -1,0 +1,22 @@
+flow:
+  target: videotuna.flow.diffusers_video.DiffusersVideoFlow
+  params:
+    model_family: ltx
+    mode: t2v
+    pipeline_only: true
+    pretrained_model_name_or_path: Lightricks/LTX-Video
+inference:
+  mode: t2v
+  ckpt_path: Lightricks/LTX-Video
+  savedir: results/t2v/ltx-video
+  prompt_file: inputs/t2v/prompts.txt
+  frames: 121
+  height: 512
+  width: 768
+  num_inference_steps: 50
+  unconditional_guidance_scale: 5.0
+  seed: 42
+  savefps: 24
+  enable_model_cpu_offload: true
+  enable_vae_tiling: true
+  dtype: bf16

@@ -45,9 +45,7 @@ def _kappa_targets(model: nn.Module) -> List[str]:
 
 
 def collect_lora_parameter_names(model: nn.Module) -> set[str]:
-    """Return trainable parameter names that belong to LoRA adapters."""
+    """Return parameter names that belong to LoRA adapters."""
     return {
-        name
-        for name, param in model.named_parameters()
-        if param.requires_grad and "lora" in name.lower()
+        name for name, _ in model.named_parameters() if "lora" in name.lower()
     }

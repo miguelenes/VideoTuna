@@ -300,7 +300,7 @@ class TextEmbeddingCache(WebhookMixin):
         Returns:
             Tuple of (prompt_embeds, pooled_prompt_embeds).
         """
-        from videotuna.third_party.flux.models.flux import FluxPipeline
+        from diffusers import FluxPipeline
 
         pipe = FluxPipeline(
             self.pipeline.scheduler,

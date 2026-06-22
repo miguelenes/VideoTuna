@@ -12,6 +12,11 @@ This document contains commands for preparing model checkpoints and the final ch
 |Mochi|848x480, 3s|[Hugging Face](https://huggingface.co/genmo/mochi-1-preview)
 |CogVideoX-2B|480x720x49|[Hugging Face](https://huggingface.co/THUDM/CogVideoX-2b)
 |CogVideoX-5B|480x720x49|[Hugging Face](https://huggingface.co/THUDM/CogVideoX-5b)
+|CogVideoX1.5-5B|768x1360x81|[Hugging Face](https://huggingface.co/THUDM/CogVideoX1.5-5B)
+|HunyuanVideo-1.5|720x1280x121|[Hugging Face](https://huggingface.co/hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-720p_t2v)
+|Wan2.2-T2V-A14B|720x1280x81|[Hugging Face](https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B-Diffusers)
+|FLUX.2-dev|T2I 768x1360|[Hugging Face](https://huggingface.co/black-forest-labs/FLUX.2-dev)
+|LTX-Video|512x768x121|[Hugging Face](https://huggingface.co/Lightricks/LTX-Video)
 |Open-Sora 1.0|512×512x16|[Hugging Face](https://huggingface.co/hpcai-tech/Open-Sora/blob/main/OpenSora-v1-HQ-16x512x512.pth)
 |Open-Sora 1.0|256×256x16|[Hugging Face](https://huggingface.co/hpcai-tech/Open-Sora/blob/main/OpenSora-v1-HQ-16x256x256.pth)
 |Open-Sora 1.0|256×256x16|[Hugging Face](https://huggingface.co/hpcai-tech/Open-Sora/blob/main/OpenSora-v1-16x256x256.pth)
@@ -22,10 +27,32 @@ This document contains commands for preparing model checkpoints and the final ch
 |I2V-Models|HxWxL|Checkpoints|
 |:---------|:---------|:--------|
 |CogVideoX-5B-I2V|480x720x49|[Hugging Face](https://huggingface.co/THUDM/CogVideoX-5b-I2V)
+|CogVideoX1.5-5B-I2V|768x1360x81|[Hugging Face](https://huggingface.co/THUDM/CogVideoX1.5-5B-I2V)
+|Wan2.2-I2V-A14B|720x1280x81|[Hugging Face](https://huggingface.co/Wan-AI/Wan2.2-I2V-A14B-Diffusers)
+|HunyuanVideo-1.5-I2V|720x1280x121|[Hugging Face](https://huggingface.co/hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-720p_i2v)
 |DynamiCrafter|576x1024x16|[Hugging Face](https://huggingface.co/Doubiiu/DynamiCrafter_1024/blob/main/model.ckpt)|
 |VideoCrafter1|320x512x16|[Hugging Face](https://huggingface.co/VideoCrafter/Image2Video-512/blob/main/model.ckpt)|
 
 * Note: H: height; W: width; L: length
+
+### 1.1 Diffusers hub vs local checkpoints
+
+CogVideoX, Flux, Mochi, Wan, Hunyuan 1.5, and LTX **inference presets** in [`configs/inference/`](../configs/inference/) default to Hugging Face hub IDs. Diffusers downloads weights into the HF cache on first run — you do not need to clone into `checkpoints/` unless you want fully offline runs.
+
+See [MODEL_VERSIONS.md](MODEL_VERSIONS.md) for the full upgrade matrix.
+
+| Use case | Command |
+|----------|---------|
+| CogVideoX 1.5 T2V (default) | `poetry run inference-cogvideox1.5-t2v` |
+| CogVideoX 2b smoke / CI | `poetry run inference-cogvideo-t2v-diffusers` |
+| FLUX.2 T2I (default) | `poetry run inference-flux2-dev` |
+| FLUX.1 legacy | `poetry run inference-flux-dev` |
+| Wan 2.2 Diffusers | `poetry run inference-wan2.2-t2v-720p` |
+| HunyuanVideo 1.5 | `poetry run inference-hunyuan1.5-t2v` |
+| Local / offline override | `--ckpt_path /path/to/hub-clone` on `inference_new.py` |
+| LoRA (CogVideoX / Flux) | Add `--lorackpt /path/to/lora` to `inference_new.py` |
+
+CogVideoX **1.5 SAT** weights remain local-only under `checkpoints/cogvideo/CogVideoX1.5-5B-SAT` (deprecated; prefer Diffusers hub IDs above).
 
 
 ### 2. Download checkpoints
@@ -86,10 +113,17 @@ huggingface-cli download stepfun-ai/stepvideo-t2v --local-dir ./stepvideo-t2v
 cd ../..
 
 # ---- Wan ----
-mkdir checkpoints/wan/
+mkdir -p checkpoints/wan/
 cd checkpoints/wan
+hf download Wan-AI/Wan2.2-T2V-A14B --local-dir ./Wan2.2-T2V-A14B
+hf download Wan-AI/Wan2.2-I2V-A14B --local-dir ./Wan2.2-I2V-A14B
 hf download Wan-AI/Wan2.1-T2V-14B --local-dir ./Wan2.1-T2V-14B
+hf download Wan-AI/Wan2.1-I2V-14B-720P --local-dir ./Wan2.1-I2V-14B-720P
 cd ../..
+
+# ---- Open-Sora 2.0 ----
+mkdir -p checkpoints/open-sora/v2
+hf download hpcai-tech/Open-Sora-v2 --local-dir checkpoints/open-sora/v2
 
 
 # ---- HunyuanVideo ----

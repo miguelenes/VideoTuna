@@ -62,6 +62,16 @@ def add_standard_inference_flags(
             action="store_true",
             help="torch.compile the denoiser (sets VIDEOTUNA_TORCH_COMPILE=1).",
         )
+    parser.add_argument(
+        "--fuse_qkv",
+        action="store_true",
+        help="Fuse QKV projections on the Diffusers pipeline when supported.",
+    )
+    parser.add_argument(
+        "--enable_attention_cache",
+        action="store_true",
+        help="Enable transformer attention cache when supported by the pipeline.",
+    )
     if include_fp8:
         parser.add_argument(
             "--enable_fp8",

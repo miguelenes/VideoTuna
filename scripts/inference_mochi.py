@@ -1,42 +1,39 @@
-import argparse
+"""Deprecated: use scripts/inference_new.py --config configs/inference/mochi_t2v.yaml"""
+
 import os
+import sys
 
-import torch
-from diffusers import MochiPipeline
-from diffusers.utils import export_to_video
+sys.path.insert(0, os.getcwd())
 
-# create arg parser
-parser = argparse.ArgumentParser()
-parser.add_argument("--ckpt_path", type=str, default="genmo/mochi-1-preview")
-parser.add_argument("--prompt_file", type=str, default="inputs/t2v/prompts.txt")
-parser.add_argument("--savedir", type=str, default="results/t2v/")
-parser.add_argument("--height", type=int, default=480)
-parser.add_argument("--width", type=int, default=848)
-parser.add_argument("--bs", type=int, default=1)
-parser.add_argument("--fps", type=int, default=28)
-parser.add_argument("--seed", type=int, default=123)
+from videotuna.utils.diffusers_inference_shim import run_diffusers_inference
 
-args = parser.parse_args()
-
-os.makedirs(args.savedir, exist_ok=True)
-
-pipe = MochiPipeline.from_pretrained(
-    "genmo/mochi-1-preview", variant="bf16", dtype=torch.bfloat16
-)
-# Enable memory savings
-pipe.enable_model_cpu_offload()
-pipe.enable_vae_tiling()
-
-# there are many prompts in the prompt_file, we need to read them all
-with open(args.prompt_file, "r") as file:
-    prompts = file.readlines()
-
-# set seed
-torch.manual_seed(args.seed)
-
-for index, prompt in enumerate(prompts):
-
-    with torch.autocast("cuda", torch.bfloat16, cache_enabled=False):
-        frames = pipe(prompt, num_frames=84).frames[0]
-
-    export_to_video(frames, f"{args.savedir}/mochi_{index}.mp4", fps=30)
+if __name__ == "__main__":
+    config = "configs/inference/mochi_t2v.yaml"
+    extra = []
+    argv = sys.argv[1:]
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg in ("--ckpt_path", "--model_path") and i + 1 < len(argv):
+            extra.extend(["--ckpt_path", argv[i + 1]])
+            i += 2
+            continue
+        if arg == "--prompt_file" and i + 1 < len(argv):
+            extra.extend(["--prompt_file", argv[i + 1]])
+            i += 2
+            continue
+        if arg == "--savedir" and i + 1 < len(argv):
+            extra.extend(["--savedir", argv[i + 1]])
+            i += 2
+            continue
+        if arg == "--fps" and i + 1 < len(argv):
+            extra.extend(["--savefps", argv[i + 1]])
+            i += 2
+            continue
+        if arg.startswith("--") and i + 1 < len(argv):
+            extra.extend([arg, argv[i + 1]])
+            i += 2
+            continue
+        extra.append(arg)
+        i += 1
+    sys.exit(run_diffusers_inference(config, extra))

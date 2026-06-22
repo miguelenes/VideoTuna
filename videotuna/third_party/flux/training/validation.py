@@ -19,27 +19,17 @@ from PIL import Image, ImageDraw, ImageFont
 from tqdm import tqdm
 
 from videotuna.third_party.flux.image_manipulation.brightness import calculate_luminance
-from videotuna.third_party.flux.models.sdxl.pipeline import (
+from diffusers import (
+    FluxPipeline,
+    PixArtSigmaPipeline,
+    StableDiffusion3Img2ImgPipeline,
+    StableDiffusion3Pipeline,
     StableDiffusionXLImg2ImgPipeline,
     StableDiffusionXLPipeline,
 )
 from videotuna.third_party.flux.multiaspect.image import MultiaspectImage
 from videotuna.third_party.flux.training.state_tracker import StateTracker
 from videotuna.third_party.flux.training.wrappers import unwrap_model
-
-logger = logging.getLogger(__name__)
-logger.setLevel(os.environ.get("SIMPLETUNER_LOG_LEVEL") or "INFO")
-
-try:
-    from videotuna.third_party.flux.models.sd3.pipeline import (
-        StableDiffusion3Img2ImgPipeline,
-        StableDiffusion3Pipeline,
-    )
-except ImportError:
-    logger.error(
-        "Stable Diffusion 3 not available in this release of Diffusers. Please upgrade."
-    )
-    raise ImportError()
 
 SCHEDULER_NAME_MAP = {
     "euler": EulerDiscreteScheduler,
@@ -536,8 +526,6 @@ class Validation:
                 return StableDiffusionXLImg2ImgPipeline
             return StableDiffusionXLPipeline
         elif model_type == "flux":
-            from videotuna.third_party.flux.models.flux import FluxPipeline
-
             if self.args.controlnet:
                 raise NotImplementedError("Flux ControlNet is not yet supported.")
             if self.args.validation_using_datasets:
@@ -561,10 +549,6 @@ class Validation:
                 raise Exception(
                     "PixArt Sigma inference validation using img2img is not yet supported. Please remove --validation_using_datasets."
                 )
-            from videotuna.third_party.flux.models.pixart.pipeline import (
-                PixArtSigmaPipeline,
-            )
-
             return PixArtSigmaPipeline
         elif model_type == "smoldit":
             from videotuna.third_party.flux.models.smoldit import SmolDiTPipeline

@@ -1,0 +1,22 @@
+flow:
+  target: videotuna.flow.diffusers_video.DiffusersVideoFlow
+  params:
+    model_family: hunyuan
+    mode: i2v
+    pipeline_only: true
+    model_variant: "720p"
+    pretrained_model_name_or_path: hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-720p_i2v
+inference:
+  mode: i2v
+  ckpt_path: hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-720p_i2v
+  savedir: results/i2v/hunyuanvideo1.5-720p
+  prompt_dir: inputs/i2v/576x1024
+  frames: 121
+  height: 720
+  width: 1280
+  num_inference_steps: 50
+  seed: 42
+  savefps: 24
+  enable_model_cpu_offload: true
+  enable_vae_tiling: true
+  dtype: bf16

@@ -196,15 +196,47 @@ Run the following commands to inference models:
 It will automatically perform T2V/T2I based on prompts in `inputs/t2v/prompts.txt`, 
 and I2V based on images and prompts in `inputs/i2v/576x1024`.  
 
+**Diffusers models** (CogVideoX, Flux, Mochi, Wan 2.2, HunyuanVideo 1.5, LTX) use `scripts/inference_new.py` with presets under `configs/inference/`. Weights default to Hugging Face hub IDs; override with `--ckpt_path` for offline use. See [docs/MODEL_VERSIONS.md](docs/MODEL_VERSIONS.md).
+
+### Upgrade notes
+
+| From | To | Migration |
+|------|-----|-----------|
+| CogVideoX 1.5 SAT | Diffusers 1.5 | `poetry run inference-cogvideox1.5-t2v` (81 frames, 16 fps, 768×1360) |
+| CogVideoX 5b default | 1.5 default | Old IDs via `--ckpt_path` or `model_variant: 5b` in YAML |
+| FLUX.1 aliases | FLUX.2 default | `inference-flux-dev` → FLUX.1; `inference-flux2-dev` → FLUX.2 |
+| Wan 2.1 native | Wan 2.2 | Diffusers: `inference-wan2.2-t2v-720p`; native: `configs/008_wanvideo/wan2_2_*` |
+| HunyuanVideo | HunyuanVideo 1.5 | `inference-hunyuan1.5-t2v`; native fp8 path not yet on 1.5 |
+| Open-Sora v1 | Open-Sora 2.0 | `poetry run inference-opensora-v2` + `checkpoints/open-sora/v2` |
+
+### CI smoke
+
+```bash
+poetry run python scripts/inference_new.py \
+  --config configs/inference/cogvideox_t2v_2b.yaml \
+  --num_inference_steps 4 --enable_model_cpu_offload
+poetry run pytest tests/test_inference_optimization.py tests/test_import_smoke.py -q
+```
+
+```bash
+poetry run python scripts/inference_new.py --config configs/inference/cogvideox1.5_t2v_5b.yaml --num_inference_steps 4 --enable_model_cpu_offload
+poetry run inference-flux2-dev --enable_model_cpu_offload --num_inference_steps 4
+```
+
 **T2V**
 Task|Model|Command|Length (#Frames)|Resolution|Inference Time|GPU Memory (GB)|
 |:---------|:---------|:---------|:---------|:---------|:---------|:---------|
 |T2V|HunyuanVideo|`poetry run inference-hunyuan-t2v`|129|720x1280|32min|60G|
 |T2V|WanVideo|`poetry run inference-wanvideo-t2v-720p`|81|720x1280|32min|70G|
 |T2V|StepVideo|`poetry run inference-stepvideo-t2v-544x992`|51|544x992|8min|61G|
-|T2V|Mochi|`poetry run inference-mochi`|84|480x848|2min|26G|
-|T2V|CogVideoX-5b|`poetry run inference-cogvideo-t2v-diffusers`|49|480x720|2min|3G|
-|T2V|CogVideoX-2b|`poetry run inference-cogvideo-t2v-diffusers`|49|480x720|2min|3G|
+|T2V|Mochi|`poetry run inference-mochi`|84|480x848|2min|26G (offload+tiling in preset)|
+|T2V|CogVideoX1.5-5b|`poetry run inference-cogvideox1.5-t2v`|81|768x1360|~5min|24G (offload)|
+|T2V|Wan 2.2 Diffusers|`poetry run inference-wan2.2-t2v-720p`|81|720x1280|TBD|offload preset|
+|T2V|HunyuanVideo 1.5|`poetry run inference-hunyuan1.5-t2v`|121|720x1280|TBD|offload preset|
+|T2V|LTX-Video|`poetry run inference-ltx-t2v`|121|512x768|TBD|16G+|
+|T2V|CogVideoX-5b (legacy)|`poetry run python scripts/inference_new.py --config configs/inference/cogvideox_t2v_5b.yaml`|49|480x720|2min|3G|
+|T2V|CogVideoX-2b (smoke)|`poetry run inference-cogvideo-t2v-diffusers`|49|480x720|2min|3G|
+|T2V|Open-Sora 2.0|`poetry run inference-opensora-v2`|varies|256px|TBD|see docs|
 |T2V|Open Sora V1.0|`poetry run inference-opensora-v10-16x256x256`|16|256x256|11s|24G|
 |T2V|VideoCrafter-V2-320x512|`poetry run inference-vc2-t2v-320x512`|16|320x512|26s|11G|
 |T2V|VideoCrafter-V1-576x1024|`poetry run inference-vc1-t2v-576x1024`|16|576x1024|2min|15G|
@@ -218,7 +250,7 @@ Task|Model|Command|Length (#Frames)|Resolution|Inference Time|GPU Memory (GB)|
 |T2V|WanVideo (H800 baseline)|`poetry run inference-wanvideo-t2v-720p`|81|720×1280|~32min, ~70GB; `--enable_model_cpu_offload` on by default|
 |T2V|WanVideo (24GB)|`poetry run inference-wanvideo-t2v-720p --dtype bf16`|81|720×1280|Offload enabled in wrapper; smoke test with `--num_inference_steps 4`|
 
-Shared inference flags (all `inference_new.py` models): `--enable_vae_tiling`, `--enable_vae_slicing`, `--enable_model_cpu_offload`, `--enable_sequential_cpu_offload`, `--dtype bf16|fp16`, `--ulysses_degree`, `--ring_degree`, `--compile`, `--enable_fp8` (Hunyuan).
+Shared inference flags (all `inference_new.py` models): `--enable_vae_tiling`, `--enable_vae_slicing`, `--enable_model_cpu_offload`, `--enable_sequential_cpu_offload`, `--dtype bf16|fp16`, `--fuse_qkv`, `--enable_attention_cache`, `--ulysses_degree`, `--ring_degree`, `--compile`, `--enable_fp8` (Hunyuan).
 
 **Hardware:** Hunyuan/Wan/StepVideo 720p inference requires an **NVIDIA GPU** with CUDA. The default Poetry install uses PyTorch+cu126; **AMD GPUs are not supported** without rebuilding the stack for ROCm. On a CPU-only or AMD-only dev machine, run `poetry run pytest tests/test_inference_optimization.py` for smoke tests.
 
@@ -234,7 +266,10 @@ Task|Model|Command|Length (#Frames)|Resolution|Inference Time|GPU Memory (GB)|
 |:---------|:---------|:---------|:---------|:---------|:---------|:---------|
 |I2V|WanVideo|`poetry run inference-wanvideo-i2v-720p `|81|720x1280|28min|77G|
 |I2V|HunyuanVideo|`poetry run inference-hunyuan-i2v-720p`|129|720x1280|29min|43G|
-|I2V|CogVideoX-5b-I2V|`poetry run inference-cogvideox-15-5b-i2v`|49|480x720|5min|5G|
+|I2V|CogVideoX1.5-5B-I2V|`poetry run inference-cogvideox1.5-i2v`|81|768x1360|~5min|24G (offload)|
+|I2V|Wan 2.2 Diffusers|`poetry run inference-wan2.2-i2v-720p`|81|720x1280|TBD|offload preset|
+|I2V|HunyuanVideo 1.5|`poetry run inference-hunyuan1.5-i2v`|121|720x1280|TBD|offload preset|
+|I2V|CogVideoX-5b-I2V (legacy)|`poetry run inference-cogvideo-i2v-diffusers`|49|480x720|5min|5G|
 |I2V|DynamiCrafter|`poetry run inference-dc-i2v-576x1024`|16|576x1024|2min|53G|
 |I2V|VideoCrafter-V1|`poetry run inference-vc1-i2v-320x512`|16|320x512|26s|11G|
 
@@ -245,10 +280,12 @@ Task|Model|Command|Length (#Frames)|Resolution|Inference Time|GPU Memory (GB)|
 
 Task|Model|Command|Length (#Frames)|Resolution|Inference Time|GPU Memory (GB)|
 |:---------|:---------|:---------|:---------|:---------|:---------|:---------|
-|T2I|Flux-dev|`poetry run inference-flux-dev`|1|768x1360|4s|37G|
-|T2I|Flux-dev|`poetry run inference-flux-dev --enable_vae_tiling --enable_sequential_cpu_offload`|1|768x1360|4.2min|2G|
-|T2I|Flux-schnell|`poetry run inference-flux-schnell`|1|768x1360|1s|37G|
-|T2I|Flux-schnell|`poetry run inference-flux-schnell --enable_vae_tiling --enable_sequential_cpu_offload`|1|768x1360|24s|2G|
+|T2I|Flux2-dev (default)|`poetry run inference-flux2-dev`|1|768x1360|TBD|62G+ / offload|
+|T2I|Flux2-klein-9b|`poetry run inference-flux2-klein-9b`|1|768x1360|~1s|29G|
+|T2I|Flux1-dev (legacy)|`poetry run inference-flux-dev`|1|768x1360|4s|37G|
+|T2I|Flux1-dev + offload|`poetry run inference-flux-dev --enable_vae_tiling --enable_sequential_cpu_offload`|1|768x1360|4.2min|2G|
+|T2I|Flux1-schnell (legacy)|`poetry run inference-flux-schnell`|1|768x1360|1s|37G|
+|T2I|Flux1-schnell + offload|`poetry run inference-flux-schnell --enable_vae_tiling --enable_sequential_cpu_offload`|1|768x1360|24s|2G|
 
 ### 4. Finetune T2V models
 #### (1) Prepare dataset

@@ -14,7 +14,7 @@ from safetensors import safe_open
 from safetensors.torch import save_file
 from tqdm import tqdm
 
-from videotuna.third_party.flux.models.sdxl.pipeline import StableDiffusionXLPipeline
+from diffusers import StableDiffusionXLPipeline
 from videotuna.third_party.flux.models.smoldit import SmolDiT2DModel, SmolDiTPipeline
 from videotuna.third_party.flux.training.multi_process import _get_rank as get_rank
 from videotuna.third_party.flux.training.state_tracker import StateTracker

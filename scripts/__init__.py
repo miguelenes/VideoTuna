@@ -212,23 +212,11 @@ def inference_cogvideo_i2v_diffusers():
     result = subprocess.run(
         [
             "python",
-            "scripts/inference_cogVideo_diffusers.py",
-            "--generate_type",
-            "i2v",
-            "--model_input",
-            "inputs/i2v/576x1024",
-            "--model_path",
-            "checkpoints/cogvideo/CogVideoX-5b-I2V",
-            "--output_path",
-            "results/i2v/cogvideox5b",
-            "--num_inference_steps",
-            "50",
-            "--guidance_scale",
-            "3.5",
-            "--num_videos_per_prompt",
-            "1",
+            "scripts/inference_new.py",
+            "--config",
+            "configs/inference/cogvideox_i2v_5b.yaml",
             "--dtype",
-            "float16",
+            "fp16",
         ]
         + sys.argv[1:],
         check=False,
@@ -237,35 +225,20 @@ def inference_cogvideo_i2v_diffusers():
 
 
 def inference_cogvideo_i2v_lora():
-    config = "configs/004_cogvideox/cogvideo5b-i2v.yaml"
-    ckpt = "results/train/cogvideox_i2v_5b/{YOUR_CKPT_PATH}.ckpt"
-    prompt_dir = "{YOUR_PROMPT_DIR}"
     savedir = f"results/inference/i2v/cogvideox-i2v-lora-{current_time}"
 
     result = subprocess.run(
         [
             "python3",
-            "scripts/inference_cogvideo.py",
+            "scripts/inference_new.py",
             "--config",
-            config,
-            "--ckpt_path",
-            ckpt,
+            "configs/inference/cogvideox_i2v_5b.yaml",
+            "--lorackpt",
+            "{YOUR_LORA_CKPT_PATH}",
             "--prompt_dir",
-            prompt_dir,
+            "{YOUR_PROMPT_DIR}",
             "--savedir",
             savedir,
-            "--bs",
-            "1",
-            "--height",
-            "480",
-            "--width",
-            "720",
-            "--fps",
-            "16",
-            "--seed",
-            "6666",
-            "--mode",
-            "i2v",
             "--denoiser_precision",
             "bf16",
         ]
@@ -276,34 +249,21 @@ def inference_cogvideo_i2v_lora():
 
 
 def inference_cogvideo_lora():
-    config = "configs/004_cogvideox/cogvideo5b.yaml"
-    prompt_file = "inputs/t2v/prompts.txt"
     savedir = f"results/t2v/{current_time}-cogvideo"
-    ckpt = "{YOUR_CKPT_PATH}"
     result = subprocess.run(
         [
             "python3",
-            "scripts/inference_cogvideo.py",
-            "--ckpt_path",
-            ckpt,
+            "scripts/inference_new.py",
             "--config",
-            config,
+            "configs/inference/cogvideox_t2v_5b.yaml",
+            "--lorackpt",
+            "{YOUR_LORA_CKPT_PATH}",
             "--prompt_file",
-            prompt_file,
+            "inputs/t2v/prompts.txt",
             "--savedir",
             savedir,
-            "--bs",
-            "1",
-            "--height",
-            "480",
-            "--width",
-            "720",
-            "--fps",
-            "16",
             "--seed",
             "6666",
-            "--denoiser_precision",
-            "bf16",
         ]
         + sys.argv[1:],
         check=False,
@@ -315,21 +275,39 @@ def inference_cogvideo_t2v_diffusers():
     result = subprocess.run(
         [
             "python",
-            "scripts/inference_cogVideo_diffusers.py",
-            "--model_input",
-            "inputs/t2v/prompts.txt",
-            "--model_path",
-            "checkpoints/cogvideo/CogVideoX-2b",
-            "--output_path",
-            "results/t2v/cogvideox5b",
-            "--num_inference_steps",
-            "50",
-            "--guidance_scale",
-            "3.5",
-            "--num_videos_per_prompt",
-            "1",
+            "scripts/inference_new.py",
+            "--config",
+            "configs/inference/cogvideox_t2v_2b.yaml",
             "--dtype",
-            "float16",
+            "fp16",
+        ]
+        + sys.argv[1:],
+        check=False,
+    )
+    exit(result.returncode)
+
+
+def inference_cogvideox1_5_t2v():
+    result = subprocess.run(
+        [
+            "python",
+            "scripts/inference_new.py",
+            "--config",
+            "configs/inference/cogvideox1.5_t2v_5b.yaml",
+        ]
+        + sys.argv[1:],
+        check=False,
+    )
+    exit(result.returncode)
+
+
+def inference_cogvideox1_5_i2v():
+    result = subprocess.run(
+        [
+            "python",
+            "scripts/inference_new.py",
+            "--config",
+            "configs/inference/cogvideox1.5_i2v_5b.yaml",
         ]
         + sys.argv[1:],
         check=False,
@@ -338,6 +316,14 @@ def inference_cogvideo_t2v_diffusers():
 
 
 def inference_cogvideox1_5_5b_i2v():
+    import warnings
+
+    warnings.warn(
+        "inference-cogvideox-15-5b-i2v uses legacy SAT weights. "
+        "Prefer: poetry run inference-cogvideox1.5-i2v",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     load_transformer = "checkpoints/cogvideo/CogVideoX1.5-5B-SAT/transformer_i2v"
     input_file = "inputs/i2v/576x1024/test_prompts.txt"
     output_dir = "results/i2v/cogvideox1.5"
@@ -370,6 +356,14 @@ def inference_cogvideox1_5_5b_i2v():
 
 
 def inference_cogvideox1_5_5b_t2v():
+    import warnings
+
+    warnings.warn(
+        "inference-cogvideox-15-5b-t2v uses legacy SAT weights. "
+        "Prefer: poetry run inference-cogvideox1.5-t2v",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     load_transformer = "checkpoints/cogvideo/CogVideoX1.5-5B-SAT/transformer_t2v"
     input_file = "inputs/t2v/prompts.txt"
     output_dir = "results/t2v/"
@@ -436,27 +430,11 @@ def inference_dc_i2v_576x1024():
 
 
 def inference_flux_schnell():
-    prompt = "inputs/t2v/prompts.txt"
-    width = 1360
-    height = 768
-
     command_schnell = [
         "python",
-        "scripts/inference_flux.py",
-        "--model_type",
-        "schnell",
-        "--prompt",
-        prompt,
-        "--out_path",
-        "results/flux-schnell/",
-        "--width",
-        str(width),
-        "--height",
-        str(height),
-        "--num_inference_steps",
-        "4",
-        "--guidance_scale",
-        "0.",
+        "scripts/inference_new.py",
+        "--config",
+        "configs/inference/flux1_schnell.yaml",
     ] + sys.argv[1:]
 
     result_schnell = subprocess.run(command_schnell, check=False)
@@ -464,27 +442,11 @@ def inference_flux_schnell():
 
 
 def inference_flux_dev():
-    prompt = "inputs/t2v/prompts.txt"
-    width = 1360
-    height = 768
-
     command_dev = [
         "python",
-        "scripts/inference_flux.py",
-        "--model_type",
-        "dev",
-        "--prompt",
-        prompt,
-        "--out_path",
-        "results/t2i/flux-dev/",
-        "--width",
-        str(width),
-        "--height",
-        str(height),
-        "--num_inference_steps",
-        "50",
-        "--guidance_scale",
-        "0.",
+        "scripts/inference_new.py",
+        "--config",
+        "configs/inference/flux1_dev.yaml",
     ] + sys.argv[1:]
 
     result_dev = subprocess.run(command_dev, check=False)
@@ -492,27 +454,22 @@ def inference_flux_dev():
 
 
 def inference_flux_lora():
-    os.environ["lora_ckpt"] = "{YOUR_CORA_CKPT_PATH}"
+    os.environ["lora_ckpt"] = "{YOUR_LORA_CKPT_PATH}"
     result = subprocess.run(
         [
             "python",
-            "scripts/inference_flux_lora.py",
-            "--model_type",
-            "dev",
-            "--prompt",
-            "inputs/t2v/prompts.txt",
-            "--out_path",
-            "results/t2i/flux-lora/",
-            "--lora_path",
+            "scripts/inference_new.py",
+            "--config",
+            "configs/inference/flux1_dev.yaml",
+            "--lorackpt",
             os.environ["lora_ckpt"],
-            "--width",
-            "1360",
-            "--height",
-            "768",
-            "--num_inference_steps",
-            "50",
-            "--guidance_scale",
-            "3.5",
+            "--savedir",
+            "results/t2i/flux-lora/",
+            "--enable_sequential_cpu_offload",
+            "--enable_vae_tiling",
+            "--enable_vae_slicing",
+            "--dtype",
+            "fp16",
         ]
         + sys.argv[1:],
         check=False,
@@ -592,31 +549,127 @@ def inference_hunyuan_t2v_diffusers():
 
 
 def inference_mochi():
-    ckpt = "checkpoints/mochi-1-preview"
-    prompt_file = "inputs/t2v/prompts.txt"
-    savedir = "results/t2v/mochi2"
-    height = 480
-    width = 848
     result = subprocess.run(
         [
             "python3",
-            "scripts/inference_mochi.py",
-            "--ckpt_path",
-            ckpt,
-            "--prompt_file",
-            prompt_file,
-            "--savedir",
-            savedir,
-            "--bs",
-            "1",
-            "--height",
-            str(height),
-            "--width",
-            str(width),
-            "--fps",
-            "28",
-            "--seed",
-            "124",
+            "scripts/inference_new.py",
+            "--config",
+            "configs/inference/mochi_t2v.yaml",
+        ]
+        + sys.argv[1:],
+        check=False,
+    )
+    exit(result.returncode)
+
+
+def inference_flux2_dev():
+    result = subprocess.run(
+        [
+            "python",
+            "scripts/inference_new.py",
+            "--config",
+            "configs/inference/flux_dev.yaml",
+        ]
+        + sys.argv[1:],
+        check=False,
+    )
+    exit(result.returncode)
+
+
+def inference_flux2_klein_9b():
+    result = subprocess.run(
+        [
+            "python",
+            "scripts/inference_new.py",
+            "--config",
+            "configs/inference/flux2_klein_9b.yaml",
+        ]
+        + sys.argv[1:],
+        check=False,
+    )
+    exit(result.returncode)
+
+
+def inference_wan2_2_t2v_720p():
+    result = subprocess.run(
+        [
+            "python",
+            "scripts/inference_new.py",
+            "--config",
+            "configs/inference/wan2_2_t2v_a14b.yaml",
+        ]
+        + sys.argv[1:],
+        check=False,
+    )
+    exit(result.returncode)
+
+
+def inference_wan2_2_i2v_720p():
+    result = subprocess.run(
+        [
+            "python",
+            "scripts/inference_new.py",
+            "--config",
+            "configs/inference/wan2_2_i2v_a14b.yaml",
+        ]
+        + sys.argv[1:],
+        check=False,
+    )
+    exit(result.returncode)
+
+
+def inference_hunyuan1_5_t2v():
+    result = subprocess.run(
+        [
+            "python",
+            "scripts/inference_new.py",
+            "--config",
+            "configs/inference/hunyuanvideo1.5_t2v_720p.yaml",
+        ]
+        + sys.argv[1:],
+        check=False,
+    )
+    exit(result.returncode)
+
+
+def inference_hunyuan1_5_i2v():
+    result = subprocess.run(
+        [
+            "python",
+            "scripts/inference_new.py",
+            "--config",
+            "configs/inference/hunyuanvideo1.5_i2v_720p.yaml",
+        ]
+        + sys.argv[1:],
+        check=False,
+    )
+    exit(result.returncode)
+
+
+def inference_ltx_t2v():
+    result = subprocess.run(
+        [
+            "python",
+            "scripts/inference_new.py",
+            "--config",
+            "configs/inference/ltx_video.yaml",
+        ]
+        + sys.argv[1:],
+        check=False,
+    )
+    exit(result.returncode)
+
+
+def inference_opensora_v2():
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "videotuna.models.opensora.inference_entry",
+            "--config",
+            "configs/003_opensora/opensorav2/inference/256px.py",
+            "--save-dir",
+            "results/t2v/opensora-v2-256px",
         ]
         + sys.argv[1:],
         check=False,

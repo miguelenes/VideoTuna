@@ -143,7 +143,7 @@ from videotuna.third_party.flux.models.flux import (
     prepare_latent_image_ids,
     unpack_latents,
 )
-from videotuna.third_party.flux.models.sdxl.pipeline import StableDiffusionXLPipeline
+from diffusers import StableDiffusionXLPipeline
 from videotuna.third_party.flux.training.ema import EMAModel
 
 is_optimi_available = False
