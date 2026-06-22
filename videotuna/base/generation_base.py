@@ -21,6 +21,7 @@ from videotuna.utils.common_utils import (
     print_green,
     print_yellow,
 )
+from videotuna.utils.device_utils import empty_accelerator_cache, resolve_inference_device
 from peft import get_peft_model
 
 from videotuna.utils.lora_utils import (
@@ -459,7 +460,9 @@ class GenerationBase(TrainBase, InferenceBase):
     def enable_cpu_offload(self):
         self.cpu_offload = True
 
-    def load_models_to_device(self, loadmodel_names=[], device="cuda"):
+    def load_models_to_device(self, loadmodel_names=[], device=None):
+        if device is None:
+            device = str(resolve_inference_device())
         skip_components = ["scheduler"]
         # only load models to device if cpu_offload is enabled
         if not self.cpu_offload:
@@ -501,8 +504,8 @@ class GenerationBase(TrainBase, InferenceBase):
                 else:
                     logger.info(f"{model_name} onloading using to device method")
                     model.to(device)
-        # fresh the cuda cache
-        torch.cuda.empty_cache()
+        # fresh the accelerator cache
+        empty_accelerator_cache()
 
     @staticmethod
     def load_model(

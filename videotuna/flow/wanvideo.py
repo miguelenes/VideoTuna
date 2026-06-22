@@ -14,6 +14,7 @@ from PIL import Image
 
 import videotuna.models.wan.wan as wan
 from videotuna.base.generation_base import GenerationBase
+from videotuna.utils.device_utils import require_xfuser_sequence_parallel
 from videotuna.models.wan.wan.configs import (
     MAX_AREA_CONFIGS,
     SIZE_CONFIGS,
@@ -136,6 +137,7 @@ class WanVideoModelFlow(GenerationBase):
             ), f"context parallel are not supported in non-distributed environments."
 
         if ulysses_size > 1 or ring_size > 1:
+            require_xfuser_sequence_parallel("WanVideoModelFlow")
             assert (
                 ulysses_size * ring_size == world_size
             ), f"The number of ulysses_size and ring_size should be equal to the world size."

@@ -1,6 +1,8 @@
 
 # Introduction
-This document provides instructions for fine-tuning the Flux.1-dev model.
+This document provides instructions for fine-tuning the Flux.1-dev model with VideoTuna's first-party Diffusers + PEFT trainer (`videotuna/training/flux_lora/`).
+
+Install the training stack first: `poetry install --with training`.
 
 # Preliminary steps
 1. **Install the environment** (see [Installation]()). 
@@ -68,8 +70,13 @@ We use images in `inputs/t2i/flux/plushie_teddybear` to train.
 
 3. Run the commands in the terminal to launch training.
     ```
-    poetry run train-flux-lora
+    poetry run train-flux-lora \
+      --config_path configs/006_flux/config.json \
+      --data_config_path configs/006_flux/multidatabackend.json
     ```
+    LoRA checkpoints are saved under `output_dir` in Diffusers format (loadable via `inference-flux-lora` / `--lorackpt`).
+
+    **Not supported** (vs legacy SimpleTuner): S3 data backends, text-embed disk cache, multi-dataset aspect bucketing.
 4. After training, run the commands in the terminal to inference your personalized videotuna models.
     ```
     poetry run inference-flux-lora \

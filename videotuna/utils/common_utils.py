@@ -18,6 +18,11 @@ from loguru import logger
 from omegaconf import DictConfig, OmegaConf
 
 from videotuna.utils.attention import get_attn_backend
+from videotuna.utils.device_utils import (
+    detect_compute_backend,
+    gpu_is_available,
+    synchronize_accelerator,
+)
 from videotuna.utils.inference_cli import resolve_offload_mode
 
 precision_to_dtype = {
@@ -204,9 +209,9 @@ def monitor_resources(
             start_time = time.time()
             start_cpu_mem = process.memory_info().rss / 1024 / 1024 / 1024  # GB
 
-            if torch.cuda.is_available():
+            if gpu_is_available():
                 torch.cuda.reset_peak_memory_stats()
-                torch.cuda.synchronize()
+                synchronize_accelerator()
 
             result = func(*args, **kwargs)
 
@@ -219,8 +224,8 @@ def monitor_resources(
             logger.info(f"Time used: {time_used:.2f} seconds")
             logger.info(f"CPU memory change: {cpu_mem_used:.2f} GB")
             gpu_mem_used = None
-            if torch.cuda.is_available():
-                torch.cuda.synchronize()
+            if gpu_is_available():
+                synchronize_accelerator()
                 gpu_mem_used = (
                     torch.cuda.max_memory_allocated() / 1024 / 1024 / 1024
                 )  # GB
@@ -230,6 +235,7 @@ def monitor_resources(
                 sample = _build_sample_metrics(time_used, gpu_mem_used, frames)
                 sample["cpu"] = round(cpu_mem_used, 2)
                 sample["attention_backend"] = get_attn_backend()
+                sample["compute_backend"] = detect_compute_backend()
                 sample["torch_compile"] = (
                     os.environ.get("VIDEOTUNA_TORCH_COMPILE", "0") == "1"
                 )

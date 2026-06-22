@@ -40,16 +40,40 @@
 
 ### 1.Prepare environment
 
+VideoTuna supports **Poetry** (default) and **[uv](https://docs.astral.sh/uv/)**. The default install is the **inference stack** only; training (including Flux LoRA) uses the optional `training` group.
+
+| Use case | Poetry | uv |
+|----------|--------|-----|
+| Inference NVIDIA (default) | `poetry install -E cuda` or `poetry install` | `uv sync` |
+| Inference AMD ROCm | `poetry install -E rocm` then `poetry run install-rocm` | see [install-rocm.md](docs/install-rocm.md) |
+| CPU dev / CI | `poetry install -E cpu` then `poetry run install-cpu-torch` | see [install-rocm.md](docs/install-rocm.md) |
+| + Training (Wan, Hunyuan, CogVideo, Flux LoRA, Open-Sora, …) | `poetry install -E cuda --with training` | `uv sync --group training` |
+| + VBench eval | `poetry install --with eval` | `uv sync --group eval` |
+| + Dev (pytest, ruff) | `poetry install --with dev` | `uv sync --group dev` |
+
+See [`docs/vendor-policy.md`](docs/vendor-policy.md) for vendored upstream code and update procedures.
+
 #### (1) If you use Linux and Conda (Recommend)
 ``` shell
 conda create -n videotuna python=3.11 -y
 conda activate videotuna
 pip install poetry
-poetry install
+poetry install -E cuda   # NVIDIA inference (default stack)
+# poetry install --with training  # for fine-tuning (incl. Flux LoRA)
 ```
 - ↑ It takes around 3 minitues.
 
-**Optional: Flash-attn installation**
+**AMD ROCm (Linux x86_64)**
+
+```shell
+poetry install -E rocm
+poetry run install-rocm
+poetry run python -c "from videotuna.utils.device_utils import describe_compute_environment; print(describe_compute_environment())"
+```
+
+See [`docs/install-rocm.md`](docs/install-rocm.md) for model tiers, smoke tests, and troubleshooting.
+
+**Optional: Flash-attn installation (NVIDIA CUDA only)**
 
 Hunyuan model uses it to reduce memory usage and speed up inference. If it is not installed, the model will run in normal mode. Install the `flash-attn` via:
 ``` shell
@@ -63,10 +87,11 @@ VideoTuna routes attention through a unified backend selector in `videotuna/util
 
 | Variable | Values | Default | Description |
 |----------|--------|---------|-------------|
+| `VIDEOTUNA_COMPUTE_BACKEND` | `auto`, `cuda`, `rocm`, `cpu` | `auto` | Override GPU backend detection (CUDA vs ROCm) |
 | `VIDEOTUNA_ATTN_BACKEND` | `auto`, `flash`, `sdpa`, `eager` | `auto` | Attention implementation for Hunyuan, OpenSora, Flux, StepVideo, Wan, and diffusers pipelines |
 | `VIDEOTUNA_TORCH_COMPILE` | `0`, `1` | `0` | Compile denoiser/transformer forward with `torch.compile` (not VAE or text encoders) |
 
-**`auto` resolution:** `flash` (when `flash-attn` is installed and CUDA is available) → `sdpa` on CUDA → `eager` on CPU.
+**`auto` resolution:** NVIDIA — `flash` (when `flash-attn` is installed) → `sdpa` → `eager` on CPU. AMD ROCm — `sdpa` → `eager` (flash is never auto-selected).
 
 ```shell
 # Prefer flash-attn varlen (install optional dependency first)
@@ -108,7 +133,17 @@ poetry run pip install "modelscope[cv]" -f https://modelscope.oss-cn-beijing.ali
   poetry config virtualenvs.create true # enable this argument to ensure the virtual env is created in the project root
   poetry env use python3.11 # will create the virtual env, check with `ls -l .venv`.
   poetry env activate # optional because Poetry commands (e.g. `poetry install` or `poetry run <command>`) will always automatically load the virtual env.
-  poetry install
+  poetry install          # inference stack (default)
+  # poetry install --with training  # fine-tuning (incl. Flux LoRA)
+  # poetry install --with dev                             # pytest, ruff
+  ```
+
+  **uv (alternative):**
+
+  ``` shell
+  uv sync                 # inference stack
+  uv sync --group training
+  uv run poetry run inference-flux-dev --help  # or: uv run inference-flux-dev if synced
   ```
 
   **Optional: Flash-attn installation**
@@ -156,8 +191,6 @@ poetry run pip install "modelscope[cv]" -f https://modelscope.oss-cn-beijing.ali
   docker compose run --remove-orphans videotuna poetry install
   docker compose run --remove-orphans videotuna poetry run pip install "modelscope[cv]" -f https://modelscope.oss-cn-beijing.aliyuncs.com/releases/repo.html
   ```
-
-  Note: installing swissarmytransformer might hang. Just try again and it should work.
 
   Add a dependency:
 
@@ -252,7 +285,7 @@ Task|Model|Command|Length (#Frames)|Resolution|Inference Time|GPU Memory (GB)|
 
 Shared inference flags (all `inference_new.py` models): `--enable_vae_tiling`, `--enable_vae_slicing`, `--enable_model_cpu_offload`, `--enable_sequential_cpu_offload`, `--dtype bf16|fp16`, `--fuse_qkv`, `--enable_attention_cache`, `--ulysses_degree`, `--ring_degree`, `--compile`, `--enable_fp8` (Hunyuan).
 
-**Hardware:** Hunyuan/Wan/StepVideo 720p inference requires an **NVIDIA GPU** with CUDA. The default Poetry install uses PyTorch+cu126; **AMD GPUs are not supported** without rebuilding the stack for ROCm. On a CPU-only or AMD-only dev machine, run `poetry run pytest tests/test_inference_optimization.py` for smoke tests.
+**Hardware:** Native Hunyuan/Wan/StepVideo 720p flows need a **GPU accelerator** (NVIDIA CUDA or AMD ROCm). Default install uses PyTorch+cu126 (`poetry install -E cuda`); AMD users: `poetry install -E rocm` + `poetry run install-rocm` — see [docs/install-rocm.md](docs/install-rocm.md). **Tier A** diffusers models (CogVideoX, Flux, Wan 2.2 Diffusers, Hunyuan 1.5) are the recommended ROCm path. StepVideo is **CUDA-only** (proprietary liboptimus). CPU-only dev: `poetry run pytest tests/test_inference_optimization.py`.
 
 Legacy diffusers Hunyuan T2V (256×256 training workflow): `poetry run inference-hunyuan-t2v-diffusers`.
 
@@ -369,7 +402,7 @@ We thank the following repos for sharing their awesome models and codes!
 * [VADER](https://github.com/mihirp1998/VADER): Video Diffusion Alignment via Reward Gradients
 * [VBench](https://github.com/Vchitect/VBench): Comprehensive Benchmark Suite for Video Generative Models
 * [Flux](https://github.com/black-forest-labs/flux): Text-to-image models from Black Forest Labs.
-* [SimpleTuner](https://github.com/bghira/SimpleTuner): A fine-tuning kit for text-to-image generation.
+* [SimpleTuner](https://github.com/bghira/SimpleTuner): Upstream inspiration for Flux LoRA configs (replaced by first-party trainer in VideoTuna).
 
 
 

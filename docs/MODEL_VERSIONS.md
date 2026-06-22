@@ -9,7 +9,7 @@ Master reference for VideoTuna inference model families: Hugging Face IDs, Diffu
 | CogVideoX T2V (legacy) | `THUDM/CogVideoX-5b` | — | `CogVideoXPipeline` | `--model_variant 5b` / `cogvideox_t2v_5b.yaml` | **legacy** |
 | CogVideoX I2V | `THUDM/CogVideoX-5b-I2V` | `THUDM/CogVideoX1.5-5B-I2V` | `CogVideoXImageToVideoPipeline` | `DiffusersVideoFlow` | **upgraded** |
 | CogVideoX V2V | `THUDM/CogVideoX-5b` | `THUDM/CogVideoX1.5-5B` | `CogVideoXVideoToVideoPipeline` | `cogvideox1.5_v2v_5b.yaml` | **upgraded** |
-| CogVideoX 1.5 SAT | local `CogVideoX1.5-5B-SAT` | — | SAT custom | `inference-cogvideox-15-5b-*` | **legacy** (deprecated) |
+| CogVideoX 1.5 SAT | local `CogVideoX1.5-5B-SAT` | — | SAT custom | *(removed)* | **removed** — use Diffusers `inference-cogvideox1.5-*` |
 | Flux T2I | `FLUX.1-dev` / `FLUX.1-schnell` | `black-forest-labs/FLUX.2-dev` | `Flux2Pipeline` | `flux_dev.yaml` | **upgraded** |
 | Flux T2I (legacy) | `FLUX.1-*` | — | `FluxPipeline` | `flux1_dev.yaml`, `inference-flux-dev` | **legacy** |
 | Flux T2I (fast) | — | `FLUX.2-klein-9B` | `Flux2Pipeline` | `flux2_klein_9b.yaml` | **current** |
@@ -34,7 +34,7 @@ Master reference for VideoTuna inference model families: Hugging Face IDs, Diffu
 - **FPS:** 16 for export (`savefps: 16`).
 - **Resolution:** min(W,H)=768; e.g. 768×1360.
 - **Scheduler:** DPM (2b still uses DDIM via hub ID / variant).
-- **Legacy SAT:** `poetry run inference-cogvideox-15-5b-t2v` prints a deprecation warning; prefer `poetry run inference-cogvideox1.5-t2v`.
+- **Legacy SAT removed:** use `poetry run inference-cogvideox1.5-t2v` or `inference-cogvideox1.5-i2v` (Diffusers hub weights).
 
 ## HunyuanVideo 1.5 notes
 

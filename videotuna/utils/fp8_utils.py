@@ -9,6 +9,8 @@ from typing import Optional
 import torch
 from loguru import logger
 
+from videotuna.utils.device_utils import detect_compute_backend
+
 
 def fp8_dtype_available() -> bool:
     return hasattr(torch, "float8_e4m3fn")
@@ -29,6 +31,12 @@ def validate_fp8_inference(
     Raises:
         RuntimeError: if PyTorch float8 or the FP8 scale map is unavailable.
     """
+    if detect_compute_backend() == "rocm":
+        raise RuntimeError(
+            "FP8 inference (--enable_fp8) is not supported on AMD ROCm. "
+            "Use --dtype bf16 with CPU offload instead."
+        )
+
     if not fp8_dtype_available():
         raise RuntimeError(
             "FP8 inference requires torch.float8_e4m3fn (PyTorch 2.6+). "

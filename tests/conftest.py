@@ -1,7 +1,11 @@
 import warnings
 
 import pytest
-from sentry_sdk.hub import SentryHubDeprecationWarning
+
+try:
+    from sentry_sdk.hub import SentryHubDeprecationWarning
+except ImportError:
+    SentryHubDeprecationWarning = DeprecationWarning  # type: ignore[misc,assignment]
 
 
 @pytest.fixture(autouse=True)

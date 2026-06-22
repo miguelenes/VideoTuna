@@ -112,7 +112,19 @@ def test_hyvideo_cfgdistill_no_duplicate_guidance_embed():
     assert wrapper.model.guidance_embed is True
 
 
-def test_require_nvidia_cuda_raises_without_gpu():
+def test_require_accelerator_for_flow_raises_without_gpu():
+    import torch
+
+    from videotuna.utils.device_utils import require_accelerator_for_flow
+
+    if torch.cuda.is_available():
+        require_accelerator_for_flow("videotuna.flow.wanvideo.WanVideoModelFlow")
+        return
+    with pytest.raises(RuntimeError, match="GPU accelerator"):
+        require_accelerator_for_flow("videotuna.flow.wanvideo.WanVideoModelFlow")
+
+
+def test_require_nvidia_cuda_alias_raises_without_gpu():
     import torch
 
     from videotuna.utils.device_utils import require_nvidia_cuda_for_flow
@@ -120,7 +132,7 @@ def test_require_nvidia_cuda_raises_without_gpu():
     if torch.cuda.is_available():
         require_nvidia_cuda_for_flow("videotuna.flow.wanvideo.WanVideoModelFlow")
         return
-    with pytest.raises(RuntimeError, match="NVIDIA GPU"):
+    with pytest.raises(RuntimeError, match="GPU accelerator"):
         require_nvidia_cuda_for_flow("videotuna.flow.wanvideo.WanVideoModelFlow")
 
 

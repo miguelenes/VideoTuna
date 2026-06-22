@@ -23,6 +23,13 @@ from videotuna.utils.attention import (
     apply_diffusers_attention_backend,
     is_flash_attn_available,
 )
+from videotuna.utils.device_utils import (
+    detect_compute_backend,
+    empty_accelerator_cache,
+    gpu_is_available,
+    resolve_inference_device,
+    synchronize_accelerator,
+)
 
 
 def _run_backend(
@@ -31,24 +38,27 @@ def _run_backend(
     prompt: str,
     num_inference_steps: int,
     seed: int,
+    compute_backend: str,
 ) -> Dict[str, Any]:
     os.environ["VIDEOTUNA_ATTN_BACKEND"] = backend
 
-    if not torch.cuda.is_available():
-        raise RuntimeError("CUDA is required for attention backend benchmarks.")
+    if not gpu_is_available():
+        raise RuntimeError(
+            "A GPU accelerator (NVIDIA CUDA or AMD ROCm) is required for benchmarks."
+        )
 
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-        torch.cuda.reset_peak_memory_stats()
+    device = resolve_inference_device()
+    empty_accelerator_cache()
+    torch.cuda.reset_peak_memory_stats()
 
     pipe = CogVideoXPipeline.from_pretrained(
         model_path,
         torch_dtype=torch.bfloat16,
-    ).to("cuda")
+    ).to(device)
 
     apply_diffusers_attention_backend(pipe.transformer)
 
-    generator = torch.Generator(device="cuda").manual_seed(seed)
+    generator = torch.Generator(device=device).manual_seed(seed)
 
     # Warm-up (excludes compile / first-kernel overhead from timed region).
     _ = pipe(
@@ -58,11 +68,10 @@ def _run_backend(
         output_type="latent",
     )
 
-    if torch.cuda.is_available():
-        torch.cuda.synchronize()
-        torch.cuda.reset_peak_memory_stats()
+    synchronize_accelerator()
+    torch.cuda.reset_peak_memory_stats()
 
-    generator = torch.Generator(device="cuda").manual_seed(seed)
+    generator = torch.Generator(device=device).manual_seed(seed)
     start = time.perf_counter()
     _ = pipe(
         prompt=prompt,
@@ -70,22 +79,19 @@ def _run_backend(
         generator=generator,
         output_type="latent",
     )
-    if torch.cuda.is_available():
-        torch.cuda.synchronize()
+    synchronize_accelerator()
     elapsed = time.perf_counter() - start
 
-    peak_vram_gb = None
-    if torch.cuda.is_available():
-        peak_vram_gb = torch.cuda.max_memory_allocated() / (1024**3)
+    peak_vram_gb = torch.cuda.max_memory_allocated() / (1024**3)
 
     del pipe
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+    empty_accelerator_cache()
 
     return {
         "backend": backend,
+        "compute_backend": compute_backend,
         "seconds": round(elapsed, 3),
-        "peak_vram_gb": round(peak_vram_gb, 3) if peak_vram_gb is not None else None,
+        "peak_vram_gb": round(peak_vram_gb, 3),
         "num_inference_steps": num_inference_steps,
         "model_path": model_path,
     }
@@ -116,20 +122,25 @@ def main(argv: List[str] | None = None) -> int:
         "--backends",
         nargs="+",
         default=None,
-        help="Backends to test (default: eager sdpa flash when available).",
+        help="Backends to test (default: eager sdpa; flash on CUDA when available).",
     )
     parser.add_argument(
         "--json", action="store_true", help="Print JSON instead of a table."
     )
     args = parser.parse_args(argv)
 
+    compute_backend = detect_compute_backend()
     backends = args.backends or ["eager", "sdpa"]
-    if is_flash_attn_available() and "flash" not in backends:
+    if (
+        compute_backend == "cuda"
+        and is_flash_attn_available()
+        and "flash" not in backends
+    ):
         backends.append("flash")
 
     results: List[Dict[str, Any]] = []
     for backend in backends:
-        print(f"Running backend={backend} ...", file=sys.stderr)
+        print(f"Running backend={backend} ({compute_backend}) ...", file=sys.stderr)
         try:
             results.append(
                 _run_backend(
@@ -138,15 +149,23 @@ def main(argv: List[str] | None = None) -> int:
                     prompt=args.prompt,
                     num_inference_steps=args.num_inference_steps,
                     seed=args.seed,
+                    compute_backend=compute_backend,
                 )
             )
         except Exception as exc:
-            results.append({"backend": backend, "error": str(exc)})
+            results.append(
+                {
+                    "backend": backend,
+                    "compute_backend": compute_backend,
+                    "error": str(exc),
+                }
+            )
 
     if args.json:
         print(json.dumps(results, indent=2))
     else:
-        print("\n| Backend | Seconds | Peak VRAM (GB) |")
+        print(f"\nCompute backend: {compute_backend}\n")
+        print("| Backend | Seconds | Peak VRAM (GB) |")
         print("| --- | ---: | ---: |")
         for row in results:
             if "error" in row:

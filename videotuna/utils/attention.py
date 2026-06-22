@@ -8,14 +8,18 @@ Environment variables:
 
 from __future__ import annotations
 
+import importlib
 import math
 import os
 from contextlib import contextmanager
-from typing import Literal, Optional, Tuple, Union
+from typing import Literal, Optional, Tuple, cast
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from loguru import logger
+
+from videotuna.utils.device_utils import detect_compute_backend, gpu_is_available
 
 AttnBackend = Literal["flash", "sdpa", "eager"]
 AttnLayout = Literal["bsnd", "bhsd"]
@@ -23,23 +27,20 @@ AttnLayout = Literal["bsnd", "bhsd"]
 _ATTN_BACKEND_ENV = "VIDEOTUNA_ATTN_BACKEND"
 _TORCH_COMPILE_ENV = "VIDEOTUNA_TORCH_COMPILE"
 
-_FLASH_ATTN_FUNC = None
-_FLASH_ATTN_VARLEN_FUNC = None
-_FLASH_ATTN_3_VARLEN_FUNC = None
-_FLASH_ATTN_AVAILABLE = False
+def _optional_attr(module_name: str, attr_name: str):
+    try:
+        module = importlib.import_module(module_name)
+    except ImportError:
+        return None
+    return getattr(module, attr_name, None)
 
-try:
-    from flash_attn import flash_attn_func as _FLASH_ATTN_FUNC
-    from flash_attn import flash_attn_varlen_func as _FLASH_ATTN_VARLEN_FUNC
 
-    _FLASH_ATTN_AVAILABLE = True
-except ImportError:
-    pass
-
-try:
-    from flash_attn_interface import flash_attn_varlen_func as _FLASH_ATTN_3_VARLEN_FUNC
-except ImportError:
-    pass
+_FLASH_ATTN_FUNC = _optional_attr("flash_attn", "flash_attn_func")
+_FLASH_ATTN_VARLEN_FUNC = _optional_attr("flash_attn", "flash_attn_varlen_func")
+_FLASH_ATTN_3_VARLEN_FUNC = _optional_attr(
+    "flash_attn_interface", "flash_attn_varlen_func"
+)
+_FLASH_ATTN_AVAILABLE = _FLASH_ATTN_FUNC is not None
 
 
 def is_flash_attn_available() -> bool:
@@ -47,9 +48,11 @@ def is_flash_attn_available() -> bool:
 
 
 def _resolve_auto_backend() -> AttnBackend:
-    if _FLASH_ATTN_AVAILABLE and torch.cuda.is_available():
+    if detect_compute_backend() == "rocm":
+        return "sdpa" if gpu_is_available() else "eager"
+    if _FLASH_ATTN_AVAILABLE and gpu_is_available():
         return "flash"
-    if torch.cuda.is_available():
+    if gpu_is_available():
         return "sdpa"
     return "eager"
 
@@ -60,12 +63,19 @@ def get_attn_backend() -> AttnBackend:
     if requested == "auto":
         return _resolve_auto_backend()
     if requested in ("flash", "sdpa", "eager"):
-        if requested == "flash" and not _FLASH_ATTN_AVAILABLE:
-            raise RuntimeError(
-                "VIDEOTUNA_ATTN_BACKEND=flash requires flash-attn. "
-                "Install with: poetry run install-flash-attn"
-            )
-        if requested == "sdpa" and not torch.cuda.is_available():
+        if requested == "flash":
+            if detect_compute_backend() == "rocm":
+                raise RuntimeError(
+                    "VIDEOTUNA_ATTN_BACKEND=flash is not supported on AMD ROCm. "
+                    "Use VIDEOTUNA_ATTN_BACKEND=sdpa or eager. "
+                    "See docs/install-rocm.md."
+                )
+            if not _FLASH_ATTN_AVAILABLE:
+                raise RuntimeError(
+                    "VIDEOTUNA_ATTN_BACKEND=flash requires flash-attn. "
+                    "Install with: poetry run install-flash-attn"
+                )
+        if requested == "sdpa" and not gpu_is_available():
             return "eager"
         return requested  # type: ignore[return-value]
     raise ValueError(
@@ -91,19 +101,21 @@ def _from_bhsd(x: torch.Tensor, layout: AttnLayout) -> torch.Tensor:
 @contextmanager
 def _sdpa_context():
     """Prefer flash/mem-efficient SDPA kernels on CUDA when available."""
-    if not torch.cuda.is_available():
+    if not gpu_is_available():
         yield
         return
     try:
         from torch.nn.attention import SDPBackend, sdpa_kernel
 
-        with sdpa_kernel(
-            [
+        if detect_compute_backend() == "rocm":
+            backends = [SDPBackend.EFFICIENT_ATTENTION, SDPBackend.MATH]
+        else:
+            backends = [
                 SDPBackend.FLASH_ATTENTION,
                 SDPBackend.EFFICIENT_ATTENTION,
                 SDPBackend.MATH,
             ]
-        ):
+        with sdpa_kernel(backends):
             yield
     except (ImportError, AttributeError):
         yield
@@ -302,6 +314,8 @@ def apply_diffusers_attention_backend(model) -> None:
     """Map VIDEOTUNA_ATTN_BACKEND to diffusers set_attention_backend."""
     backend = get_attn_backend()
     diffusers_backend = _DIFFUSERS_BACKEND_MAP[backend]
+    if backend == "flash" and detect_compute_backend() == "rocm":
+        diffusers_backend = "native"
 
     if hasattr(model, "set_attention_backend"):
         try:
@@ -316,10 +330,23 @@ def apply_diffusers_attention_backend(model) -> None:
     os.environ["DIFFUSERS_ATTN_BACKEND"] = diffusers_backend
 
 
+_COMPILE_WARNED_ROCM = False
+
+
 def maybe_compile_denoiser(module: nn.Module) -> nn.Module:
     """Optionally compile a denoiser module when VIDEOTUNA_TORCH_COMPILE=1."""
+    global _COMPILE_WARNED_ROCM
     if os.environ.get(_TORCH_COMPILE_ENV, "0") != "1":
         return module
-    if not torch.cuda.is_available():
+    if not gpu_is_available():
         return module
-    return torch.compile(module, mode="reduce-overhead", fullgraph=True)
+    if detect_compute_backend() == "rocm" and not _COMPILE_WARNED_ROCM:
+        logger.warning(
+            "torch.compile on AMD ROCm is experimental in PyTorch 2.6; "
+            "set VIDEOTUNA_TORCH_COMPILE=0 to disable."
+        )
+        _COMPILE_WARNED_ROCM = True
+    return cast(
+        nn.Module,
+        torch.compile(module, mode="reduce-overhead", fullgraph=True),
+    )

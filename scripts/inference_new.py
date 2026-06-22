@@ -1,17 +1,11 @@
 import argparse
-import json
 import os
 import sys
-import time
-from functools import partial
 from pathlib import Path
 
-import numpy as np
-import torch
-from einops import rearrange, repeat
-from omegaconf import OmegaConf
+from loguru import logger
+from omegaconf import DictConfig, OmegaConf
 from pytorch_lightning import seed_everything
-from tqdm import tqdm, trange
 
 sys.path.insert(0, os.getcwd())
 sys.path.insert(1, f"{os.getcwd()}/src")
@@ -26,7 +20,8 @@ from videotuna.utils.common_utils import (
 )
 from videotuna.utils.device_utils import (
     checkpoint_available,
-    require_nvidia_cuda_for_flow,
+    describe_compute_environment,
+    require_accelerator_for_flow,
 )
 from videotuna.utils.fp8_utils import validate_fp8_inference
 from videotuna.utils.inference_cli import (
@@ -67,7 +62,10 @@ def get_parser():
         "--prompt_dir",
         type=str,
         default=None,
-        help="a input dir containing images and prompts for image-to-video/interpolation",
+        help=(
+            "a input dir containing images and prompts for "
+            "image-to-video/interpolation"
+        ),
     )
     parser.add_argument("--savedir", type=str, default=None, help="results saving path")
     parser.add_argument(
@@ -92,7 +90,10 @@ def get_parser():
         "--fps",
         type=int,
         default=None,
-        help="video motion speed. 512 or 1024 model: large value -> slow motion; 256 model: large value -> large motion;",
+        help=(
+            "video motion speed. 512 or 1024 model: large value -> slow motion; "
+            "256 model: large value -> large motion;"
+        ),
     )
     parser.add_argument(
         "--n_samples_prompt",
@@ -149,13 +150,20 @@ def get_parser():
         "--timestep_spacing",
         type=str,
         default=None,
-        help="The way the timesteps should be scaled. Refer to Table 2 of the [Common Diffusion Noise Schedules and Sample Steps are Flawed](https://huggingface.co/papers/2305.08891) for more information.",
+        help=(
+            "The way the timesteps should be scaled. Refer to Table 2 of "
+            "[Common Diffusion Noise Schedules and Sample Steps are Flawed]"
+            "(https://huggingface.co/papers/2305.08891) for more information."
+        ),
     )
     parser.add_argument(
         "--guidance_rescale",
         type=float,
         default=None,
-        help="guidance rescale in [Common Diffusion Noise Schedules and Sample Steps are Flawed](https://huggingface.co/papers/2305.08891)",
+        help=(
+            "guidance rescale in [Common Diffusion Noise Schedules and "
+            "Sample Steps are Flawed](https://huggingface.co/papers/2305.08891)"
+        ),
     )
     parser.add_argument(
         "--loop",
@@ -213,12 +221,16 @@ def run_inference(args, gpu_num=1, rank=0, **kwargs):
     # load and replace inference args with user agrgument
     assert Path(args.config).exists(), f"Error: config file {args.config} NOT Found!"
     config = OmegaConf.load(args.config)
+    if not isinstance(config, DictConfig):
+        raise TypeError(f"Expected YAML mapping config, got {type(config).__name__}")
     config = prepare_inference_args(args, config)
 
     inference_config = config.pop(
         "inference", OmegaConf.create(flags={"allow_objects": True})
     )
     seed_everything(inference_config.seed)
+
+    logger.info("Compute environment: {}", describe_compute_environment())
 
     apply_compile_env(bool(getattr(args, "compile", False)))
     if getattr(args, "enable_fp8", False):
@@ -230,7 +242,7 @@ def run_inference(args, gpu_num=1, rank=0, **kwargs):
     flow_config = config.pop("flow", OmegaConf.create(flags={"allow_objects": True}))
     flow_target = flow_config.get("target", "")
     allow_cpu = os.environ.get("VIDEOTUNA_ALLOW_CPU_INFERENCE", "0") == "1"
-    require_nvidia_cuda_for_flow(flow_target, allow_cpu=allow_cpu)
+    require_accelerator_for_flow(flow_target, allow_cpu=allow_cpu)
 
     ckpt_path = getattr(inference_config, "ckpt_path", None)
     if ckpt_path and not checkpoint_available(ckpt_path, flow_target=flow_target):

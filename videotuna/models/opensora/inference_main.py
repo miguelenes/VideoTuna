@@ -36,6 +36,7 @@ from videotuna.models.opensora.utils.sampling import (
     prepare_models,
     sanitize_sampling_option,
 )
+from videotuna.utils.device_utils import resolve_inference_device
 
 
 @torch.inference_mode()
@@ -50,7 +51,7 @@ def main():
     cfg = parse_alias(cfg)
 
     # == device and dtype ==
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = str(resolve_inference_device())
     dtype = to_torch_dtype(cfg.get("dtype", "bf16"))
     seed = cfg.get("seed", 1024)
     if seed is not None:

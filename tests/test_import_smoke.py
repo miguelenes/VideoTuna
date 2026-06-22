@@ -4,13 +4,15 @@ import pytest
 import torch
 from packaging.version import Version
 
-BACKENDS = [
+INFERENCE_BACKENDS = [
     "videotuna.flow.diffusers_video",
     "videotuna.flow.hunyuanvideo",
     "videotuna.flow.videocrafter",
-    "videotuna.models.opensora.acceleration.plugin",
-    "videotuna.third_party.flux.training.model",
-    "videotuna.models.cogvideo_sat.arguments",
+]
+
+TRAINING_BACKENDS = [
+    ("videotuna.models.opensora.acceleration.plugin", "colossalai"),
+    ("videotuna.training.flux_lora.config", None),
 ]
 
 GPU_BACKENDS = [
@@ -19,8 +21,15 @@ GPU_BACKENDS = [
 ]
 
 
-@pytest.mark.parametrize("module", BACKENDS)
-def test_backend_import(module):
+@pytest.mark.parametrize("module", INFERENCE_BACKENDS)
+def test_inference_backend_import(module):
+    importlib.import_module(module)
+
+
+@pytest.mark.parametrize("module,extra", TRAINING_BACKENDS)
+def test_training_backend_import(module, extra):
+    if extra is not None:
+        pytest.importorskip(extra)
     try:
         importlib.import_module(module)
     except ValueError as exc:
@@ -31,14 +40,15 @@ def test_backend_import(module):
 
 @pytest.mark.parametrize("module", GPU_BACKENDS)
 def test_gpu_backend_import(module):
-    if not torch.cuda.is_available():
-        pytest.skip("CUDA required for module-level GPU initialization")
+    from videotuna.utils.device_utils import gpu_is_available
+
+    if not gpu_is_available():
+        pytest.skip("GPU accelerator required for module-level GPU initialization")
     importlib.import_module(module)
 
 
 def test_core_ml_stack_versions():
     import accelerate
-    import deepspeed
     import diffusers
     import peft
     import transformers
@@ -50,4 +60,10 @@ def test_core_ml_stack_versions():
     assert Version(transformers.__version__) >= Version("4.48.0")
     assert Version(accelerate.__version__) >= Version("1.2.0")
     assert Version(peft.__version__) >= Version("0.17.0")
+
+
+def test_training_stack_versions():
+    pytest.importorskip("deepspeed")
+    import deepspeed
+
     assert Version(deepspeed.__version__) >= Version("0.19.0")

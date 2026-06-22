@@ -11,6 +11,23 @@ from datetime import datetime
 current_time = datetime.now().strftime("%Y%m%d%H%M%S")
 
 
+def _require_cuda_backend(installer_name: str) -> None:
+    """Abort when the active PyTorch build is ROCm (CUDA-only installer)."""
+    try:
+        from videotuna.utils.device_utils import detect_compute_backend
+
+        if detect_compute_backend() == "rocm":
+            print(
+                f"{installer_name} is not supported on AMD ROCm.\n"
+                "Use VIDEOTUNA_ATTN_BACKEND=sdpa for attention on ROCm.\n"
+                "See docs/install-rocm.md.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+    except ImportError:
+        pass
+
+
 def install_deepspeed():
     """
     Install DeepSpeed with CUDA 12.6 toolkit support (rebuilds against the active torch).
@@ -18,6 +35,7 @@ def install_deepspeed():
     When conda is unavailable, skips the CUDA toolkit step and installs via pip.
     If deepspeed>=0.19.2 is already importable, exits successfully without rebuilding.
     """
+    _require_cuda_backend("install-deepspeed")
     try:
         import deepspeed
         from packaging.version import Version
@@ -82,6 +100,7 @@ def install_flash_attn():
     Tries a prebuilt wheel first (no compiler or conda required). Falls back to a
     source build only when the wheel is unavailable.
     """
+    _require_cuda_backend("install-flash-attn")
     subprocess.run([sys.executable, "-m", "pip", "install", "ninja"], check=False)
 
     wheel_tag = _python_wheel_tag()
@@ -140,6 +159,100 @@ def install_flash_attn():
         check=False,
     )
     exit(result_flash.returncode)
+
+
+_ROCM_TORCH_INDEX = "https://download.pytorch.org/whl/rocm6.2.4"
+_CPU_TORCH_INDEX = "https://download.pytorch.org/whl/cpu"
+_CUDA_ONLY_PACKAGES = (
+    "xformers",
+    "bitsandbytes",
+    "xfuser",
+    "triton",
+    "nvidia-cublas-cu12",
+    "nvidia-cuda-cupti-cu12",
+    "nvidia-cuda-nvrtc-cu12",
+    "nvidia-cuda-runtime-cu12",
+    "nvidia-cudnn-cu12",
+    "nvidia-cufft-cu12",
+    "nvidia-curand-cu12",
+    "nvidia-cusolver-cu12",
+    "nvidia-cusparse-cu12",
+    "nvidia-cusparselt-cu12",
+    "nvidia-nccl-cu12",
+    "nvidia-nvjitlink-cu12",
+    "nvidia-nvtx-cu12",
+)
+
+
+def install_rocm():
+    """
+    Install PyTorch 2.6 + torchvision 0.21 for ROCm 6.2.4 and remove CUDA-only wheels.
+
+    Run after: poetry install -E rocm
+    """
+    pip = [sys.executable, "-m", "pip"]
+    for pkg in _CUDA_ONLY_PACKAGES:
+        subprocess.run([*pip, "uninstall", pkg, "-y"], check=False)
+    result = subprocess.run(
+        [
+            *pip,
+            "install",
+            "torch==2.6.0",
+            "torchvision==0.21.0",
+            "--index-url",
+            _ROCM_TORCH_INDEX,
+        ],
+        check=False,
+    )
+    if result.returncode != 0:
+        exit(result.returncode)
+    try:
+        from videotuna.utils.device_utils import describe_compute_environment
+
+        print(describe_compute_environment())
+    except ImportError:
+        import torch
+
+        print(
+            f"torch {torch.__version__}, cuda available: {torch.cuda.is_available()}, "
+            f"hip: {getattr(torch.version, 'hip', None)}"
+        )
+    exit(0)
+
+
+def install_cpu_torch():
+    """Install CPU-only PyTorch 2.6 wheels (no CUDA/ROCm)."""
+    pip = [sys.executable, "-m", "pip"]
+    for pkg in _CUDA_ONLY_PACKAGES:
+        subprocess.run([*pip, "uninstall", pkg, "-y"], check=False)
+    result = subprocess.run(
+        [
+            *pip,
+            "install",
+            "torch==2.6.0",
+            "torchvision==0.21.0",
+            "--index-url",
+            _CPU_TORCH_INDEX,
+        ],
+        check=False,
+    )
+    exit(result.returncode)
+
+
+def install_flash_attn_rocm():
+    """
+    flash-attn is not officially supported on ROCm in VideoTuna.
+
+    Use VIDEOTUNA_ATTN_BACKEND=sdpa instead. See docs/install-rocm.md.
+    """
+    print(
+        "flash-attn is not supported on AMD ROCm in VideoTuna.\n"
+        "Use: export VIDEOTUNA_ATTN_BACKEND=sdpa\n"
+        "For experimental upstream builds, see "
+        "https://github.com/Dao-AILab/flash-attention",
+        file=sys.stderr,
+    )
+    sys.exit(1)
 
 
 def code_format(check=False):
@@ -308,83 +421,6 @@ def inference_cogvideox1_5_i2v():
             "scripts/inference_new.py",
             "--config",
             "configs/inference/cogvideox1.5_i2v_5b.yaml",
-        ]
-        + sys.argv[1:],
-        check=False,
-    )
-    exit(result.returncode)
-
-
-def inference_cogvideox1_5_5b_i2v():
-    import warnings
-
-    warnings.warn(
-        "inference-cogvideox-15-5b-i2v uses legacy SAT weights. "
-        "Prefer: poetry run inference-cogvideox1.5-i2v",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    load_transformer = "checkpoints/cogvideo/CogVideoX1.5-5B-SAT/transformer_i2v"
-    input_file = "inputs/i2v/576x1024/test_prompts.txt"
-    output_dir = "results/i2v/cogvideox1.5"
-    base = "configs/005_cogvideox1.5/cogvideox1.5_5b.yaml"
-    image_folder = "inputs/i2v/576x1024/"
-
-    result = subprocess.run(
-        [
-            "python",
-            "scripts/inference_cogVideo_sat_refactor.py",
-            "--load_transformer",
-            load_transformer,
-            "--input_file",
-            input_file,
-            "--output_dir",
-            output_dir,
-            "--base",
-            base,
-            "--mode_type",
-            "i2v",
-            "--sampling_num_frames",
-            "22",
-            "--image_folder",
-            image_folder,
-        ]
-        + sys.argv[1:],
-        check=False,
-    )
-    exit(result.returncode)
-
-
-def inference_cogvideox1_5_5b_t2v():
-    import warnings
-
-    warnings.warn(
-        "inference-cogvideox-15-5b-t2v uses legacy SAT weights. "
-        "Prefer: poetry run inference-cogvideox1.5-t2v",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    load_transformer = "checkpoints/cogvideo/CogVideoX1.5-5B-SAT/transformer_t2v"
-    input_file = "inputs/t2v/prompts.txt"
-    output_dir = "results/t2v/"
-    base = "configs/005_cogvideox1.5/cogvideox1.5_5b.yaml"
-
-    result = subprocess.run(
-        [
-            "python",
-            "scripts/inference_cogVideo_sat_refactor.py",
-            "--load_transformer",
-            load_transformer,
-            "--input_file",
-            input_file,
-            "--output_dir",
-            output_dir,
-            "--base",
-            base,
-            "--mode_type",
-            "t2v",
-            "--sampling_num_frames",
-            "22",
         ]
         + sys.argv[1:],
         check=False,

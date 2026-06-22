@@ -9,7 +9,7 @@ from typing import Union
 import torch
 from colorama import Fore, Style
 from loguru import logger
-from omegaconf import MissingMandatoryValue, OmegaConf
+from omegaconf import DictConfig, MissingMandatoryValue, OmegaConf
 from pytorch_lightning import Trainer
 
 from videotuna.utils.lightning_utils import add_trainer_args_to_parser
@@ -39,7 +39,10 @@ def prepare_train_args(parser: argparse.Namespace):
 
     configs = [OmegaConf.load(cfg) for cfg in args.base]
     cli = OmegaConf.from_dotlist(unknown)
-    config = OmegaConf.merge(*configs, cli)
+    merged = OmegaConf.merge(*configs, cli)
+    if not isinstance(merged, DictConfig):
+        raise TypeError(f"Expected YAML mapping config, got {type(merged).__name__}")
+    config = merged
 
     ## parser args replace train config
     train_config = config.get("train", OmegaConf.create())
@@ -102,7 +105,9 @@ def path_exists(cfg, path):
         return False
 
 
-def prepare_inference_args(args: argparse.Namespace, config: OmegaConf):
+def prepare_inference_args(
+    args: argparse.Namespace, config: DictConfig
+) -> DictConfig:
     """
     Prepare the arguments by updating the config with the command line arguments.
 
@@ -151,12 +156,14 @@ def prepare_inference_args(args: argparse.Namespace, config: OmegaConf):
         return mapping.get(dtype_str)
 
     OmegaConf.register_new_resolver("dtype_resolver", resolve_dtype)
-    config = OmegaConf.to_container(config, resolve=True)
-    config = OmegaConf.create(config, flags={"allow_objects": True})
+    resolved = OmegaConf.to_container(config, resolve=True)
+    if not isinstance(resolved, dict):
+        raise TypeError("Inference config must resolve to a mapping")
+    config = OmegaConf.create(resolved, flags={"allow_objects": True})
     return config
 
 
-def check_args(inference_config: OmegaConf):
+def check_args(inference_config: DictConfig):
     """
     Check if all the mandatory arguments are provided.
 
@@ -186,7 +193,7 @@ def process_savedir(savedir: str):
     return savedir
 
 
-def print_inference_config(inference_config: OmegaConf):
+def print_inference_config(inference_config: DictConfig):
     """
     Print the basic information of the inference config.
     Such as the mode, savedir, the seed, the height, width, frames, fps, n_samples_prompt, bs.

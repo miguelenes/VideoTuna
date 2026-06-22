@@ -19,13 +19,6 @@ from omegaconf import DictConfig, OmegaConf
 from PIL import Image
 from tqdm import tqdm
 from transformers.models.bert.modeling_bert import BertEmbeddings
-from xfuser.core.distributed.parallel_state import (
-    get_tensor_model_parallel_rank,
-    get_tensor_model_parallel_world_size,
-)
-from xfuser.model_executor.models.customized.step_video_t2v.tp_applicator import (
-    TensorParallelApplicator,
-)
 
 from videotuna.base.generation_base import GenerationBase
 from videotuna.models.stepvideo.stepvideo.diffusion.scheduler import (
@@ -44,6 +37,7 @@ from videotuna.models.stepvideo.stepvideo.vae.vae import (
 )
 from videotuna.schedulers.flow_matching import FlowMatchScheduler
 from videotuna.utils.common_utils import instantiate_from_config
+from videotuna.utils.device_utils import resolve_inference_device
 from videotuna.utils.inference_utils import (
     AutoWrappedLinear,
     AutoWrappedModule,
@@ -51,6 +45,23 @@ from videotuna.utils.inference_utils import (
 )
 
 from ..utils.common_utils import monitor_resources
+
+
+def _import_xfuser_tp():
+    """Lazy import xfuser tensor-parallel helpers (CUDA-only)."""
+    from xfuser.core.distributed.parallel_state import (
+        get_tensor_model_parallel_rank,
+        get_tensor_model_parallel_world_size,
+    )
+    from xfuser.model_executor.models.customized.step_video_t2v.tp_applicator import (
+        TensorParallelApplicator,
+    )
+
+    return (
+        TensorParallelApplicator,
+        get_tensor_model_parallel_world_size,
+        get_tensor_model_parallel_rank,
+    )
 
 
 class StepVideoModelFlow(GenerationBase):
@@ -75,7 +86,7 @@ class StepVideoModelFlow(GenerationBase):
         num_persistent_param_in_dit: int = None,
         torch_dtype: torch.dtype = torch.bfloat16,
         precision: str = "bf16",
-        device: str = torch.cuda.current_device(),
+        device: str | int | None = None,
         enable_model_cpu_offload: bool = True,
         enable_sequential_cpu_offload: bool = False,
         *args,
@@ -105,6 +116,13 @@ class StepVideoModelFlow(GenerationBase):
         dtype_map = {"bf16": torch.bfloat16, "fp16": torch.float16}
         self.precision = precision
         self.torch_dtype = dtype_map.get(precision, torch_dtype)
+        if device is None:
+            resolved = resolve_inference_device()
+            device = (
+                resolved
+                if isinstance(resolved, (str, int))
+                else str(resolved)
+            )
         self.device_type = device
         self.vae_scale_factor_temporal = (
             self.vae.temporal_compression_ratio if getattr(self, "vae", None) else 8
@@ -295,7 +313,7 @@ class StepVideoModelFlow(GenerationBase):
         return latents
 
     @torch.inference_mode()
-    def inference(self, config: DictConfig, device=torch.cuda.current_device()):
+    def inference(self, config: DictConfig, device=None):
         # init vars
         rank = int(os.getenv("RANK", 0))
         world_size = int(os.getenv("WORLD_SIZE", 1))
@@ -447,6 +465,11 @@ class StepVideoModelFlow(GenerationBase):
 
         if self.tensor_parallel_degree > 1:
             logger.info("StepVideoModelFlow: apply tensor parallel")
+            (
+                TensorParallelApplicator,
+                get_tensor_model_parallel_world_size,
+                get_tensor_model_parallel_rank,
+            ) = _import_xfuser_tp()
             tp_applicator = TensorParallelApplicator(
                 get_tensor_model_parallel_world_size(), get_tensor_model_parallel_rank()
             )

@@ -53,8 +53,14 @@ from videotuna.models.hunyuan.hyvideo_i2v.vae.autoencoder_kl_causal_3d import (
 from videotuna.utils.args_utils import VideoMode
 from videotuna.utils.attention import maybe_compile_denoiser
 from videotuna.utils.common_utils import monitor_resources
+from videotuna.utils.device_utils import (
+    accelerator_device_string,
+    detect_compute_backend,
+    gpu_is_available,
+    require_xfuser_sequence_parallel,
+    resolve_inference_device,
+)
 from videotuna.utils.fp8_utils import validate_fp8_inference
-
 try:
     import xfuser
     from xfuser.core.distributed import (
@@ -277,7 +283,7 @@ class HunyuanVideoFlow(GenerationBase):
         self.device_type = (
             device
             if device is not None
-            else "cuda" if torch.cuda.is_available() else "cpu"
+            else accelerator_device_string() if gpu_is_available() else "cpu"
         )
         self.vae_type = vae_type
         self.vae_tiling = vae_tiling
@@ -360,6 +366,7 @@ class HunyuanVideoFlow(GenerationBase):
         # ========================================================================
         # 20250316 pftq: Modified to extract rank and world_size early for sequential loading
         if self.ulysses_degree > 1 or self.ring_degree > 1:
+            require_xfuser_sequence_parallel("HunyuanVideoFlow")
             assert (
                 xfuser is not None
             ), "Ulysses Attention and Ring Attention requires xfuser package."
@@ -390,7 +397,11 @@ class HunyuanVideoFlow(GenerationBase):
             rank = 0  # 20250316 pftq: Default rank for single GPU
             world_size = 1  # 20250316 pftq: Default world_size for single GPU
             if device is None:
-                device = "cuda" if torch.cuda.is_available() else "cpu"
+                device = (
+                    str(resolve_inference_device())
+                    if gpu_is_available()
+                    else "cpu"
+                )
 
         torch.set_grad_enabled(False)
 
@@ -721,7 +732,9 @@ class HunyuanVideoFlow(GenerationBase):
                 .to(self.device_type)
             )
 
-            with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=True):
+            with torch.autocast(
+                device_type=accelerator_device_string(), dtype=torch.float16, enabled=True
+            ):
                 img_latents = self.pipeline.vae.encode(
                     semantic_image_pixel_values
                 ).latent_dist.mode()

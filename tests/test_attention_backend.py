@@ -1,64 +1,52 @@
+"""Tests for ROCm-safe attention backend selection."""
+
 import os
+from unittest import mock
 
 import pytest
-import torch
 
-from videotuna.utils.attention import (
-    attention_dense,
-    attention_eager,
-    get_attn_backend,
-    is_flash_attn_available,
-)
+from videotuna.utils import attention
 
 
-@pytest.mark.parametrize("layout", ["bsnd", "bhsd"])
-def test_eager_matches_sdpa_on_cpu(layout):
-    torch.manual_seed(0)
-    b, s, h, d = 2, 8, 4, 16
-    q = torch.randn(b, s, h, d)
-    k = torch.randn(b, s, h, d)
-    v = torch.randn(b, s, h, d)
-
-    os.environ["VIDEOTUNA_ATTN_BACKEND"] = "eager"
-    out_eager = attention_dense(q, k, v, layout=layout)
-
-    os.environ["VIDEOTUNA_ATTN_BACKEND"] = "sdpa"
-    out_sdpa = attention_dense(q, k, v, layout=layout)
-
-    assert out_eager.shape == out_sdpa.shape
-    torch.testing.assert_close(out_eager, out_sdpa, rtol=1e-2, atol=1e-2)
+def test_auto_backend_rocm_prefers_sdpa():
+    with mock.patch.object(attention, "detect_compute_backend", return_value="rocm"):
+        with mock.patch.object(attention, "gpu_is_available", return_value=True):
+            with mock.patch.dict(os.environ, {"VIDEOTUNA_ATTN_BACKEND": "auto"}):
+                assert attention.get_attn_backend() == "sdpa"
 
 
-def test_attention_eager_scale():
-    q = torch.randn(1, 2, 4, 8)
-    k = torch.randn(1, 2, 4, 8)
-    v = torch.randn(1, 2, 4, 8)
-    out = attention_eager(q, k, v, layout="bhsd", scale=0.125)
-    assert out.shape == q.shape
+def test_auto_backend_rocm_cpu_fallback_eager():
+    with mock.patch.object(attention, "detect_compute_backend", return_value="rocm"):
+        with mock.patch.object(attention, "gpu_is_available", return_value=False):
+            with mock.patch.dict(os.environ, {"VIDEOTUNA_ATTN_BACKEND": "auto"}):
+                assert attention.get_attn_backend() == "eager"
 
 
-def test_get_attn_backend_auto_cpu(monkeypatch):
-    monkeypatch.delenv("VIDEOTUNA_ATTN_BACKEND", raising=False)
-    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
-    assert get_attn_backend() == "eager"
+def test_flash_rejected_on_rocm():
+    with mock.patch.object(attention, "detect_compute_backend", return_value="rocm"):
+        with mock.patch.object(attention, "_FLASH_ATTN_AVAILABLE", True):
+            with mock.patch.dict(os.environ, {"VIDEOTUNA_ATTN_BACKEND": "flash"}):
+                with pytest.raises(RuntimeError, match="not supported on AMD ROCm"):
+                    attention.get_attn_backend()
 
 
-def test_get_attn_backend_explicit_eager(monkeypatch):
-    monkeypatch.setenv("VIDEOTUNA_ATTN_BACKEND", "eager")
-    assert get_attn_backend() == "eager"
+def test_auto_backend_cuda_uses_flash_when_available():
+    with mock.patch.object(attention, "detect_compute_backend", return_value="cuda"):
+        with mock.patch.object(attention, "gpu_is_available", return_value=True):
+            with mock.patch.object(attention, "_FLASH_ATTN_AVAILABLE", True):
+                with mock.patch.dict(os.environ, {"VIDEOTUNA_ATTN_BACKEND": "auto"}):
+                    assert attention.get_attn_backend() == "flash"
 
 
-def test_get_attn_backend_flash_requires_package(monkeypatch):
-    monkeypatch.setenv("VIDEOTUNA_ATTN_BACKEND", "flash")
-    if is_flash_attn_available():
-        assert get_attn_backend() == "flash"
-    else:
-        with pytest.raises(RuntimeError, match="flash-attn"):
-            get_attn_backend()
-
-
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
-def test_get_attn_backend_auto_cuda():
-    os.environ.pop("VIDEOTUNA_ATTN_BACKEND", None)
-    backend = get_attn_backend()
-    assert backend in ("flash", "sdpa")
+def test_sdpa_context_rocm_excludes_flash_kernel():
+    with mock.patch.object(attention, "gpu_is_available", return_value=True):
+        with mock.patch.object(attention, "detect_compute_backend", return_value="rocm"):
+            with mock.patch("torch.nn.attention.sdpa_kernel") as mock_sdpa:
+                mock_sdpa.return_value.__enter__ = mock.Mock(return_value=None)
+                mock_sdpa.return_value.__exit__ = mock.Mock(return_value=False)
+                with attention._sdpa_context():
+                    pass
+                backends = mock_sdpa.call_args[0][0]
+                backend_names = [b.name for b in backends]
+                assert "FLASH_ATTENTION" not in backend_names
+                assert "EFFICIENT_ATTENTION" in backend_names

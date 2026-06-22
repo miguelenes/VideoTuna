@@ -380,6 +380,16 @@ class Timer:
             print(f"Elapsed time for {self.name}: {self.elapsed_time:.2f} s")
 
 
+def log_cuda_max_memory(label: str = "") -> None:
+    """Log peak GPU memory when a CUDA/ROCm accelerator is available."""
+    if not torch.cuda.is_available():
+        return
+    torch.cuda.synchronize()
+    peak_gb = torch.cuda.max_memory_allocated() / (1024**3)
+    prefix = f"{label}: " if label else ""
+    print(f"{prefix}peak GPU memory {peak_gb:.2f} GB")
+
+
 def get_tensor_memory(tensor, human_readable=True):
     size = tensor.element_size() * tensor.nelement()
     if human_readable:

@@ -35,6 +35,16 @@ This document contains commands for preparing model checkpoints and the final ch
 
 * Note: H: height; W: width; L: length
 
+### Compute compatibility (CUDA / ROCm / CPU)
+
+| Tier | Models | CUDA | ROCm | CPU |
+|------|--------|------|------|-----|
+| A | CogVideoX, Flux, Mochi, LTX, Hunyuan 1.5 Diffusers, Wan 2.2 Diffusers | Yes | Yes (`sdpa`) | Smoke only |
+| B | Native Hunyuan/Wan, Open-Sora, VideoCrafter | Yes | Experimental | Init smoke |
+| C | StepVideo, CogVideo SAT | Yes | No | No |
+
+Install: NVIDIA `poetry install -E cuda` · AMD [`docs/install-rocm.md`](install-rocm.md) · CPU `poetry install -E cpu`
+
 ### 1.1 Diffusers hub vs local checkpoints
 
 CogVideoX, Flux, Mochi, Wan, Hunyuan 1.5, and LTX **inference presets** in [`configs/inference/`](../configs/inference/) default to Hugging Face hub IDs. Diffusers downloads weights into the HF cache on first run — you do not need to clone into `checkpoints/` unless you want fully offline runs.
@@ -52,7 +62,7 @@ See [MODEL_VERSIONS.md](MODEL_VERSIONS.md) for the full upgrade matrix.
 | Local / offline override | `--ckpt_path /path/to/hub-clone` on `inference_new.py` |
 | LoRA (CogVideoX / Flux) | Add `--lorackpt /path/to/lora` to `inference_new.py` |
 
-CogVideoX **1.5 SAT** weights remain local-only under `checkpoints/cogvideo/CogVideoX1.5-5B-SAT` (deprecated; prefer Diffusers hub IDs above).
+For CogVideoX 1.5, use Diffusers hub IDs (`THUDM/CogVideoX1.5-5B`, `THUDM/CogVideoX1.5-5B-I2V`) via `inference-cogvideox1.5-*`.
 
 
 ### 2. Download checkpoints
@@ -67,7 +77,8 @@ mkdir -p checkpoints/cogvideo; cd checkpoints/cogvideo
 git clone https://huggingface.co/THUDM/CogVideoX-2b         # This are checkpoints for CogVideoX T2V-2B
 git clone https://huggingface.co/THUDM/CogVideoX-5b         # This are checkpoints for CogVideoX T2V-5B
 git clone https://huggingface.co/THUDM/CogVideoX-5b-I2V     # This are checkpoints for CogVideoX I2V-5B
-git clone https://huggingface.co/THUDM/CogVideoX1.5-5B-SAT  # This are checkpoints for CogVideoX 1.5-5B (both T2V and I2V)
+git clone https://huggingface.co/THUDM/CogVideoX1.5-5B      # CogVideoX 1.5 T2V (Diffusers)
+git clone https://huggingface.co/THUDM/CogVideoX1.5-5B-I2V  # CogVideoX 1.5 I2V (Diffusers)
 
 # ---- HunyuanVideo (diffusers) ----
 cd VideoTuna   # Make sure you are under the root path of VideoTuna

@@ -28,6 +28,10 @@ from omegaconf import DictConfig
 
 from videotuna.base.generation_base import GenerationBase
 from videotuna.utils.common_utils import monitor_resources
+from videotuna.utils.device_utils import (
+    accelerator_device_string,
+    detect_compute_backend,
+)
 from videotuna.utils.diffusers_optimizations import (
     apply_diffusers_optimizations,
     transformer_cache_context,
@@ -193,8 +197,12 @@ def _hunyuan_attention_context(model_family: str):
     except ImportError:
         return nullcontext()
     backend = os.environ.get("VIDEOTUNA_ATTN_BACKEND", "auto")
-    if backend == "flash":
+    if backend == "flash" and detect_compute_backend() != "rocm":
         return attention_backend("flash_hub")
+    if backend == "flash" and detect_compute_backend() == "rocm":
+        logger.warning(
+            "VIDEOTUNA_ATTN_BACKEND=flash ignored on ROCm; using default diffusers attention"
+        )
     return nullcontext()
 
 
@@ -468,8 +476,10 @@ class DiffusersVideoFlow(GenerationBase):
                     if neg:
                         pipe_kwargs["negative_prompt"] = neg
                     autocast_ctx = (
-                        torch.autocast("cuda", self._dtype, cache_enabled=False)
-                        if torch.cuda.is_available()
+                        torch.autocast(
+                            accelerator_device_string(), self._dtype, cache_enabled=False
+                        )
+                        if accelerator_device_string() == "cuda"
                         else torch.autocast("cpu", enabled=False)
                     )
                     with autocast_ctx:

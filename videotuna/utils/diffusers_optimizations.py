@@ -8,6 +8,7 @@ from typing import Any, Optional
 from loguru import logger
 
 from videotuna.utils.inference_cli import resolve_offload_mode
+from videotuna.utils.device_utils import gpu_is_available, resolve_inference_device
 
 
 def apply_diffusers_optimizations(
@@ -24,10 +25,8 @@ def apply_diffusers_optimizations(
     elif offload == "model":
         pipe.enable_model_cpu_offload()
     elif hasattr(pipe, "to"):
-        import torch
-
-        if torch.cuda.is_available():
-            pipe.to("cuda")
+        if gpu_is_available():
+            pipe.to(resolve_inference_device())
 
     if getattr(args, "enable_vae_slicing", False) and hasattr(pipe, "vae"):
         pipe.vae.enable_slicing()
