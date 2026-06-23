@@ -163,12 +163,12 @@ class WanVideoModelFlow(GenerationBase):
                 )
             self._log.info("WanVideo flow: Init Process Group")
         else:
-            assert not (
-                t5_fsdp or dit_fsdp
-            ), "t5_fsdp and dit_fsdp are not supported in non-distributed environments."
-            assert not (
-                ulysses_size > 1 or ring_size > 1
-            ), "context parallel are not supported in non-distributed environments."
+            assert not (t5_fsdp or dit_fsdp), (
+                "t5_fsdp and dit_fsdp are not supported in non-distributed environments."
+            )
+            assert not (ulysses_size > 1 or ring_size > 1), (
+                "context parallel are not supported in non-distributed environments."
+            )
 
         if ulysses_size > 1 or ring_size > 1:
             require_xfuser_sequence_parallel("WanVideoModelFlow")
@@ -373,9 +373,9 @@ class WanVideoModelFlow(GenerationBase):
         guide_scale = args.unconditional_guidance_scale
 
         prompt_list, image_list = self.load_inference_inputs(args.prompt_dir, args.mode)
-        assert len(prompt_list) == len(
-            image_list
-        ), "prompt and image number should match"
+        assert len(prompt_list) == len(image_list), (
+            "prompt and image number should match"
+        )
 
         if len(prompt_list) > 1:
             self._log.info("Processing prompts sequentially (batch size 1 per prompt).")

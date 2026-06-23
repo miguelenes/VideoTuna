@@ -351,7 +351,7 @@ def install_rocm():
 
         print(describe_compute_environment())
     except ImportError:
-        print(f"torch.cuda.is_available()={torch.cuda.is_available()}, " f"hip={hip}")
+        print(f"torch.cuda.is_available()={torch.cuda.is_available()}, hip={hip}")
     exit(0)
 
 
