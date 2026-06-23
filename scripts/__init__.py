@@ -6,16 +6,26 @@ import os
 import shutil
 import subprocess
 import sys
-from datetime import datetime
 
-current_time = datetime.now().strftime("%Y%m%d%H%M%S")
+from videotuna.cli.train_options import (
+    FLUX_T2I_CLOUD_SMOKE,
+    FLUX_T2I_CONFIG,
+    FLUX_T2I_DATA_CONFIG,
+    WAN_I2V_LORA_CONFIG,
+    WAN_T2V_LORA_CLOUD_SMOKE,
+    WAN_T2V_LORA_CONFIG,
+)
 
-FLUX_T2I_CONFIG = "configs/domain/flux_t2i.json"
-FLUX_T2I_DATA_CONFIG = "configs/domain/flux_t2i_data.json"
-FLUX_T2I_CLOUD_SMOKE = "configs/domain/flux_t2i_cloud_smoke.json"
-WAN_T2V_LORA_CONFIG = "configs/domain/wan_t2v_lora.yaml"
-WAN_T2V_LORA_CLOUD_SMOKE = "configs/domain/wan_t2v_lora_cloud_smoke.yaml"
-WAN_I2V_LORA_CONFIG = "configs/domain/wan_i2v_lora.yaml"
+__all__ = [
+    "CI_SMOKE_TESTS",
+    "COVERAGE_GATE_FAIL_UNDER",
+    "FLUX_T2I_CLOUD_SMOKE",
+    "FLUX_T2I_CONFIG",
+    "FLUX_T2I_DATA_CONFIG",
+    "WAN_I2V_LORA_CONFIG",
+    "WAN_T2V_LORA_CLOUD_SMOKE",
+    "WAN_T2V_LORA_CONFIG",
+]
 
 # Single source of truth for CPU CI smoke tests (see .github/workflows/cpu.yml).
 CI_SMOKE_TESTS = [
@@ -29,6 +39,7 @@ CI_SMOKE_TESTS = [
     "tests/test_wan_i2v_dataset.py",
     "tests/test_wan_training_step.py",
     "tests/test_poetry_scripts.py",
+    "tests/test_train_cli_cyclopts.py",
     "tests/test_diffusers_quantization.py",
 ]
 
@@ -511,55 +522,15 @@ def inference_wan2_2_t2v_720p():
 
 
 def train_flux_lora():
-    os.environ["TOKENIZERS_PARALLELISM"] = "false"
-    config_path = FLUX_T2I_CONFIG
-    data_config_path = FLUX_T2I_DATA_CONFIG
-    result = subprocess.run(
-        [
-            "accelerate",
-            "launch",
-            "--mixed_precision=bf16",
-            "--num_processes=1",
-            "--num_machines=1",
-            "scripts/train_flux_lora.py",
-            "--config_path",
-            config_path,
-            "--data_config_path",
-            data_config_path,
-        ]
-        + sys.argv[1:],
-        check=False,
-    )
-    exit(result.returncode)
+    from videotuna.cli.train_app import train_flux_lora_entry
+
+    train_flux_lora_entry()
 
 
 def train_wan2_1_t2v_lora():
-    os.environ["TOKENIZERS_PARALLELISM"] = "false"
-    ckpt = "checkpoints/wan/Wan2.1-T2V-14B"
-    config = WAN_T2V_LORA_CONFIG
-    resroot = "results/train"
-    expname = "train_wan_domain_t2v_lora"
-    result = subprocess.run(
-        [
-            sys.executable,
-            "scripts/train_new.py",
-            "-t",
-            "--ckpt",
-            ckpt,
-            "--base",
-            config,
-            "--logdir",
-            resroot,
-            "--name",
-            f"{expname}_{current_time}",
-            "--devices",
-            "0,",
-            "--auto_resume",
-        ]
-        + sys.argv[1:],
-        check=False,
-    )
-    exit(result.returncode)
+    from videotuna.cli.train_app import train_wan2_1_t2v_lora_entry
+
+    train_wan2_1_t2v_lora_entry()
 
 
 def train_domain_t2i():
@@ -573,32 +544,9 @@ def train_domain_t2v():
 
 
 def train_wan2_1_i2v_lora():
-    os.environ["TOKENIZERS_PARALLELISM"] = "false"
-    ckpt = "checkpoints/wan/Wan2.1-I2V-14B-480P"
-    config = WAN_I2V_LORA_CONFIG
-    resroot = "results/train"
-    expname = "train_wan_domain_i2v_lora"
-    result = subprocess.run(
-        [
-            sys.executable,
-            "scripts/train_new.py",
-            "-t",
-            "--ckpt",
-            ckpt,
-            "--base",
-            config,
-            "--logdir",
-            resroot,
-            "--name",
-            f"{expname}_{current_time}",
-            "--devices",
-            "0,",
-            "--auto_resume",
-        ]
-        + sys.argv[1:],
-        check=False,
-    )
-    exit(result.returncode)
+    from videotuna.cli.train_app import train_wan2_1_i2v_lora_entry
+
+    train_wan2_1_i2v_lora_entry()
 
 
 def train_domain_i2v():
