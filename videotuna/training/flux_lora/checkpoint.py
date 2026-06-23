@@ -56,6 +56,16 @@ def load_lora_checkpoint(transformer, checkpoint_dir: str | Path) -> None:
     set_peft_model_state_dict(transformer, lora_state_dict)
 
 
+def has_accelerate_state(checkpoint_dir: str | Path) -> bool:
+    """Return True if *checkpoint_dir* contains Accelerate training-state files."""
+    path = Path(checkpoint_dir)
+    if not path.is_dir():
+        return False
+    return any(
+        (path / name).exists() for name in ("optimizer.bin", "scheduler.pt")
+    ) or any(path.glob("random_states_*.pkl"))
+
+
 def prune_checkpoints(output_dir: str | Path, limit: int | None) -> None:
     if limit is None or limit <= 0:
         return

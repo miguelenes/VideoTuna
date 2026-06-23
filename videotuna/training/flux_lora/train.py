@@ -19,6 +19,7 @@ from videotuna.settings import get_settings
 from videotuna.training.flux_lora.checkpoint import (
     checkpoint_step,
     find_latest_checkpoint,
+    has_accelerate_state,
     load_lora_checkpoint,
     prune_checkpoints,
     save_lora_checkpoint,
@@ -121,11 +122,15 @@ def _resolve_resume_checkpoint(
     if not config.resume_from_checkpoint:
         return None
     if config.resume_from_checkpoint == "latest":
-        return find_latest_checkpoint(output_dir)
-    candidate = Path(config.resume_from_checkpoint)
-    if not candidate.is_absolute():
-        candidate = output_dir / candidate
-    return candidate if candidate.is_dir() else None
+        candidate = find_latest_checkpoint(output_dir)
+    else:
+        candidate = Path(config.resume_from_checkpoint)
+        if not candidate.is_absolute():
+            candidate = output_dir / candidate
+        candidate = candidate if candidate.is_dir() else None
+    if candidate is not None and not has_accelerate_state(candidate):
+        return None
+    return candidate
 
 
 def _create_optimizer(
@@ -409,6 +414,7 @@ def _run_training_loop(
             ) and accelerator.is_main_process:
                 unwrapped = accelerator.unwrap_model(transformer)
                 ckpt = save_lora_checkpoint(unwrapped, output_dir, global_step)
+                accelerator.save_state(str(ckpt))
                 prune_checkpoints(output_dir, config.checkpoints_total_limit)
                 log.info("Saved LoRA checkpoint to {}", ckpt)
             if global_step >= max_train_steps:
@@ -505,12 +511,11 @@ def train(config: FluxLoraTrainConfig, data_config: FluxLoraDataConfig) -> None:
         transformer, optimizer, dataloader, lr_scheduler
     )
     pipeline.transformer = accelerator.unwrap_model(transformer)
-    if global_step > 0:
-        for _ in range(global_step):
-            lr_scheduler.step()
+    if resume_path is not None:
+        accelerator.load_state(str(resume_path))
         log.info(
-            "Advanced LR scheduler to step {} (optimizer state not restored)",
-            global_step,
+            "Restored full training state from {} (optimizer, scheduler, RNG)",
+            resume_path,
         )
     trackio_project = settings.trackio_project or DEFAULT_FLUX_TRACKIO_PROJECT
     trackio_init_kwargs = build_trackio_init_kwargs(space_id=settings.trackio_space_id)

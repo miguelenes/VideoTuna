@@ -8,11 +8,14 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
+from pydantic_settings import SettingsConfigDict
 
 from videotuna.settings import (
+    _SETTINGS_ENV_MAP,
     ENV_ALLOW_CPU_INFERENCE,
     ENV_ATTN_BACKEND,
     ENV_ATTN_BACKEND_STRICT,
+    ENV_BENCH_MODEL,
     ENV_COMPUTE_BACKEND,
     ENV_CPU_MODE,
     ENV_LOG_LEVEL,
@@ -73,6 +76,18 @@ class TestParseBool01:
 
     def test_parse_bool01_accepts_int_0(self):
         assert _parse_bool01(0) is False
+
+    @pytest.mark.parametrize(
+        "bad_value",
+        ["", "2", "01", "10", "True", "False", "on", "off", "maybe", "  "],
+    )
+    def test_parse_bool01_rejects_non_bool01_strings(self, bad_value):
+        with pytest.raises(ValueError, match="Expected '0' or '1'"):
+            _parse_bool01(bad_value)
+
+    def test_parse_bool01_rejects_int_2(self):
+        with pytest.raises(ValueError, match="Expected '0' or '1'"):
+            _parse_bool01(2)
 
 
 class TestPrivTuneSettingsDefaults:
@@ -156,6 +171,41 @@ class TestBooleanFieldParsing:
         """VIDEOTUNA_TORCH_COMPILE=no should raise ValueError."""
         with pytest.raises(ValueError, match="Expected '0' or '1'"):
             PrivTuneSettings(torch_compile="no")
+
+    @pytest.mark.parametrize(
+        "field_name",
+        ["allow_cpu_inference", "attn_backend_strict", "torch_compile"],
+    )
+    @pytest.mark.parametrize(
+        "input_value,expected",
+        [
+            ("1", True),
+            ("0", False),
+            (1, True),
+            (0, False),
+            (True, True),
+            (False, False),
+        ],
+    )
+    def test_boolean_fields_delegate_to_parse_bool01(
+        self, field_name, input_value, expected
+    ):
+        """Boolean fields should normalize through _parse_bool01."""
+        settings = PrivTuneSettings(**{field_name: input_value})
+        assert getattr(settings, field_name) is expected
+
+    @pytest.mark.parametrize(
+        "field_name",
+        ["allow_cpu_inference", "attn_backend_strict", "torch_compile"],
+    )
+    @pytest.mark.parametrize(
+        "bad_value",
+        ["true", "false", "yes", "no", "on", "off", "", "2", "01"],
+    )
+    def test_boolean_fields_reject_non_bool01_values(self, field_name, bad_value):
+        """Boolean fields should reject non 0/1 values."""
+        with pytest.raises(ValueError, match="Expected '0' or '1'"):
+            PrivTuneSettings(**{field_name: bad_value})
 
 
 class TestStringFieldNormalization:
@@ -292,6 +342,63 @@ class TestInvalidEnumValues:
         ):
             PrivTuneSettings(cpu_mode="invalid_mode")
 
+    @pytest.mark.parametrize(
+        "field_name,bad_value,expected_pattern",
+        [
+            (
+                "compute_backend",
+                "tpu",
+                "Input should be 'auto', 'cuda', 'rocm' or 'cpu'",
+            ),
+            (
+                "attn_backend",
+                "xformers",
+                "Input should be 'auto', 'flash', 'sdpa' or 'eager'",
+            ),
+            (
+                "cpu_mode",
+                "fast",
+                "Input should be 'off', 'smoke' or 'force'",
+            ),
+            (
+                "metrics_owner",
+                "service",
+                "Input should be 'script' or 'flow'",
+            ),
+            (
+                "metrics_backend",
+                "wandb",
+                "Input should be 'tensorboard' or 'trackio'",
+            ),
+        ],
+    )
+    def test_env_driven_invalid_enum_values(
+        self, field_name, bad_value, expected_pattern
+    ):
+        """Invalid env values should be rejected during construction."""
+        env_key = _SETTINGS_ENV_MAP[field_name]
+        with mock.patch.dict(os.environ, {env_key: bad_value}, clear=False):
+            with pytest.raises(ValueError, match=expected_pattern):
+                PrivTuneSettings()
+
+    def test_env_driven_mps_rejected(self):
+        """VIDEOTUNA_COMPUTE_BACKEND=mps via env should be rejected."""
+        with mock.patch.dict(os.environ, {ENV_COMPUTE_BACKEND: "mps"}, clear=False):
+            with pytest.raises(
+                ValueError, match="VIDEOTUNA_COMPUTE_BACKEND=mps is not supported"
+            ):
+                PrivTuneSettings()
+
+    @pytest.mark.parametrize(
+        "env_key",
+        [ENV_ALLOW_CPU_INFERENCE, ENV_ATTN_BACKEND_STRICT, ENV_TORCH_COMPILE],
+    )
+    def test_env_driven_invalid_boolean_values(self, env_key):
+        """Non-0/1 boolean env values should be rejected."""
+        with mock.patch.dict(os.environ, {env_key: "true"}, clear=False):
+            with pytest.raises(ValueError, match="Expected '0' or '1'"):
+                PrivTuneSettings()
+
 
 class TestEnvFileLoading:
     """Test .env file loading with case-insensitive names."""
@@ -336,6 +443,177 @@ class TestEnvFileLoading:
                 assert settings.compute_backend == "cpu"
                 assert settings.log_level == "DEBUG"
 
+    def test_env_file_all_supported_variables(self):
+        """Settings should load every supported VIDEOTUNA_* variable from .env."""
+        env_content = (
+            "VIDEOTUNA_COMPUTE_BACKEND=rocm\n"
+            "VIDEOTUNA_CPU_MODE=smoke\n"
+            "VIDEOTUNA_ALLOW_CPU_INFERENCE=1\n"
+            "VIDEOTUNA_ATTN_BACKEND=SDPA\n"
+            "VIDEOTUNA_ATTN_BACKEND_STRICT=0\n"
+            "VIDEOTUNA_TORCH_COMPILE=1\n"
+            "VIDEOTUNA_TORCH_COMPILE_MODE=max-autotune\n"
+            "VIDEOTUNA_METRICS_OWNER=FLOW\n"
+            "VIDEOTUNA_METRICS_BACKEND=TRACKIO\n"
+            "VIDEOTUNA_TRACKIO_SPACE_ID=space-123\n"
+            "VIDEOTUNA_TRACKIO_PROJECT=project-abc\n"
+            "VIDEOTUNA_LOG_LEVEL=debug\n"
+            "VIDEOTUNA_BENCH_MODEL=bench-model\n"
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env_file = Path(tmpdir) / ".env"
+            env_file.write_text(env_content)
+            with mock.patch.dict(os.environ, {}, clear=False):
+                for key in _SETTINGS_ENV_MAP.values():
+                    os.environ.pop(key, None)
+                settings = PrivTuneSettings(_env_file=str(env_file))
+                assert settings.compute_backend == "rocm"
+                assert settings.cpu_mode == "smoke"
+                assert settings.allow_cpu_inference is True
+                assert settings.attn_backend == "sdpa"
+                assert settings.attn_backend_strict is False
+                assert settings.torch_compile is True
+                assert settings.torch_compile_mode == "max-autotune"
+                assert settings.metrics_owner == "flow"
+                assert settings.metrics_backend == "trackio"
+                assert settings.trackio_space_id == "space-123"
+                assert settings.trackio_project == "project-abc"
+                assert settings.log_level == "DEBUG"
+                assert settings.bench_model == "bench-model"
+
+    def test_env_file_mixed_case_keys_all_fields(self):
+        """.env file keys should be case-insensitive."""
+        env_content = (
+            "videotuna_compute_backend=cpu\n"
+            "VideoTuna_Cpu_Mode=force\n"
+            "VIDEOtuna_ALLOW_CPU_INFERENCE=1\n"
+            "VIDEOTUNA_ATTN_BACKEND=EAGER\n"
+            "videotuna_attn_backend_strict=1\n"
+            "VideoTuna_Torch_Compile=0\n"
+            "VIDEOTUNA_TORCH_COMPILE_MODE=REDUCE-OVERHEAD\n"
+            "videotuna_metrics_owner=flow\n"
+            "VIDEOTUNA_METRICS_BACKEND=tensorboard\n"
+            "VideoTuna_Trackio_Space_Id=space-456\n"
+            "videotuna_trackio_project=project-def\n"
+            "VIDEOTUNA_LOG_LEVEL=warning\n"
+            "videotuna_bench_model=\n"
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env_file = Path(tmpdir) / ".env"
+            env_file.write_text(env_content)
+            with mock.patch.dict(os.environ, {}, clear=False):
+                for key in _SETTINGS_ENV_MAP.values():
+                    os.environ.pop(key, None)
+                settings = PrivTuneSettings(_env_file=str(env_file))
+                assert settings.compute_backend == "cpu"
+                assert settings.cpu_mode == "force"
+                assert settings.allow_cpu_inference is True
+                assert settings.attn_backend == "eager"
+                assert settings.attn_backend_strict is True
+                assert settings.torch_compile is False
+                assert settings.torch_compile_mode == "reduce-overhead"
+                assert settings.metrics_owner == "flow"
+                assert settings.metrics_backend == "tensorboard"
+                assert settings.trackio_space_id == "space-456"
+                assert settings.trackio_project == "project-def"
+                assert settings.log_level == "WARNING"
+                assert settings.bench_model is None
+
+    def test_env_file_via_model_config_subclass(self):
+        """Env file can be configured via a subclass with model_config.env_file."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env_file = Path(tmpdir) / ".env"
+            env_file.write_text("VIDEOTUNA_COMPUTE_BACKEND=cpu\n")
+
+            class LocalEnvSettings(PrivTuneSettings):
+                model_config = SettingsConfigDict(
+                    env_prefix=ENV_PREFIX,
+                    env_file=str(env_file),
+                    env_file_encoding="utf-8",
+                    extra="ignore",
+                    case_sensitive=False,
+                )
+
+            with mock.patch.dict(os.environ, {}, clear=False):
+                os.environ.pop(ENV_COMPUTE_BACKEND, None)
+                settings = LocalEnvSettings()
+                assert settings.compute_backend == "cpu"
+
+    def test_env_file_precedence_env_over_dotenv(self):
+        """Environment variables should override .env file values."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env_file = Path(tmpdir) / ".env"
+            env_file.write_text(
+                "VIDEOTUNA_COMPUTE_BACKEND=cuda\n"
+                "VIDEOTUNA_TORCH_COMPILE=1\n"
+                "VIDEOTUNA_BENCH_MODEL=from-env-file\n"
+            )
+            with mock.patch.dict(os.environ, {}, clear=False):
+                for key in _SETTINGS_ENV_MAP.values():
+                    os.environ.pop(key, None)
+                with mock.patch.dict(
+                    os.environ,
+                    {
+                        ENV_COMPUTE_BACKEND: "cpu",
+                        ENV_BENCH_MODEL: "from-env-var",
+                    },
+                    clear=False,
+                ):
+                    settings = PrivTuneSettings(_env_file=str(env_file))
+                    assert settings.compute_backend == "cpu"  # env wins
+                    assert settings.torch_compile is True  # from .env
+                    assert settings.bench_model == "from-env-var"  # env wins
+
+    def test_env_file_precedence_constructor_over_dotenv(self):
+        """Constructor arguments should override .env file values."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env_file = Path(tmpdir) / ".env"
+            env_file.write_text(
+                "VIDEOTUNA_COMPUTE_BACKEND=cuda\n"
+                "VIDEOTUNA_TORCH_COMPILE=1\n"
+                "VIDEOTUNA_BENCH_MODEL=from-env-file\n"
+            )
+            with mock.patch.dict(os.environ, {}, clear=False):
+                for key in _SETTINGS_ENV_MAP.values():
+                    os.environ.pop(key, None)
+                settings = PrivTuneSettings(
+                    _env_file=str(env_file),
+                    compute_backend="rocm",
+                    torch_compile=False,
+                    bench_model=None,
+                )
+                assert settings.compute_backend == "rocm"  # constructor wins
+                assert settings.torch_compile is False  # constructor wins
+                assert settings.bench_model is None  # constructor wins
+
+    def test_env_file_normalizes_all_field_types(self):
+        """.env values normalize across string, boolean, and optional-string fields."""
+        env_content = (
+            "VIDEOTUNA_COMPUTE_BACKEND= CUDA \n"
+            "VIDEOTUNA_CPU_MODE= SMOKE \n"
+            "VIDEOTUNA_ALLOW_CPU_INFERENCE=1\n"
+            "VIDEOTUNA_ATTN_BACKEND= EAGER \n"
+            "VIDEOTUNA_ATTN_BACKEND_STRICT=0\n"
+            "VIDEOTUNA_TORCH_COMPILE=1\n"
+            "VIDEOTUNA_LOG_LEVEL= debug \n"
+            "VIDEOTUNA_BENCH_MODEL=   \n"
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env_file = Path(tmpdir) / ".env"
+            env_file.write_text(env_content)
+            with mock.patch.dict(os.environ, {}, clear=False):
+                for key in _SETTINGS_ENV_MAP.values():
+                    os.environ.pop(key, None)
+                settings = PrivTuneSettings(_env_file=str(env_file))
+                assert settings.compute_backend == "cuda"  # string normalization
+                assert settings.cpu_mode == "smoke"  # string normalization
+                assert settings.allow_cpu_inference is True  # boolean normalization
+                assert settings.attn_backend == "eager"  # string normalization
+                assert settings.attn_backend_strict is False  # boolean normalization
+                assert settings.torch_compile is True  # boolean normalization
+                assert settings.log_level == "DEBUG"  # string normalization
+                assert settings.bench_model is None  # optional-string normalization
+
 
 class TestGetSettings:
     """Test get_settings() function behavior."""
@@ -371,6 +649,28 @@ class TestGetSettings:
         with mock.patch.dict(os.environ, {}, clear=True):
             settings = get_settings()
             assert settings.compute_backend == "auto"
+
+    def test_get_settings_reflects_environment_changes(self):
+        """get_settings() reflects environment changes when no session is active."""
+        with mock.patch.dict(os.environ, {}, clear=True):
+            os.environ[ENV_COMPUTE_BACKEND] = "cuda"
+            assert get_settings().compute_backend == "cuda"
+
+            os.environ[ENV_COMPUTE_BACKEND] = "cpu"
+            assert get_settings().compute_backend == "cpu"
+
+            os.environ[ENV_TORCH_COMPILE] = "1"
+            assert get_settings().torch_compile is True
+
+            os.environ[ENV_TORCH_COMPILE] = "0"
+            assert get_settings().torch_compile is False
+
+    def test_get_settings_session_instance_identity(self):
+        """get_settings() should return the exact session object repeatedly."""
+        with settings_session(compute_backend="cuda") as session:
+            assert get_settings() is session
+            assert get_settings() is session
+            assert get_settings().compute_backend == "cuda"
 
 
 class TestSettingsSession:
@@ -536,6 +836,13 @@ class TestDeviceUtilsIntegration:
             backend = detect_compute_backend()
             assert backend == "cpu"
 
+    def test_detect_compute_backend_cpu_explicit(self):
+        """detect_compute_backend returns cpu when VIDEOTUNA_COMPUTE_BACKEND=cpu."""
+        from videotuna.utils.device_utils import detect_compute_backend
+
+        with settings_session(compute_backend="cpu"):
+            assert detect_compute_backend() == "cpu"
+
     def test_detect_compute_backend_cuda_without_gpu_fails(self):
         """detect_compute_backend with 'cuda' should fail when GPU unavailable."""
         from videotuna.utils.device_utils import detect_compute_backend
@@ -552,5 +859,61 @@ class TestDeviceUtilsIntegration:
                         RuntimeError,
                         match="VIDEOTUNA_COMPUTE_BACKEND=cuda but "
                         "torch.cuda.is_available",
+                    ):
+                        detect_compute_backend()
+
+    def test_detect_compute_backend_rocm_without_hip_fails(self):
+        """detect_compute_backend with 'rocm' should fail when PyTorch lacks HIP."""
+        from videotuna.utils.device_utils import detect_compute_backend
+
+        with mock.patch(
+            "videotuna.utils.device_utils._torch_hip_version", return_value=None
+        ):
+            with settings_session(compute_backend="rocm"):
+                with pytest.raises(
+                    RuntimeError,
+                    match=(
+                        "VIDEOTUNA_COMPUTE_BACKEND=rocm but "
+                        "PyTorch was not built with HIP"
+                    ),
+                ):
+                    detect_compute_backend()
+
+    def test_detect_compute_backend_rocm_without_gpu_fails(self):
+        """detect_compute_backend fails for rocm without a visible GPU."""
+        from videotuna.utils.device_utils import detect_compute_backend
+
+        with mock.patch(
+            "videotuna.utils.device_utils._torch_hip_version", return_value="5.7"
+        ):
+            with mock.patch(
+                "videotuna.utils.device_utils.torch.cuda.is_available",
+                return_value=False,
+            ):
+                with settings_session(compute_backend="rocm"):
+                    with pytest.raises(
+                        RuntimeError,
+                        match=(
+                            "VIDEOTUNA_COMPUTE_BACKEND=rocm but "
+                            "no ROCm GPU is visible"
+                        ),
+                    ):
+                        detect_compute_backend()
+
+    def test_detect_compute_backend_cuda_with_hip_fails(self):
+        """detect_compute_backend with 'cuda' on a HIP build should fail."""
+        from videotuna.utils.device_utils import detect_compute_backend
+
+        with mock.patch(
+            "videotuna.utils.device_utils._torch_hip_version", return_value="5.7"
+        ):
+            with mock.patch(
+                "videotuna.utils.device_utils.torch.cuda.is_available",
+                return_value=True,
+            ):
+                with settings_session(compute_backend="cuda"):
+                    with pytest.raises(
+                        RuntimeError,
+                        match="VIDEOTUNA_COMPUTE_BACKEND=cuda but PyTorch reports HIP",
                     ):
                         detect_compute_backend()

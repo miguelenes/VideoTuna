@@ -15,12 +15,16 @@ from peft.utils import set_peft_model_state_dict
 # Native Wan 2.1 PEFT targets (training config in wan_t2v_lora.yaml).
 WAN_NATIVE_LORA_TARGETS = ["q", "k", "v", "o", "ffn.0", "ffn.2"]
 
-# Diffusers WanTransformer3DModel PEFT targets (attn1 self-attn + FFN only).
+# Diffusers WanTransformer3DModel PEFT targets (attn1 self-attn, attn2 cross-attn, FFN).
 WAN_DIFFUSERS_LORA_TARGETS = [
     "attn1.to_q",
     "attn1.to_k",
     "attn1.to_v",
     "attn1.to_out.0",
+    "attn2.to_q",
+    "attn2.to_k",
+    "attn2.to_v",
+    "attn2.to_out.0",
     "ffn.net.0.proj",
     "ffn.net.2",
 ]
@@ -28,13 +32,17 @@ WAN_DIFFUSERS_LORA_TARGETS = [
 DEFAULT_LORA_RANK = 16
 HIGH_NOISE_ADAPTER = "domain_high"
 LOW_NOISE_ADAPTER = "domain_low"
+MIN_REMAP_COVERAGE = 0.9
 
 _SELF_ATTN_RE = re.compile(
     r"^blocks\.(\d+)\.self_attn\.(q|k|v|o)\.(lora_[AB]\.weight)$"
 )
+_CROSS_ATTN_RE = re.compile(
+    r"^blocks\.(\d+)\.cross_attn\.(q|k|v|o)\.(lora_[AB]\.weight)$"
+)
 _FFN0_RE = re.compile(r"^blocks\.(\d+)\.ffn\.0\.(lora_[AB]\.weight)$")
 _FFN2_RE = re.compile(r"^blocks\.(\d+)\.ffn\.2\.(lora_[AB]\.weight)$")
-# Legacy / test shorthand: blocks.N.attn.q
+# Legacy / test shorthand: blocks.N.attn.q (no self_/cross_ prefix).
 _LEGACY_ATTN_RE = re.compile(r"^blocks\.(\d+)\.attn\.(q|k|v|o)\.(lora_[AB]\.weight)$")
 
 
@@ -49,6 +57,8 @@ class WanLoraLoadReport:
     loaded_lora_params: int
     missing_keys: List[str] = field(default_factory=list)
     unexpected_keys: List[str] = field(default_factory=list)
+    unmapped_keys: List[str] = field(default_factory=list)
+    renamed_keys: List[Tuple[str, str]] = field(default_factory=list)
 
     @property
     def remap_ratio(self) -> float:
@@ -66,6 +76,8 @@ class WanLoraLoadReport:
             "remap_ratio": round(self.remap_ratio, 4),
             "missing_keys": len(self.missing_keys),
             "unexpected_keys": len(self.unexpected_keys),
+            "unmapped_keys": len(self.unmapped_keys),
+            "renamed_keys": len(self.renamed_keys),
         }
 
 
@@ -124,6 +136,12 @@ def _remap_single_native_key(key: str) -> str:
         diff_proj = {"q": "to_q", "k": "to_k", "v": "to_v", "o": "to_out.0"}[proj]
         return f"blocks.{idx}.attn1.{diff_proj}.{suffix}"
 
+    m = _CROSS_ATTN_RE.match(key)
+    if m:
+        idx, proj, suffix = m.groups()
+        diff_proj = {"q": "to_q", "k": "to_k", "v": "to_v", "o": "to_out.0"}[proj]
+        return f"blocks.{idx}.attn2.{diff_proj}.{suffix}"
+
     m = _LEGACY_ATTN_RE.match(key)
     if m:
         idx, proj, suffix = m.groups()
@@ -154,29 +172,93 @@ def _remap_native_to_diffusers_keys(
     return remapped
 
 
+def _matches_known_remap_pattern(key: str) -> bool:
+    """Return True when the key matches one of the supported remap patterns."""
+    return any(
+        pattern.match(key)
+        for pattern in (
+            _SELF_ATTN_RE,
+            _CROSS_ATTN_RE,
+            _FFN0_RE,
+            _FFN2_RE,
+            _LEGACY_ATTN_RE,
+        )
+    )
+
+
+def _remap_state_with_meta(
+    native_state: Dict[str, torch.Tensor],
+) -> Tuple[Dict[str, torch.Tensor], List[str], List[Tuple[str, str]]]:
+    """Remap keys and return (remapped_state, unmapped_keys, renamed_pairs)."""
+    remapped: Dict[str, torch.Tensor] = {}
+    unmapped: List[str] = []
+    renamed: List[Tuple[str, str]] = []
+    for key, tensor in native_state.items():
+        if not _matches_known_remap_pattern(key):
+            unmapped.append(key)
+            continue
+        new_key = _remap_single_native_key(key)
+        renamed.append((key, new_key))
+        remapped[new_key] = tensor
+    return remapped, unmapped, renamed[:10]
+
+
 def compute_remap_coverage(
     native_state: Dict[str, torch.Tensor],
 ) -> Tuple[int, int, float]:
     """Return transformed key count, total keys, and coverage ratio."""
     if not native_state:
         return 0, 0, 0.0
-    remapped = _remap_native_to_diffusers_keys(native_state)
-    transformed = sum(1 for key in native_state if key != remapped.get(key))
+    remapped, unmapped, _ = _remap_state_with_meta(native_state)
+    transformed = len(native_state) - len(unmapped)
     total = len(native_state)
     return transformed, total, transformed / total
+
+
+def validate_remap_coverage(
+    native_state: Dict[str, torch.Tensor],
+    *,
+    min_coverage: float = MIN_REMAP_COVERAGE,
+    context: str = "",
+) -> Tuple[int, int, float, List[str]]:
+    """Validate remap coverage and return (remapped_count, total, ratio, unmapped).
+
+    Raises RuntimeError when coverage is below ``min_coverage``.
+    """
+    if not native_state:
+        raise ValueError("No LoRA tensors to validate; checkpoint may be empty")
+    remapped, unmapped, _ = _remap_state_with_meta(native_state)
+    remapped_count = len(native_state) - len(unmapped)
+    total = len(native_state)
+    coverage = remapped_count / total
+    if coverage < min_coverage:
+        prefix = f"{context}: " if context else ""
+        sample = unmapped[:10]
+        raise RuntimeError(
+            f"{prefix}Wan LoRA bridge remap coverage {coverage:.1%} is below the "
+            f"required {min_coverage:.0%} threshold. "
+            f"{len(unmapped)} of {total} keys were not remapped "
+            f"(first {len(sample)} unmapped): {sample}. "
+            "Run tools/spike_wan_lora_bridge.py for a full key inventory."
+        )
+    return remapped_count, total, coverage, unmapped
 
 
 def analyze_native_wan_lora_ckpt(ckpt_path: str | Path) -> Dict[str, Any]:
     """Inventory native checkpoint keys and remapped Diffusers targets."""
     native_state = load_native_wan_lora_state_dict(ckpt_path)
-    remapped = _remap_native_to_diffusers_keys(native_state)
-    unchanged = [k for k in native_state if k == remapped.get(k)]
+    remapped, unmapped, renamed = _remap_state_with_meta(native_state)
+    remapped_count = len(native_state) - len(unmapped)
     return {
         "path": str(ckpt_path),
         "rank": _infer_lora_rank(native_state),
         "native_key_count": len(native_state),
         "remapped_key_count": len(remapped),
-        "unchanged_keys": unchanged[:10],
+        "remap_coverage": (
+            round(remapped_count / len(native_state), 4) if native_state else 0.0
+        ),
+        "unmapped_keys": unmapped,
+        "renamed_keys": renamed,
         "sample_native": sorted(native_state.keys())[:5],
         "sample_remapped": sorted(remapped.keys())[:5],
     }
@@ -202,6 +284,8 @@ def _apply_lora_to_transformer(
     expert_label: str,
     source_keys: int,
     remapped_keys: int,
+    unmapped_keys: List[str],
+    renamed_keys: List[Tuple[str, str]],
 ) -> Tuple[Any, WanLoraLoadReport]:
     """Inject PEFT LoRA adapters and load remapped weights onto one transformer."""
     if not hasattr(transformer, "peft_config") or not transformer.peft_config:
@@ -236,6 +320,8 @@ def _apply_lora_to_transformer(
         loaded_lora_params=loaded,
         missing_keys=missing,
         unexpected_keys=unexpected,
+        unmapped_keys=unmapped_keys,
+        renamed_keys=renamed_keys,
     )
     if unexpected:
         logger.warning(
@@ -261,31 +347,46 @@ def apply_native_wan_lora_to_pipeline(
     *,
     lora_scale: float = 1.0,
     lora_scale_2: Optional[float] = None,
+    mode: str = "t2v",
 ) -> List[WanLoraLoadReport]:
     """
     Attach Wan 2.1 native LoRA weights to a Wan 2.2 Diffusers pipeline.
 
     Loads the same adapter onto ``transformer`` (high-noise) and ``transformer_2``
     (low-noise) when both are present, matching Diffusers community practice.
+
+    Args:
+        pipeline: A Wan 2.2 Diffusers pipeline (T2V or I2V).
+        ckpt_path: Native Wan 2.1 Lightning LoRA checkpoint.
+        lora_scale: Scale for the high-noise (transformer) adapter.
+        lora_scale_2: Scale for the low-noise (transformer_2) adapter.
+        mode: "t2v" or "i2v"; affects logging/report labels only.
     """
     native_state = load_native_wan_lora_state_dict(ckpt_path)
     rank = _infer_lora_rank(native_state)
-    remapped = _remap_native_to_diffusers_keys(native_state)
-    remapped_keys, source_keys, _ = compute_remap_coverage(native_state)
+    remapped, unmapped, renamed = _remap_state_with_meta(native_state)
+    remapped_keys, source_keys, _, _ = validate_remap_coverage(
+        native_state,
+        context=f"Wan {mode.upper()} LoRA bridge",
+    )
     scale_2 = lora_scale if lora_scale_2 is None else lora_scale_2
 
     reports: List[WanLoraLoadReport] = []
     adapters: List[str] = []
     scales: List[float] = []
 
+    expert_prefix = f"{mode}_" if mode != "t2v" else ""
+
     pipeline.transformer, report_high = _apply_lora_to_transformer(
         pipeline.transformer,
         remapped,
         rank=rank,
         adapter_name=HIGH_NOISE_ADAPTER,
-        expert_label="transformer",
+        expert_label=f"{expert_prefix}transformer",
         source_keys=source_keys,
         remapped_keys=remapped_keys,
+        unmapped_keys=unmapped,
+        renamed_keys=renamed,
     )
     reports.append(report_high)
     adapters.append(HIGH_NOISE_ADAPTER)
@@ -298,9 +399,11 @@ def apply_native_wan_lora_to_pipeline(
             remapped,
             rank=rank,
             adapter_name=LOW_NOISE_ADAPTER,
-            expert_label="transformer_2",
+            expert_label=f"{expert_prefix}transformer_2",
             source_keys=source_keys,
             remapped_keys=remapped_keys,
+            unmapped_keys=unmapped,
+            renamed_keys=renamed,
         )
         reports.append(report_low)
         adapters.append(LOW_NOISE_ADAPTER)
@@ -318,15 +421,9 @@ def apply_native_wan_lora_to_pipeline(
     elif hasattr(pipeline, "fuse_lora"):
         pipeline.fuse_lora(lora_scale=lora_scale)
 
-    min_remap = min(r.remap_ratio for r in reports)
-    if min_remap < 0.9 and remapped:
-        logger.warning(
-            "Wan LoRA bridge: remap ratio {:.1%} below 90% — visual QA recommended",
-            min_remap,
-        )
-
     logger.info(
-        "Wan LoRA bridge: rank={} experts={} total_lora_params={} scales={}",
+        "Wan %s LoRA bridge: rank=%d experts=%s total_lora_params=%d scales=%s",
+        mode.upper(),
         rank,
         [r.expert for r in reports],
         total_loaded,
@@ -346,26 +443,33 @@ def apply_native_wan_lora_to_i2v_pipeline(
     Attach Wan 2.1 native I2V LoRA weights to a Wan 2.2 I2V Diffusers pipeline.
 
     Uses the same block-level key remap as T2V; both transformer experts receive
-    identical adapter weights when ``transformer_2`` is present.
+    identical adapter weights when ``transformer_2`` is present. The mode label
+    is set to "i2v" for reporting and validation context.
     """
     return apply_native_wan_lora_to_pipeline(
         pipeline,
         ckpt_path,
         lora_scale=lora_scale,
         lora_scale_2=lora_scale_2,
+        mode="i2v",
     )
 
 
 def export_diffusers_lora_state_dicts(
     ckpt_path: str | Path,
+    *,
+    mode: str = "t2v",
 ) -> Dict[str, Dict[str, torch.Tensor]]:
     """
     Export remapped LoRA tensors for Diffusers ``load_lora_weights``.
 
-    Returns a dict with ``high_noise`` and optionally ``low_noise`` entries
-    (same weights; Wan 2.2 loads low-noise expert via ``load_into_transformer_2``).
+    Validates remap coverage before export and raises RuntimeError if it is
+    below ``MIN_REMAP_COVERAGE``. Returns a dict with ``high_noise`` and
+    ``low_noise`` entries (same weights; Wan 2.2 loads low-noise expert via
+    ``load_into_transformer_2``).
     """
     native_state = load_native_wan_lora_state_dict(ckpt_path)
+    validate_remap_coverage(native_state, context=f"Wan {mode.upper()} LoRA export")
     remapped = _remap_native_to_diffusers_keys(native_state)
     exports = {"high_noise": remapped, "low_noise": dict(remapped)}
     return exports

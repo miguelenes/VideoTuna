@@ -61,9 +61,9 @@ tensorboard --logdir results/train
 
 On cloud GPUs, see [cloud-gpu-training.md](cloud-gpu-training.md) for SSH port-forward to TensorBoard.
 
-### Optional Trackio (Flux Phase 1)
+### Optional Trackio (Phases 1, 2, and 2.5)
 
-[Trackio](https://huggingface.co/docs/trackio) is an opt-in Hugging Face experiment tracker that logs **alongside** TensorBoard when enabled. Wan phases remain TensorBoard-only.
+[Trackio](https://huggingface.co/docs/trackio) is an opt-in Hugging Face experiment tracker that logs **alongside** TensorBoard when enabled. Flux Phase 1 logs scalar metrics and preview images; Wan phases log the first frame of each preview video (the full videos are still written to TensorBoard / local disk).
 
 ```bash
 # Install optional extra (in addition to training profile)
@@ -71,10 +71,10 @@ poetry install -E cuda --with training -E trackio
 
 # Enable dual logging (TensorBoard + Trackio)
 export VIDEOTUNA_METRICS_BACKEND=trackio
-poetry run train-domain-t2i
+poetry run train-domain-t2i   # or train-domain-t2v / train-domain-i2v
 ```
 
-Logged metrics match TensorBoard: `train/loss`, `train/lr`, and `validation/sample` (preview images).
+Logged metrics match TensorBoard: `train/loss`, `train/lr`, and `validation/sample` (Flux) or `preview/{split}/{key}` (Wan preview first frames).
 
 View the local Trackio dashboard:
 
@@ -88,14 +88,12 @@ For remote monitoring on rented GPUs (no SSH port-forward), sync to a **private*
 export HF_TOKEN=...                              # required for Space sync
 export VIDEOTUNA_TRACKIO_SPACE_ID=username/privtune-trackio  # private Space
 export VIDEOTUNA_METRICS_BACKEND=trackio
-poetry run train-domain-t2i
+poetry run train-domain-t2i   # or train-domain-t2v / train-domain-i2v
 ```
 
-Optional project name override: `VIDEOTUNA_TRACKIO_PROJECT` (default: `flux-domain-lora`).
+Optional project name override: `VIDEOTUNA_TRACKIO_PROJECT` (defaults: `flux-domain-lora` for Flux, `wan-domain-lora` for Wan).
 
-**Privacy:** domain validation images may contain sensitive content — use **private** Spaces only if syncing to Hugging Face.
-
-**Note:** Wan `ImageLogger` previews require a non-stub `log_images` implementation in `wanvideo.py`; until then, rely on smoke inference for visual QA.
+**Privacy:** domain validation / preview images may contain sensitive content — use **private** Spaces only if syncing to Hugging Face.
 
 ---
 
@@ -157,8 +155,7 @@ Set `"--resume_from_checkpoint": "latest"` (or a relative path like `"checkpoint
 |----------|--------|
 | First run | `train-domain-t2i` stamps a timestamped `output_dir` (e.g. `flux-domain-adult_20260101120000`) and writes `checkpoint-*` dirs there. |
 | Resume run | When `resume_from_checkpoint` is set, output-dir stamping is **skipped** so `"latest"` resolves checkpoints under the existing stamped directory. |
-| Restored | LoRA safetensors from `checkpoint-{step}/`; training continues from that step; LR scheduler is advanced to match the step. |
-| Not restored | Optimizer momentum, Accelerate RNG, and full experiment metadata. |
+| Restored | LoRA safetensors, optimizer state, LR scheduler, Accelerate RNG, and GradScaler via `accelerator.save_state()` / `accelerator.load_state()`. Training continues from the saved step. |
 
 To start a fresh run, remove `resume_from_checkpoint` from the JSON or set it to `null`. If resume is requested but no matching checkpoint exists under `output_dir`, training fails with an error.
 
@@ -216,6 +213,8 @@ poetry run train-domain-t2v
 ```
 
 Legacy alias: `poetry run train-wan2-1-t2v-lora` (same defaults).
+
+During training, the `ImageLogger` callback emits preview videos every `batch_frequency` steps (default `50` in `configs/domain/wan_t2v_lora.yaml`). Each preview contains two views: the original training batch video (`inputs`) and a short 20-step diffusion sample generated with the current LoRA weights (`samples`). Both are written to TensorBoard and, when `to_local: true`, saved as MP4 files under `{workdir}/images/train/`. On CPU-only machines the sample generation is skipped and only the input videos are logged.
 
 Checkpoint example:
 
@@ -331,6 +330,8 @@ poetry run train-domain-i2v
 
 Legacy alias: `poetry run train-wan2-1-i2v-lora`
 
+Preview logging works the same as T2V: the `ImageLogger` callback emits both the conditioning first frame / input video and a short 20-step I2V sample generated with the current LoRA weights. Samples are written to TensorBoard and, when `to_local: true`, saved under `{workdir}/images/train/`.
+
 ### Validation
 
 **Wan 2.2 I2V Diffusers (primary):**
@@ -394,7 +395,6 @@ poetry run test tests/test_poetry_scripts.py -q
 ## Known limitations
 
 - **FLUX.1 only:** Training uses FLUX.1-dev; see [`docs/MODEL_VERSIONS.md`](../MODEL_VERSIONS.md).
-- **Flux resume:** LoRA weights and step counter only — optimizer state is not saved or restored.
 - **Wan 2.1 → 2.2 bridge (`validate-domain-t2v`):** Production-ready for domain LoRA QA via `poetry run validate-domain-t2v`. The bridge remaps native Wan 2.1 Lightning keys onto Wan 2.2 Diffusers and loads the **same** LoRA onto both high-noise (`transformer`) and low-noise (`transformer_2`) experts. Limitations:
   - Default smoke preset uses **4 inference steps** at 720×1280 — use [`balanced_wan2_2_720p.yaml`](../../configs/inference/presets/balanced_wan2_2_720p.yaml) for higher-quality QA.
   - Remap ratio below 90% logs a warning (does not block load) — run visual QA and `tools/spike_wan_lora_bridge.py --input <ckpt>` if keys look wrong.

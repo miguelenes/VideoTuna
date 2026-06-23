@@ -24,6 +24,12 @@ def build_synthetic_wan_lora_ckpt(
             state[f"denoiser.blocks.{i}.self_attn.{p}.lora_B.weight"] = torch.randn(
                 dim_in, rank
             )
+            state[f"denoiser.blocks.{i}.cross_attn.{p}.lora_A.weight"] = torch.randn(
+                rank, dim_in
+            )
+            state[f"denoiser.blocks.{i}.cross_attn.{p}.lora_B.weight"] = torch.randn(
+                dim_in, rank
+            )
         state[f"denoiser.blocks.{i}.ffn.0.lora_A.weight"] = torch.randn(rank, dim_in)
         state[f"denoiser.blocks.{i}.ffn.0.lora_B.weight"] = torch.randn(dim_mid, rank)
         state[f"denoiser.blocks.{i}.ffn.2.lora_A.weight"] = torch.randn(rank, dim_mid)

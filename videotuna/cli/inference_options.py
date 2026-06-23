@@ -39,6 +39,13 @@ class StandardInferenceOptions:
     ] = None
     dtype: DtypeChoice | None = None
     device_map: Annotated[DeviceMapChoice | None, Parameter(name="device-map")] = None
+    max_memory_per_gpu: Annotated[
+        str | None,
+        Parameter(
+            name="max-memory-per-gpu",
+            help="Per-GPU memory limit for device_map=auto (e.g. '22GiB').",
+        ),
+    ] = None
     ulysses_degree: int | None = None
     ring_degree: int | None = None
     compile: Annotated[bool | None, Parameter(name="compile")] = None
@@ -154,6 +161,7 @@ class InferenceRunConfig(BaseModel):
     enable_sequential_cpu_offload: bool = False
     dtype: DtypeChoice | None = None
     device_map: DeviceMapChoice | None = None
+    max_memory_per_gpu: str | None = None
     ulysses_degree: int | None = None
     ring_degree: int | None = None
     compile: bool = False

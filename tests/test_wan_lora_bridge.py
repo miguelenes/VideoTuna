@@ -11,6 +11,7 @@ from diffusers.models.transformers.transformer_wan import WanTransformer3DModel
 
 from videotuna.testing.wan_lora_ckpt import build_synthetic_wan_lora_ckpt
 from videotuna.utils.wan_lora_bridge import (
+    MIN_REMAP_COVERAGE,
     WAN_DIFFUSERS_LORA_TARGETS,
     _infer_lora_rank,
     _remap_native_to_diffusers_keys,
@@ -21,6 +22,7 @@ from videotuna.utils.wan_lora_bridge import (
     export_diffusers_lora_state_dicts,
     is_native_wan_lora_ckpt,
     load_native_wan_lora_state_dict,
+    validate_remap_coverage,
 )
 
 
@@ -33,6 +35,12 @@ def _production_native_keys(
         out_dim = dim_in if p != "o" else dim_in
         state[f"blocks.{block}.self_attn.{p}.lora_A.weight"] = torch.zeros(rank, dim_in)
         state[f"blocks.{block}.self_attn.{p}.lora_B.weight"] = torch.zeros(
+            out_dim, rank
+        )
+        state[f"blocks.{block}.cross_attn.{p}.lora_A.weight"] = torch.zeros(
+            rank, dim_in
+        )
+        state[f"blocks.{block}.cross_attn.{p}.lora_B.weight"] = torch.zeros(
             out_dim, rank
         )
     state[f"blocks.{block}.ffn.0.lora_A.weight"] = torch.zeros(rank, dim_in)
@@ -107,12 +115,25 @@ def test_remap_legacy_attn_shorthand():
     assert "blocks.0.attn1.to_q.lora_A.weight" in remapped
 
 
+def test_remap_cross_attn_keys():
+    assert (
+        _remap_single_native_key("blocks.0.cross_attn.q.lora_A.weight")
+        == "blocks.0.attn2.to_q.lora_A.weight"
+    )
+    assert (
+        _remap_single_native_key("blocks.2.cross_attn.o.lora_B.weight")
+        == "blocks.2.attn2.to_out.0.lora_B.weight"
+    )
+
+
 def test_analyze_native_wan_lora_ckpt(tmp_path):
     ckpt = tmp_path / "denoiser.ckpt"
     state = _production_native_keys()
     torch.save({"state_dict": {f"denoiser.{k}": v for k, v in state.items()}}, ckpt)
     info = analyze_native_wan_lora_ckpt(ckpt)
-    assert info["native_key_count"] == 12
+    assert info["native_key_count"] == 20
+    assert info["remap_coverage"] == 1.0
+    assert info["unmapped_keys"] == []
     assert info["rank"] == 16
 
 
@@ -123,6 +144,7 @@ def test_export_diffusers_lora_state_dicts(tmp_path):
     exports = export_diffusers_lora_state_dicts(ckpt)
     assert "high_noise" in exports and "low_noise" in exports
     assert "blocks.0.attn1.to_q.lora_A.weight" in exports["high_noise"]
+    assert "blocks.0.attn2.to_q.lora_A.weight" in exports["high_noise"]
 
 
 def test_exported_lora_loads_via_diffusers_adapter(tmp_path):
@@ -139,15 +161,24 @@ def test_exported_lora_loads_via_diffusers_adapter(tmp_path):
     transformer = _tiny_transformer()
     transformer.load_lora_adapter(str(lora_path), adapter_name="exported", prefix=None)
     transformer.set_adapters(["exported"], weights=[1.0])
-    assert _count_lora(transformer) == 12
+    assert _count_lora(transformer) == 20
 
 
 def test_remap_coverage_on_production_fixture():
     native = _production_native_keys()
     transformed, total, coverage = compute_remap_coverage(native)
-    assert total == 12
-    assert transformed == 12
-    assert coverage >= 0.9
+    assert total == 20
+    assert transformed == 20
+    assert coverage >= MIN_REMAP_COVERAGE
+
+
+def test_validate_remap_coverage_below_threshold_raises():
+    native = _production_native_keys()
+    native["blocks.0.unmapped.extra.weight"] = torch.zeros(1)
+    native["blocks.0.unmapped.another.weight"] = torch.zeros(1)
+    native["blocks.0.unmapped.third.weight"] = torch.zeros(1)
+    with pytest.raises(RuntimeError):
+        validate_remap_coverage(native)
 
 
 def test_apply_native_wan_lora_to_single_transformer():
@@ -164,10 +195,12 @@ def test_apply_native_wan_lora_to_single_transformer():
 
     assert len(reports) == 1
     assert reports[0].expert == "transformer"
-    assert reports[0].remap_ratio >= 0.9
+    assert reports[0].remap_ratio >= MIN_REMAP_COVERAGE
     assert reports[0].missing_keys == []
-    assert reports[0].loaded_lora_params == 12
-    assert _count_lora(pipeline.transformer) == 12
+    assert reports[0].unmapped_keys == []
+    assert reports[0].renamed_keys
+    assert reports[0].loaded_lora_params == 20
+    assert _count_lora(pipeline.transformer) == 20
 
 
 def test_apply_native_wan_lora_to_dual_transformer():
@@ -188,8 +221,10 @@ def test_apply_native_wan_lora_to_dual_transformer():
     assert len(reports) == 2
     assert {r.expert for r in reports} == {"transformer", "transformer_2"}
     for report in reports:
-        assert report.remap_ratio >= 0.9
+        assert report.remap_ratio >= MIN_REMAP_COVERAGE
         assert report.missing_keys == []
+        assert report.unmapped_keys == []
+        assert report.renamed_keys
     pipeline.set_adapters.assert_called_once()
     call = pipeline.set_adapters.call_args
     adapters = call.args[0] if call.args else call.kwargs["adapter_names"]
@@ -198,6 +233,22 @@ def test_apply_native_wan_lora_to_dual_transformer():
         weights = call.args[1]
     assert len(adapters) == 2
     assert weights == [1.0, 1.0]
+
+
+def test_apply_native_wan_lora_to_pipeline_raises_on_low_coverage():
+    ckpt_state = _production_native_keys()
+    ckpt_state["blocks.0.unmapped.extra.weight"] = torch.zeros(1)
+    ckpt_state["blocks.0.unmapped.another.weight"] = torch.zeros(1)
+    ckpt_state["blocks.0.unmapped.third.weight"] = torch.zeros(1)
+    ckpt_path = MagicMock()
+    pipeline = SimpleNamespace(transformer=_tiny_transformer(), transformer_2=None)
+
+    with patch(
+        "videotuna.utils.wan_lora_bridge.load_native_wan_lora_state_dict",
+        return_value=ckpt_state,
+    ):
+        with pytest.raises(RuntimeError):
+            apply_native_wan_lora_to_pipeline(pipeline, ckpt_path)
 
 
 def _count_lora(module: WanTransformer3DModel) -> int:
@@ -222,7 +273,8 @@ def test_validate_domain_t2v_gpu_smoke(tmp_path):
     assert len(reports) == 2
     assert {r.expert for r in reports} == {"transformer", "transformer_2"}
     for report in reports:
-        assert report.remap_ratio >= 0.9
+        assert report.remap_ratio >= MIN_REMAP_COVERAGE
         assert report.missing_keys == []
+        assert report.unmapped_keys == []
         assert report.loaded_lora_params > 0
     assert WAN_DIFFUSERS_LORA_TARGETS

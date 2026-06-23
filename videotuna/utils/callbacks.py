@@ -3,9 +3,11 @@ import time
 from typing import Any, Optional, Union
 from weakref import proxy
 
+import numpy as np
 import pytorch_lightning as pl
 import torch
 import torchvision
+from PIL import Image
 from pytorch_lightning.callbacks import Callback
 from pytorch_lightning.utilities import rank_zero_info, rank_zero_only
 from pytorch_lightning.utilities.types import STEP_OUTPUT
@@ -14,6 +16,7 @@ from typing_extensions import override
 
 from videotuna.utils.device_utils import empty_accelerator_cache, gpu_is_available
 from videotuna.utils.logging_config import bound_logger
+from videotuna.utils.training_metrics import log_preview_to_trackio, trackio_enabled
 
 from .save_video import log_local, prepare_to_log
 
@@ -57,9 +60,9 @@ class VideoTunaModelCheckpoint(pl.callbacks.ModelCheckpoint):
         *args,
         **kwargs,
     ):
-        assert save_flow or save_only_selected_model, (
-            "At least one of `save_flow` and `save_only_trained_model` should be True."
-        )
+        assert (
+            save_flow or save_only_selected_model
+        ), "At least one of `save_flow` and `save_only_trained_model` should be True."
         super().__init__(*args, **kwargs)
         self.save_flow = save_flow
         self.save_only_selected_model = save_only_selected_model
@@ -306,6 +309,7 @@ class ImageLogger(Callback):
         rescale=True,
         to_local=False,
         log_images_kwargs=None,
+        metrics_backend="tensorboard",
     ):
         super().__init__()
         self.rescale = rescale
@@ -314,6 +318,7 @@ class ImageLogger(Callback):
         self.to_local = to_local
         self.clamp = clamp
         self.log_images_kwargs = log_images_kwargs if log_images_kwargs else {}
+        self.metrics_backend = metrics_backend
         if self.to_local:
             ## default save dir
             self.save_dir = os.path.join(save_dir, "images")
@@ -358,6 +363,35 @@ class ImageLogger(Callback):
             else:
                 pass
 
+    def _tensor_to_pil_image(self, tensor: torch.Tensor) -> Image.Image:
+        """Convert a 4D image tensor or a 5D video first-frame tensor to PIL."""
+        if tensor.dim() == 5:
+            tensor = tensor[:, :, 0, :, :]  # first frame: (B, C, H, W)
+        if tensor.dim() == 4:
+            tensor = torchvision.utils.make_grid(tensor, nrow=tensor.shape[0])
+        # (C, H, W) in [-1, 1]
+        tensor = (tensor + 1.0) / 2.0
+        tensor = tensor.clamp(0.0, 1.0)
+        array = (tensor.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+        return Image.fromarray(array)
+
+    def log_to_trackio(self, pl_module, batch_logs, split):
+        """Log preview images to Trackio alongside TensorBoard."""
+        if not trackio_enabled(self.metrics_backend):
+            return
+        global_step = pl_module.global_step
+        for key, value in batch_logs.items():
+            if not isinstance(value, torch.Tensor):
+                continue
+            if value.dim() not in (4, 5):
+                continue
+            tag = f"preview/{split}/{key}"
+            try:
+                pil_image = self._tensor_to_pil_image(value)
+                log_preview_to_trackio(pil_image, step=global_step, tag=tag)
+            except Exception:
+                mainlogger.exception("Failed to log preview to Trackio for {}", tag)
+
     @rank_zero_only
     def log_batch_imgs(self, pl_module, batch, batch_idx, split="train"):
         """generate images, then save and log to tensorboard"""
@@ -387,6 +421,7 @@ class ImageLogger(Callback):
                     filename,
                     save_fps=10,
                 )
+                self.log_to_trackio(pl_module, batch_logs, split)
             else:
                 mainlogger.info(
                     "Log [{}] batch <{}> to tensorboard ...", split, filename
@@ -394,6 +429,7 @@ class ImageLogger(Callback):
                 self.log_to_tensorboard(
                     pl_module, batch_logs, filename, split, save_fps=10
                 )
+                self.log_to_trackio(pl_module, batch_logs, split)
             mainlogger.info("Finish!")
 
             if is_train:

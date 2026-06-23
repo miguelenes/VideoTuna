@@ -245,12 +245,22 @@ Export LoRA for reuse: `poetry run python tools/convert_wan_lora_21_to_22.py --i
 
 Wan 2.2 via `inference-wan2.2-t2v-720p` uses **Diffusers** (`DiffusersVideoFlow`).
 
+Use `validate-multi-gpu` as the first step before any multi-GPU launch:
+
+```shell
+poetry run validate-multi-gpu inference --mode device_map --gpu-ids 0,1 \
+  --config configs/inference/presets/max_speed_wan2_2_720p.yaml --dry-run
+
+poetry run validate-multi-gpu inference --mode xfuser --gpu-ids 0,1 \
+  --ulysses-degree 2 --ring-degree 1 --dry-run
+```
+
 | Path | Command | Pros | Cons |
 |------|---------|------|------|
-| **device-map auto** (recommended) | `CUDA_VISIBLE_DEVICES=0,1 poetry run inference-wan2.2-t2v-720p --config configs/inference/presets/max_speed_wan2_2_720p.yaml --device-map auto` | Single process; spreads transformer across GPUs | Slower than xfuser USP; experimental |
+| **device-map auto** (recommended) | `CUDA_VISIBLE_DEVICES=0,1 poetry run inference-wan2.2-t2v-720p --config configs/inference/presets/max_speed_wan2_2_720p.yaml --device-map auto --max-memory-per-gpu 22GiB` | Single process; spreads transformer across GPUs | Slower than xfuser USP; experimental |
 | **xfuser USP** (native) | `torchrun --nproc_per_node=2 scripts/inference_new.py --config configs/inference/presets/wan2_2_native_t2v_14b.yaml --ulysses_degree 2 --ring_degree 1` | Faster sequence-parallel attention | CUDA-only; no CPU offload; needs `checkpoints/wan/` layout |
 
-See [multi-gpu.md](../multi-gpu.md) for xfuser requirements (`ulysses_degree × ring_degree == WORLD_SIZE`).
+See [multi-gpu.md](../multi-gpu.md) for xfuser requirements (`ulysses_degree × ring_degree == WORLD_SIZE`) and the `validate-multi-gpu` CLI reference.
 
 ## Clear errors when VRAM is insufficient
 

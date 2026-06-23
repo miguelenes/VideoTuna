@@ -15,6 +15,7 @@ from videotuna.cli.inference_options import (
     validate_preset_requirements,
 )
 from videotuna.utils.cli_console import install_pretty_tracebacks
+from videotuna.utils.preset_planner import PresetPlanningError, preflight_check
 
 FLUX_DOMAIN_SMOKE_CONFIG = "configs/inference/presets/flux_domain_lora_smoke.yaml"
 WAN_DOMAIN_SMOKE_22_CONFIG = "configs/inference/presets/wan_domain_lora_smoke_22.yaml"
@@ -67,6 +68,15 @@ def _run_inference_with_options(
         standard=standard,
         preset=preset,
     )
+    try:
+        preflight_check(
+            run_config.config,
+            compile_flag=run_config.compile,
+            cpu_smoke=run_config.cpu_smoke,
+        )
+    except PresetPlanningError as exc:
+        print(exc.format(), file=sys.stderr)
+        raise SystemExit(2) from exc
     run_inference(run_config)
 
 

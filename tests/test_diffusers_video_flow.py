@@ -244,9 +244,7 @@ class TestDiffusersVideoFlowConfigExtra:
     """Additional CPU-only, state-only config coverage for DiffusersVideoFlow."""
 
     def test_init_pipeline_only_is_forced_true(self):
-        flow = DiffusersVideoFlow(
-            model_family="flux", mode="t2i", pipeline_only=False
-        )
+        flow = DiffusersVideoFlow(model_family="flux", mode="t2i", pipeline_only=False)
         assert flow.pipeline_only is True
 
     def test_from_pretrained_ignore_missing_ckpts_is_noop(self):

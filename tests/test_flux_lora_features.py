@@ -18,6 +18,7 @@ from videotuna.training.flux_lora.bucketing import (
 )
 from videotuna.training.flux_lora.checkpoint import (
     find_latest_checkpoint,
+    has_accelerate_state,
     load_lora_checkpoint,
     prune_checkpoints,
 )
@@ -25,6 +26,7 @@ from videotuna.training.flux_lora.config import FluxLoraTrainConfig, load_train_
 from videotuna.training.flux_lora.text_embed_cache import build_or_load_cache
 from videotuna.training.flux_lora.train import (
     _resolve_resume_checkpoint,
+    _run_training_loop,
     _run_validation,
     create_flux_accelerator,
     run_training,
@@ -322,6 +324,7 @@ def test_run_validation_skips_when_step_not_divides(tmp_path):
 def test_resolve_resume_checkpoint_latest(tmp_path):
     (tmp_path / "checkpoint-10").mkdir()
     (tmp_path / "checkpoint-50").mkdir()
+    (tmp_path / "checkpoint-50" / "optimizer.bin").write_bytes(b"")
     config = FluxLoraTrainConfig(
         pretrained_model_name_or_path="black-forest-labs/FLUX.1-dev",
         output_dir=str(tmp_path),
@@ -335,6 +338,7 @@ def test_resolve_resume_checkpoint_latest(tmp_path):
 
 def test_resolve_resume_checkpoint_relative_path(tmp_path):
     (tmp_path / "checkpoint-100").mkdir()
+    (tmp_path / "checkpoint-100" / "optimizer.bin").write_bytes(b"")
     config = FluxLoraTrainConfig(
         pretrained_model_name_or_path="black-forest-labs/FLUX.1-dev",
         output_dir=str(tmp_path),
@@ -466,6 +470,305 @@ def test_train_raises_when_resume_checkpoint_missing(tmp_path):
     ):
         with pytest.raises(ValueError, match="No checkpoint found"):
             train(config, data_config)
+
+
+def test_has_accelerate_state_false_when_empty(tmp_path):
+    ckpt = tmp_path / "checkpoint-10"
+    ckpt.mkdir()
+    assert has_accelerate_state(ckpt) is False
+
+
+def test_has_accelerate_state_true_with_optimizer_bin(tmp_path):
+    ckpt = tmp_path / "checkpoint-10"
+    ckpt.mkdir()
+    (ckpt / "optimizer.bin").write_bytes(b"")
+    assert has_accelerate_state(ckpt) is True
+
+
+def test_has_accelerate_state_true_with_scheduler_pt(tmp_path):
+    ckpt = tmp_path / "checkpoint-10"
+    ckpt.mkdir()
+    (ckpt / "scheduler.pt").write_bytes(b"")
+    assert has_accelerate_state(ckpt) is True
+
+
+def test_has_accelerate_state_true_with_random_states(tmp_path):
+    ckpt = tmp_path / "checkpoint-10"
+    ckpt.mkdir()
+    (ckpt / "random_states_0.pkl").write_bytes(b"")
+    assert has_accelerate_state(ckpt) is True
+
+
+def test_has_accelerate_state_false_for_nonexistent_dir(tmp_path):
+    assert has_accelerate_state(tmp_path / "nope") is False
+
+
+def test_resolve_resume_checkpoint_returns_none_without_accelerate_state(tmp_path):
+    ckpt = tmp_path / "checkpoint-50"
+    ckpt.mkdir()
+    config = FluxLoraTrainConfig(
+        pretrained_model_name_or_path="black-forest-labs/FLUX.1-dev",
+        output_dir=str(tmp_path),
+        instance_data_dir="data",
+        resume_from_checkpoint="latest",
+    )
+    assert _resolve_resume_checkpoint(config, tmp_path) is None
+
+
+def test_resolve_resume_checkpoint_returns_path_with_accelerate_state(tmp_path):
+    ckpt = tmp_path / "checkpoint-50"
+    ckpt.mkdir()
+    (ckpt / "optimizer.bin").write_bytes(b"")
+    (ckpt / "scheduler.pt").write_bytes(b"")
+    config = FluxLoraTrainConfig(
+        pretrained_model_name_or_path="black-forest-labs/FLUX.1-dev",
+        output_dir=str(tmp_path),
+        instance_data_dir="data",
+        resume_from_checkpoint="latest",
+    )
+    resolved = _resolve_resume_checkpoint(config, tmp_path)
+    assert resolved is not None
+    assert resolved.name == "checkpoint-50"
+
+
+def test_save_state_called_at_checkpoint_step(tmp_path):
+    """accelerator.save_state is called after save_lora_checkpoint."""
+    config = FluxLoraTrainConfig(
+        pretrained_model_name_or_path="black-forest-labs/FLUX.1-dev",
+        output_dir=str(tmp_path),
+        instance_data_dir="data",
+        max_train_steps=1,
+        checkpointing_steps=1,
+        checkpoints_total_limit=None,
+    )
+    mock_accelerator = mock.MagicMock()
+    mock_accelerator.is_main_process = True
+    mock_accelerator.sync_gradients = True
+    mock_accelerator.accumulate.return_value.__enter__ = mock.MagicMock()
+    mock_accelerator.accumulate.return_value.__exit__ = mock.MagicMock(
+        return_value=False
+    )
+    mock_accelerator.device = torch.device("cpu")
+    mock_accelerator.unwrap_model.return_value = mock.MagicMock()
+
+    mock_pipeline = mock.MagicMock()
+    mock_transformer = mock.MagicMock()
+    mock_dataloader = mock.MagicMock()
+    mock_optimizer = mock.MagicMock()
+    mock_lr_scheduler = mock.MagicMock()
+
+    batch = {"pixel_values": torch.zeros(1, 3, 64, 64), "caption": ["test"]}
+    mock_dataloader.__iter__ = mock.MagicMock(return_value=iter([batch]))
+
+    with (
+        mock.patch(
+            "videotuna.training.flux_lora.train._compute_loss",
+            return_value=torch.tensor(1.0, requires_grad=True),
+        ),
+        mock.patch(
+            "videotuna.training.flux_lora.train._run_validation",
+        ),
+        mock.patch(
+            "videotuna.training.flux_lora.train.save_lora_checkpoint",
+            return_value=tmp_path / "checkpoint-1",
+        ) as save_ckpt,
+        mock.patch(
+            "videotuna.training.flux_lora.train.prune_checkpoints",
+        ),
+    ):
+        _run_training_loop(
+            config=config,
+            output_dir=tmp_path,
+            pipeline=mock_pipeline,
+            transformer=mock_transformer,
+            dataloader=mock_dataloader,
+            optimizer=mock_optimizer,
+            lr_scheduler=mock_lr_scheduler,
+            accelerator=mock_accelerator,
+            weight_dtype=torch.bfloat16,
+            global_step=0,
+            max_train_steps=1,
+            log=mock.MagicMock(),
+            metrics_backend="tensorboard",
+        )
+
+    save_ckpt.assert_called_once()
+    mock_accelerator.save_state.assert_called_once_with(str(tmp_path / "checkpoint-1"))
+
+
+def test_load_state_called_on_resume(tmp_path):
+    """accelerator.load_state is called when resume_path is not None."""
+    ckpt = tmp_path / "checkpoint-50"
+    ckpt.mkdir()
+    (ckpt / "optimizer.bin").write_bytes(b"")
+    (ckpt / "scheduler.pt").write_bytes(b"")
+
+    config = FluxLoraTrainConfig(
+        pretrained_model_name_or_path="black-forest-labs/FLUX.1-dev",
+        output_dir=str(tmp_path),
+        instance_data_dir="data",
+        resume_from_checkpoint="latest",
+        max_train_steps=100,
+    )
+    data_config = mock.MagicMock()
+    mock_transformer = mock.MagicMock()
+    mock_accelerator = mock.MagicMock(
+        device=torch.device("cpu"),
+        is_main_process=True,
+    )
+    mock_accelerator.prepare.return_value = (
+        mock_transformer,
+        mock.MagicMock(),
+        mock.MagicMock(),
+        mock.MagicMock(),
+    )
+
+    with (
+        mock.patch(
+            "videotuna.training.flux_lora.train.load_flux_training_models",
+            return_value={
+                "weight_dtype": torch.bfloat16,
+                "transformer": mock_transformer,
+                "vae": mock.MagicMock(),
+                "text_encoder_one": mock.MagicMock(),
+                "text_encoder_two": mock.MagicMock(),
+                "tokenizer_one": mock.MagicMock(),
+                "tokenizer_two": mock.MagicMock(),
+            },
+        ),
+        mock.patch(
+            "videotuna.training.flux_lora.train.create_flux_accelerator",
+            return_value=mock_accelerator,
+        ),
+        mock.patch(
+            "videotuna.training.flux_lora.train.load_lora_checkpoint",
+        ),
+        mock.patch(
+            "videotuna.training.flux_lora.train.FluxPipeline.from_pretrained",
+            return_value=mock.MagicMock(),
+        ),
+        mock.patch(
+            "videotuna.training.flux_lora.train.FlowMatchEulerDiscreteScheduler.from_pretrained",
+            return_value=mock.MagicMock(),
+        ),
+        mock.patch(
+            "videotuna.training.flux_lora.train._build_embed_lookup",
+            return_value={},
+        ),
+        mock.patch(
+            "videotuna.training.flux_lora.train.FluxLoraImageDataset",
+        ),
+        mock.patch(
+            "videotuna.training.flux_lora.train._build_dataloader",
+            return_value=mock.MagicMock(),
+        ),
+        mock.patch(
+            "videotuna.training.flux_lora.train._create_optimizer",
+            return_value=mock.MagicMock(),
+        ),
+        mock.patch(
+            "videotuna.training.flux_lora.train.get_scheduler",
+            return_value=mock.MagicMock(),
+        ),
+        mock.patch(
+            "videotuna.training.flux_lora.train._run_training_loop",
+        ),
+        mock.patch(
+            "videotuna.training.flux_lora.train.checkpoint_step",
+            return_value=50,
+        ),
+    ):
+        train(config, data_config)
+
+    mock_accelerator.load_state.assert_called_once_with(str(ckpt))
+
+
+def test_no_manual_lr_scheduler_step_on_resume(tmp_path):
+    """The resume path must not call lr_scheduler.step() in a loop."""
+    ckpt = tmp_path / "checkpoint-50"
+    ckpt.mkdir()
+    (ckpt / "optimizer.bin").write_bytes(b"")
+    (ckpt / "scheduler.pt").write_bytes(b"")
+
+    config = FluxLoraTrainConfig(
+        pretrained_model_name_or_path="black-forest-labs/FLUX.1-dev",
+        output_dir=str(tmp_path),
+        instance_data_dir="data",
+        resume_from_checkpoint="latest",
+        max_train_steps=100,
+    )
+    data_config = mock.MagicMock()
+    mock_transformer = mock.MagicMock()
+    mock_lr_scheduler = mock.MagicMock()
+    mock_accelerator = mock.MagicMock(
+        device=torch.device("cpu"),
+        is_main_process=True,
+    )
+    mock_accelerator.prepare.return_value = (
+        mock_transformer,
+        mock.MagicMock(),
+        mock.MagicMock(),
+        mock_lr_scheduler,
+    )
+
+    with (
+        mock.patch(
+            "videotuna.training.flux_lora.train.load_flux_training_models",
+            return_value={
+                "weight_dtype": torch.bfloat16,
+                "transformer": mock_transformer,
+                "vae": mock.MagicMock(),
+                "text_encoder_one": mock.MagicMock(),
+                "text_encoder_two": mock.MagicMock(),
+                "tokenizer_one": mock.MagicMock(),
+                "tokenizer_two": mock.MagicMock(),
+            },
+        ),
+        mock.patch(
+            "videotuna.training.flux_lora.train.create_flux_accelerator",
+            return_value=mock_accelerator,
+        ),
+        mock.patch(
+            "videotuna.training.flux_lora.train.load_lora_checkpoint",
+        ),
+        mock.patch(
+            "videotuna.training.flux_lora.train.FluxPipeline.from_pretrained",
+            return_value=mock.MagicMock(),
+        ),
+        mock.patch(
+            "videotuna.training.flux_lora.train.FlowMatchEulerDiscreteScheduler.from_pretrained",
+            return_value=mock.MagicMock(),
+        ),
+        mock.patch(
+            "videotuna.training.flux_lora.train._build_embed_lookup",
+            return_value={},
+        ),
+        mock.patch(
+            "videotuna.training.flux_lora.train.FluxLoraImageDataset",
+        ),
+        mock.patch(
+            "videotuna.training.flux_lora.train._build_dataloader",
+            return_value=mock.MagicMock(),
+        ),
+        mock.patch(
+            "videotuna.training.flux_lora.train._create_optimizer",
+            return_value=mock.MagicMock(),
+        ),
+        mock.patch(
+            "videotuna.training.flux_lora.train.get_scheduler",
+            return_value=mock_lr_scheduler,
+        ),
+        mock.patch(
+            "videotuna.training.flux_lora.train._run_training_loop",
+        ),
+        mock.patch(
+            "videotuna.training.flux_lora.train.checkpoint_step",
+            return_value=50,
+        ),
+    ):
+        train(config, data_config)
+
+    mock_lr_scheduler.step.assert_not_called()
 
 
 def test_load_lora_checkpoint_roundtrip():

@@ -284,7 +284,9 @@ class TestInferenceAppRunMocked:
             _run_inference_with_options(run, None)
             mock_run.assert_called_once()
             config = mock_run.call_args[0][0]
-            assert config.config == "configs/inference/presets/flux_domain_lora_smoke.yaml"
+            assert (
+                config.config == "configs/inference/presets/flux_domain_lora_smoke.yaml"
+            )
 
     def test_run_inference_with_options_validates_preset(self) -> None:
         with mock.patch("scripts.inference_new.run_inference") as mock_run:

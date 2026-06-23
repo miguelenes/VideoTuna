@@ -4,6 +4,7 @@ from collections import OrderedDict
 import torch
 from omegaconf import OmegaConf
 
+from videotuna.settings import get_settings
 from videotuna.utils.load_weights import load_from_pretrainedSD_checkpoint
 from videotuna.utils.logging_config import bound_logger, configure_logging
 
@@ -46,6 +47,7 @@ def check_config_attribute(config, name):
 
 
 def get_trainer_callbacks(lightning_config, logdir, ckptdir):
+    metrics_backend = get_settings().metrics_backend
     default_callbacks_cfg = {
         "model_checkpoint": {
             "target": "pytorch_lightning.callbacks.ModelCheckpoint",
@@ -63,6 +65,7 @@ def get_trainer_callbacks(lightning_config, logdir, ckptdir):
                 "batch_frequency": 1000,
                 "max_images": 4,
                 "clamp": True,
+                "metrics_backend": metrics_backend,
             },
         },
         "learning_rate_logger": {

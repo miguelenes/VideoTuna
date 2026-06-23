@@ -24,6 +24,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from videotuna.utils.wan_lora_bridge import (  # noqa: E402
+    MIN_REMAP_COVERAGE,
     analyze_native_wan_lora_ckpt,
     export_diffusers_lora_state_dicts,
     is_native_wan_lora_ckpt,
@@ -60,7 +61,13 @@ def main() -> int:
         return 1
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    exports = export_diffusers_lora_state_dicts(args.input)
+
+    try:
+        exports = export_diffusers_lora_state_dicts(args.input, mode=args.mode)
+    except RuntimeError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
     meta = analyze_native_wan_lora_ckpt(args.input)
 
     high_path = args.output_dir / "high_noise.safetensors"
@@ -73,6 +80,9 @@ def main() -> int:
         "mode": args.mode,
         "high_noise": str(high_path),
         "low_noise": str(low_path),
+        "min_coverage": MIN_REMAP_COVERAGE,
+        "remap_coverage": meta["remap_coverage"],
+        "unmapped_keys": meta["unmapped_keys"],
         "analysis": meta,
         "load_hint": (
             "pipeline.load_lora_weights("
@@ -87,6 +97,13 @@ def main() -> int:
     print(f"Exported high-noise LoRA: {high_path}")
     print(f"Exported low-noise LoRA:  {low_path}")
     print(f"Manifest: {manifest_path}")
+    print(f"Remap coverage: {meta['remap_coverage']:.1%}")
+    if meta["unmapped_keys"]:
+        print(
+            f"Warning: {len(meta['unmapped_keys'])} unmapped keys (first 5): "
+            f"{meta['unmapped_keys'][:5]}",
+            file=sys.stderr,
+        )
     return 0
 
 

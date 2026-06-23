@@ -65,7 +65,7 @@ def apply_diffusers_optimizations(
     device_map = getattr(args, "device_map", None)
 
     if device_map == "auto" and offload == "none":
-        _apply_device_map(pipe, target_device)
+        _apply_device_map(pipe, target_device, args)
     elif offload == "sequential":
         pipe.enable_sequential_cpu_offload()
     elif offload == "model":
@@ -88,7 +88,7 @@ def apply_diffusers_optimizations(
     _apply_attention_cache_opts(pipe, args)
 
 
-def _apply_device_map(pipe: Any, device: torch.device) -> None:
+def _apply_device_map(pipe: Any, device: torch.device, args: Any = None) -> None:
     """Spread large Diffusers models across visible GPUs (experimental)."""
     try:
         from accelerate import dispatch_model, infer_auto_device_map
@@ -112,8 +112,9 @@ def _apply_device_map(pipe: Any, device: torch.device) -> None:
             pipe.to(device)
         return
 
+    max_memory_value = getattr(args, "max_memory_per_gpu", None) or "22GiB"
     max_memory: dict[int | str, int | str] = {
-        i: "22GiB" for i in range(torch.cuda.device_count())
+        i: max_memory_value for i in range(torch.cuda.device_count())
     }
     device_map = infer_auto_device_map(
         main_module,

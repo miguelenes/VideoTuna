@@ -8,6 +8,7 @@ from typing import Any
 MetricsBackend = str
 
 DEFAULT_FLUX_TRACKIO_PROJECT = "flux-domain-lora"
+DEFAULT_WAN_TRACKIO_PROJECT = "wan-domain-lora"
 
 
 def trackio_available() -> bool:
@@ -50,7 +51,11 @@ def build_trackio_init_kwargs(
 
 
 def log_validation_image_to_trackio(image: Any, step: int) -> None:
+    log_preview_to_trackio(image, step=step, tag="validation/sample")
+
+
+def log_preview_to_trackio(image: Any, step: int, tag: str = "preview/sample") -> None:
     require_trackio()
     import trackio
 
-    trackio.log({"validation/sample": trackio.Image(image)}, step=step)
+    trackio.log({tag: trackio.Image(image)}, step=step)

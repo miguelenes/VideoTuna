@@ -214,6 +214,8 @@ inference-domain-t2i = 'videotuna.cli.inference_app:inference_domain_t2i_entry'
 validate-domain-t2v = 'videotuna.cli.inference_app:validate_domain_t2v_entry'
 validate-domain-i2v = 'videotuna.cli.inference_app:validate_domain_i2v_entry'
 "inference-wan2.2-i2v-720p" = 'videotuna.cli.inference_app:inference_wan2_2_i2v_720p_entry'
+plan-preset = 'videotuna.cli.preset_planner_app:main'
+validate-multi-gpu = 'videotuna.cli.multi_gpu_app:main'
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

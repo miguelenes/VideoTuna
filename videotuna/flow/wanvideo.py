@@ -17,6 +17,9 @@ from videotuna.models.wan.wan.configs import (
     SUPPORTED_SIZES,
     WAN_CONFIGS,
 )
+from videotuna.models.wan.wan.utils.fm_solvers_unipc import (
+    FlowUniPCMultistepScheduler,
+)
 from videotuna.utils.args_utils import VideoMode
 from videotuna.utils.attention import maybe_compile_denoiser
 from videotuna.utils.common_utils import monitor_resources
@@ -30,8 +33,12 @@ from videotuna.utils.logging_config import (
     resolve_device_label,
 )
 from videotuna.utils.wan_training import (
+    _latent_grid,
     compute_wan_flow_matching_loss,
+    encode_i2v_condition,
     init_wan_training_denoisers,
+    is_i2v_task,
+    wan_pipeline_backend,
 )
 
 _BOXING_PROMPT = (
@@ -161,12 +168,12 @@ class WanVideoModelFlow(GenerationBase):
                 )
             self._log.info("WanVideo flow: Init Process Group")
         else:
-            assert not (t5_fsdp or dit_fsdp), (
-                "t5_fsdp and dit_fsdp are not supported in non-distributed environments."
-            )
-            assert not (ulysses_size > 1 or ring_size > 1), (
-                "context parallel are not supported in non-distributed environments."
-            )
+            assert not (
+                t5_fsdp or dit_fsdp
+            ), "t5_fsdp and dit_fsdp are not supported in non-distributed environments."
+            assert not (
+                ulysses_size > 1 or ring_size > 1
+            ), "context parallel are not supported in non-distributed environments."
 
         if ulysses_size > 1 or ring_size > 1:
             require_xfuser_sequence_parallel("WanVideoModelFlow")
@@ -376,9 +383,9 @@ class WanVideoModelFlow(GenerationBase):
         guide_scale = args.unconditional_guidance_scale
 
         prompt_list, image_list = self.load_inference_inputs(args.prompt_dir, args.mode)
-        assert len(prompt_list) == len(image_list), (
-            "prompt and image number should match"
-        )
+        assert len(prompt_list) == len(
+            image_list
+        ), "prompt and image number should match"
 
         if len(prompt_list) > 1:
             self._log.info("Processing prompts sequentially (batch size 1 per prompt).")
@@ -517,5 +524,157 @@ class WanVideoModelFlow(GenerationBase):
         return loss
 
     @torch.no_grad()
-    def log_images(self, batch, **kwargs):
-        pass
+    def log_images(self, batch, split="train", **kwargs):
+        """Return preview videos for ImageLogger.
+
+        Returns a dict with keys:
+        - ``inputs``: training batch videos ``(B,C,T,H,W)`` in ``[-1,1]``
+        - ``samples``: generated preview videos with current LoRA weights
+          ``(B,C,T,H,W)`` in ``[-1,1]`` (GPU only)
+        - ``caption``: list of caption strings
+        """
+        wan = wan_pipeline_backend(self)
+        device = wan.device
+        videos = batch["video"].to(device)
+        captions = batch["caption"]
+        if isinstance(captions, str):
+            captions = [captions]
+
+        batch_logs: dict[str, Any] = {
+            "inputs": videos,
+            "caption": list(captions),
+        }
+
+        if gpu_is_available():
+            guide_scale = kwargs.get("unconditional_guidance_scale", 5.0)
+            num_steps = kwargs.get("num_preview_steps", 20)
+            max_samples = kwargs.get("max_preview_samples", 4)
+            samples = self._generate_preview_samples(
+                batch,
+                videos,
+                captions,
+                guide_scale=guide_scale,
+                num_steps=num_steps,
+                max_samples=max_samples,
+            )
+            if samples is not None:
+                batch_logs["samples"] = samples
+
+        return batch_logs
+
+    def _select_denoiser_for_preview(
+        self, timestep: torch.Tensor, boundary: float
+    ) -> Any:
+        """Select low- or high-noise denoiser for the current preview timestep."""
+        t_val = float(timestep.reshape(-1)[0].item())
+        if t_val < boundary:
+            return self.low_denoiser
+        return self.high_denoiser
+
+    def _generate_preview_samples(
+        self,
+        batch: dict[str, Any],
+        videos: torch.Tensor,
+        captions: list[str],
+        *,
+        guide_scale: float,
+        num_steps: int,
+        max_samples: int,
+    ) -> torch.Tensor | None:
+        """Run a short diffusion loop to generate preview videos.
+
+        Uses the current LoRA-adapted denoisers and VAE. This is only safe on
+        GPU; CPU training callers receive ``None``.
+        """
+        if not gpu_is_available():
+            return None
+
+        wan = wan_pipeline_backend(self)
+        device = wan.device
+        dtype = self.cfg.param_dtype
+        batch_size, _, num_frames, height, width = videos.shape
+        vae_stride = tuple(wan.vae_stride)
+        patch_size = tuple(wan.patch_size)
+        lat_t, lat_h, lat_w, seq_len = _latent_grid(
+            num_frames, height, width, vae_stride, patch_size
+        )
+        target_shape = (wan.vae.model.z_dim, lat_t, lat_h, lat_w)
+
+        shift = 3.0 if height <= 480 else float(getattr(self.cfg, "sample_shift", 5.0))
+        sample_scheduler = FlowUniPCMultistepScheduler(
+            num_train_timesteps=wan.num_train_timesteps,
+            shift=1,
+            use_dynamic_shifting=False,
+        )
+        sample_scheduler.set_timesteps(num_steps, device=device, shift=shift)
+        timesteps = sample_scheduler.timesteps
+
+        if isinstance(guide_scale, float):
+            guide_scale = (guide_scale, guide_scale)
+
+        seed = self.seed if self.seed >= 0 else 42
+        seed_g = torch.Generator(device=device).manual_seed(seed)
+
+        generated: list[torch.Tensor] = []
+        i2v_images = batch.get("image") if is_i2v_task(self.task) else None
+
+        for idx in range(min(batch_size, max_samples)):
+            caption = captions[idx] if idx < len(captions) else captions[0]
+            context = wan.text_encoder([caption], device)
+            context_null = wan.text_encoder([wan.sample_neg_prompt], device)
+
+            noise = torch.randn(
+                target_shape, dtype=torch.float32, device=device, generator=seed_g
+            )
+
+            y_arg: list[torch.Tensor] | None = None
+            if i2v_images is not None:
+                image = i2v_images[idx].to(device)
+                if image.dim() == 4:
+                    image = image.squeeze(1)
+                y = encode_i2v_condition(
+                    wan.vae, image, num_frames, height, width, vae_stride, patch_size
+                )
+                y_arg = [y.to(dtype)]
+
+            latents = [noise]
+            boundary = wan.boundary * wan.num_train_timesteps
+
+            for t in timesteps:
+                model = self._select_denoiser_for_preview(t, boundary)
+                sample_guide_scale = (
+                    guide_scale[1] if t.item() >= boundary else guide_scale[0]
+                )
+
+                arg_c: dict[str, Any] = {"context": [context[0]], "seq_len": seq_len}
+                arg_null: dict[str, Any] = {
+                    "context": [context_null[0]],
+                    "seq_len": seq_len,
+                }
+                if y_arg is not None:
+                    arg_c["y"] = y_arg
+                    arg_null["y"] = y_arg
+
+                with torch.autocast(
+                    device_type=device.type,
+                    dtype=dtype,
+                    enabled=device.type == "cuda",
+                ):
+                    noise_pred_cond = model(latents, t=t.view(1), **arg_c)[0]
+                    noise_pred_uncond = model(latents, t=t.view(1), **arg_null)[0]
+
+                noise_pred = noise_pred_uncond + sample_guide_scale * (
+                    noise_pred_cond - noise_pred_uncond
+                )
+                temp_x0 = sample_scheduler.step(
+                    noise_pred.unsqueeze(0),
+                    t,
+                    latents[0].unsqueeze(0),
+                    return_dict=False,
+                )[0]
+                latents = [temp_x0.squeeze(0)]
+
+            video = wan.vae.decode(latents)[0]
+            generated.append(video)
+
+        return torch.stack(generated) if generated else None
