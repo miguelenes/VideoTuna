@@ -11,6 +11,8 @@ PROVISION_RETRY="${SCRIPT_DIR}/provision_retry.py"
 
 log() { echo "[videotuna-bootstrap] $*"; }
 
+# Maps VIDEOTUNA_FAST_HF_DOWNLOAD=1 -> HF_XET_HIGH_PERFORMANCE=1.
+# See .env.example and: poetry run verify-hf-download
 enable_fast_hf_download() {
   if [[ "${VIDEOTUNA_FAST_HF_DOWNLOAD:-0}" == "1" ]]; then
     export HF_XET_HIGH_PERFORMANCE=1

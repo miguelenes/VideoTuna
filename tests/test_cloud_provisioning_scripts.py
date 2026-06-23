@@ -137,6 +137,9 @@ def test_env_cloud_example_documents_fast_hf_download():
     text = example.read_text(encoding="utf-8")
     assert "VIDEOTUNA_FAST_HF_DOWNLOAD" in text
     assert "HF_XET_HIGH_PERFORMANCE" in text
+    assert "HF_XET_RECONSTRUCT_WRITE_SEQUENTIALLY" in text
+    assert "HF_HUB_ENABLE_HF_TRANSFER" in text
+    assert "Fast HF downloads (opt-in)" in text
 
 
 def test_bootstrap_enables_hf_xet_high_performance():
@@ -145,6 +148,7 @@ def test_bootstrap_enables_hf_xet_high_performance():
     assert "VIDEOTUNA_FAST_HF_DOWNLOAD" in text
     assert "HF_XET_HIGH_PERFORMANCE" in text
     assert "enable_fast_hf_download" in text
+    assert "verify-hf-download" in text
     assert "provision_retry.py" in text
 
 

@@ -44,14 +44,21 @@ Multi-GB first-boot pulls (FLUX.1-dev, Wan 2.1 train weights, Wan 2.2 validate w
 | Variable | Value |
 |----------|-------|
 | `VIDEOTUNA_FAST_HF_DOWNLOAD` | `1` |
+| `HF_XET_HIGH_PERFORMANCE` | `1` (recommended at rent time for manifest phase) |
 
 When set at **rent time**, bootstrap exports `HF_XET_HIGH_PERFORMANCE=1` (modern `hf-xet` high-bandwidth mode; **not** deprecated `hf_transfer`) and persists it into `.env` for training-time hub pulls.
 
-**Important:** `conditional_downloads` in the manifest run **before** `bootstrap.sh`. Set `VIDEOTUNA_FAST_HF_DOWNLOAD=1` when launching the instance so both manifest-phase and bootstrap-phase pulls benefit.
+**Important:** `conditional_downloads` in the manifest run **before** `bootstrap.sh`. Manifest-phase pulls only see instance env `HF_XET_HIGH_PERFORMANCE=1` — set it at rent time for full first-boot benefit. `VIDEOTUNA_FAST_HF_DOWNLOAD=1` ensures bootstrap persists the setting into `.env` for post-bootstrap and training pulls.
 
 **When to use:** datacenter GPU + NVMe, multi-GB weight pre-downloads.
 
-**Caveats:** higher CPU/RAM use; best on SSD/NVMe. On spinning disks, consider `HF_XET_RECONSTRUCT_WRITE_SEQUENTIALLY=1`. Leave unset for local dev (default adaptive `hf-xet` only).
+**Caveats:** higher CPU/RAM use; best on SSD/NVMe. On spinning disks, consider `HF_XET_RECONSTRUCT_WRITE_SEQUENTIALLY=1`. Leave unset for local dev (default adaptive `hf-xet` only). Local opt-in uses the same vars — see [`.env.example`](../../.env.example).
+
+**Smoke check (metadata only, no weight pull):**
+
+```bash
+poetry run verify-hf-download
+```
 
 See [HF Xet env vars](https://huggingface.co/docs/huggingface_hub/en/package_reference/environment_variables#hfxethighperformance).
 

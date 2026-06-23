@@ -34,6 +34,7 @@ poetry run python -c "from videotuna.utils.device_utils import describe_compute_
 | `VIDEOTUNA_CPU_MODE` | `off` (default), `smoke` (tiny runs), `force` (debug init; deprecated alias: `VIDEOTUNA_ALLOW_CPU_INFERENCE=1`) |
 | `VIDEOTUNA_ATTN_BACKEND` | Use `eager` or `sdpa` on CPU (`flash` is not supported) |
 | `VIDEOTUNA_TORCH_COMPILE` | Keep `0` on CPU (compile is GPU-only) |
+| Fast HF downloads | Opt-in — see [`.env.example`](../.env.example) and `poetry run verify-hf-download` |
 
 ## CPU inference vs GPU + CPU offload
 
