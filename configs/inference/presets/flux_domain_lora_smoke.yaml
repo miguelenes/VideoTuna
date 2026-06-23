@@ -1,6 +1,6 @@
 # Smoke preset for domain Flux LoRA (few steps, 512px, offload)
 # Usage:
-#   poetry run python scripts/inference_new.py \
+#   poetry run inference-domain-t2i \
 #     --config configs/inference/presets/flux_domain_lora_smoke.yaml \
 #     --lorackpt results/train/flux-domain-adult/checkpoint-2000 \
 #     --prompt "sks_style, portrait, soft lighting"

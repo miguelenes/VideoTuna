@@ -213,7 +213,7 @@ Wan 2.2 via `inference-wan2.2-t2v-720p` uses **Diffusers** (`DiffusersVideoFlow`
 | Path | Command | Pros | Cons |
 |------|---------|------|------|
 | **device-map auto** (recommended) | `CUDA_VISIBLE_DEVICES=0,1 poetry run inference-wan2.2-t2v-720p --config configs/inference/presets/max_speed_wan2_2_720p.yaml --device-map auto` | Single process; spreads transformer across GPUs | Slower than xfuser USP; experimental |
-| **xfuser USP** (native) | `torchrun --nproc_per_node=2 scripts/inference_new.py --config configs/inference/presets/wan2_2_native_t2v_14b.yaml --ulysses_degree 2 --ring_degree 1` | Faster sequence-parallel attention | CUDA-only; no CPU offload; needs `checkpoints/wan/` layout |
+| **xfuser USP** (native) | `torchrun --nproc_per_node=2 scripts/inference_new.py --config configs/inference/presets/wan2_2_native_t2v_14b.yaml --ulysses_degree 2 --ring_degree 1` | Faster sequence-parallel attention | CUDA-only; no CPU offload; needs `checkpoints/wan/` layout; script path deprecated until v0.3.0 |
 
 See [multi-gpu.md](../multi-gpu.md) for xfuser requirements (`ulysses_degree × ring_degree == WORLD_SIZE`).
 

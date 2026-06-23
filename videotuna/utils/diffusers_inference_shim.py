@@ -10,8 +10,8 @@ import warnings
 def run_diffusers_inference(config: str, extra_args: list[str] | None = None) -> int:
     message = (
         f"This script is deprecated. Use:\n"
-        f"  python scripts/inference_new.py --config {config}\n"
-        f"or the matching poetry run inference-* alias."
+        f"  poetry run inference-run --config {config}\n"
+        f"or the matching preset command (e.g. validate-domain-t2v)."
     )
     warnings.warn(message, DeprecationWarning, stacklevel=2)
     cmd = [

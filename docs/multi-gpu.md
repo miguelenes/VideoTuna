@@ -26,6 +26,8 @@ Native Wan flows support Ulysses + Ring attention via [xfuser](https://github.co
 
 ### Wan native
 
+Direct `scripts/inference_new.py` invocation is deprecated (removal in v0.3.0); single-process runs should use `poetry run inference-run`. Distributed `torchrun` still uses the script path until v0.3.0 and emits a deprecation warning.
+
 ```shell
 torchrun --nproc_per_node=4 scripts/inference_new.py \
   --config configs/inference/presets/wan_domain_lora_smoke.yaml \
@@ -53,7 +55,7 @@ Wan re-enables `dist.init_process_group` when `WORLD_SIZE > 1`.
 
 ## Training multi-GPU
 
-- **Wan Lightning:** `--devices N` in `train-wan2-1-t2v-lora` / `scripts/train_new.py`
+- **Wan Lightning:** `--devices N` in `train-domain-t2v` / `scripts/train_new.py`
 - **DeepSpeed:** `poetry run install-deepspeed` for ZeRO stage configs in domain YAMLs
 
 ## Device selection with `CUDA_VISIBLE_DEVICES`

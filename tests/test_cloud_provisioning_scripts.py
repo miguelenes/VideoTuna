@@ -27,8 +27,8 @@ PROVISIONING_FILES = [
 
 REQUIRED_POETRY_COMMANDS = [
     "poetry install",
-    "train-flux-lora",
-    "train-wan2-1-t2v-lora",
+    "train-domain-t2i",
+    "train-domain-t2v",
     "install-deepspeed",
     "test tests/test_import_smoke.py",
 ]

@@ -96,8 +96,6 @@ Then set `"--pretrained_model_name_or_path": "checkpoints/flux/FLUX.1-dev"` in `
 poetry run train-domain-t2i
 ```
 
-Legacy alias: `poetry run train-flux-lora` (same defaults).
-
 Checkpoints: `results/train/flux-domain-adult/checkpoint-<step>/` (Diffusers LoRA format).
 
 For a quick smoke on GPU, temporarily set `"--max_train_steps": 50` in the JSON.
@@ -155,8 +153,6 @@ hf download Wan-AI/Wan2.1-T2V-14B --local-dir checkpoints/wan/Wan2.1-T2V-14B
 poetry run train-domain-t2v
 ```
 
-Legacy alias: `poetry run train-wan2-1-t2v-lora` (same defaults).
-
 Checkpoint example:
 
 `results/train/train_wan_domain_t2v_lora_<timestamp>/checkpoints/only_trained_model/denoiser-000-000000025.ckpt`
@@ -198,7 +194,7 @@ poetry run python tools/convert_wan_lora_21_to_22.py \
 Use only when debugging training checkpoints on the same base model (no 2.1→2.2 bridge):
 
 ```bash
-poetry run python scripts/inference_new.py \
+poetry run inference-run \
   --config configs/inference/presets/wan_domain_lora_smoke.yaml \
   --trained_ckpt results/train/train_wan_domain_t2v_lora_<ts>/checkpoints/only_trained_model/denoiser-000-000000025.ckpt \
   --prompt "sks_style, slow camera push-in, soft lighting" \
@@ -269,8 +265,6 @@ hf download Wan-AI/Wan2.1-I2V-14B-480P --local-dir checkpoints/wan/Wan2.1-I2V-14
 poetry run train-domain-i2v
 ```
 
-Legacy alias: `poetry run train-wan2-1-i2v-lora`
-
 ### Validation
 
 **Wan 2.2 I2V Diffusers (primary):**
@@ -286,7 +280,7 @@ poetry run validate-domain-i2v \
 **Wan 2.1 native smoke (debug):**
 
 ```bash
-poetry run python scripts/inference_new.py \
+poetry run inference-run \
   --config configs/inference/presets/wan_domain_i2v_smoke.yaml \
   --trained_ckpt results/train/train_wan_domain_i2v_lora_<ts>/checkpoints/only_trained_model/denoiser-000-000000025.ckpt \
   --prompt_dir inputs/i2v/domain_smoke \

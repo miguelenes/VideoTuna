@@ -1,6 +1,6 @@
 # Smoke preset for domain Wan 2.1 I2V LoRA (480p, paired image+prompt dir)
 # Usage:
-#   poetry run python scripts/inference_new.py \
+#   poetry run inference-run \
 #     --config configs/inference/presets/wan_domain_i2v_smoke.yaml \
 #     --ckpt_path checkpoints/wan/Wan2.1-I2V-14B-480P \
 #     --trained_ckpt results/train/train_wan_domain_i2v_lora_<ts>/checkpoints/only_trained_model/denoiser-000-000000025.ckpt \

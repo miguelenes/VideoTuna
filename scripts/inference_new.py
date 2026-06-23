@@ -33,11 +33,8 @@ from videotuna.utils.diffusers_quantization import (
     maybe_adjust_offload_for_quant,
     validate_transformer_quant,
 )
-from videotuna.utils.inference_cli import (
-    apply_compile_env,
-    apply_cpu_smoke_limits,
-    resolve_offload_mode,
-)
+from videotuna.utils.inference_cli import apply_compile_env, apply_cpu_smoke_limits
+from videotuna.utils.inference_profile import resolve_inference_profile
 
 
 def run_inference(args, gpu_num=1, rank=0, **kwargs):
@@ -62,15 +59,17 @@ def _prepare_inference_quant(
         getattr(inference_config, "trained_ckpt", None)
         or getattr(inference_config, "lorackpt", None)
     )
+    profile = resolve_inference_profile(inference_config, apply_preset=False)
     transformer_quant = validate_transformer_quant(
         transformer_quant=getattr(inference_config, "transformer_quant", None),
         quant_backend=getattr(inference_config, "quant_backend", None),
-        offload_mode=resolve_offload_mode(inference_config),
+        offload_mode=profile.offload_mode,
         compile_enabled=bool(getattr(args, "compile", False)),
         has_lora=has_lora,
     )
     if transformer_quant != "none":
         maybe_adjust_offload_for_quant(inference_config, transformer_quant)
+        profile = resolve_inference_profile(inference_config, apply_preset=False)
 
 
 def _run_inference_impl(args, gpu_num=1, rank=0, **kwargs):
@@ -126,13 +125,14 @@ def _run_inference_impl(args, gpu_num=1, rank=0, **kwargs):
             context=f"Flow: {flow_target}",
         )
 
+    profile = resolve_inference_profile(inference_config, apply_preset=False)
     log_startup_device_summary(
         device,
-        getattr(inference_config, "dtype", None),
+        profile.dtype,
         get_resolved_attn_backend(),
-        resolve_offload_mode(inference_config),
+        profile.offload_mode,
         attn_backend_requested=get_attn_backend_requested(),
-        memory_preset=getattr(inference_config, "memory_preset", None),
+        memory_preset=profile.memory_preset,
         compile_enabled=get_settings().torch_compile,
         compile_mode=get_torch_compile_mode(),
     )
@@ -180,5 +180,7 @@ def _run_inference_impl(args, gpu_num=1, rank=0, **kwargs):
 
 if __name__ == "__main__":
     from videotuna.cli.inference_app import generic_inference_entry
+    from videotuna.utils.deprecation import warn_deprecated_inference_script
 
+    warn_deprecated_inference_script()
     generic_inference_entry()

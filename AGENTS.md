@@ -77,13 +77,13 @@ poetry run install-deepspeed   # Wan LoRA
 
 Configs: `configs/domain/flux_t2i.json`, `configs/domain/flux_t2i_data.json`, `configs/domain/wan_t2v_lora.yaml`
 
-Legacy aliases: `train-flux-lora`, `train-wan2-1-t2v-lora`
+Deprecated CLI aliases: see [`docs/deprecations.md`](docs/deprecations.md).
 
 ### Smoke inference
 
 ```bash
 poetry run inference-domain-t2i --lorackpt results/train/flux-domain-adult/checkpoint-2000
-poetry run python scripts/inference_new.py --config configs/inference/presets/wan_domain_lora_smoke.yaml ...
+poetry run inference-run --config configs/inference/presets/wan_domain_lora_smoke.yaml ...
 poetry run inference-wan2.2-t2v-720p   # Phase 3 — deferred
 ```
 

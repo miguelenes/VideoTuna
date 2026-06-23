@@ -138,6 +138,12 @@ def main() -> None:
 inference_domain_t2i_entry = _entry_for_preset(PRESET_DOMAIN_T2I)
 validate_domain_t2v_entry = _entry_for_preset(PRESET_VALIDATE_T2V)
 inference_wan2_2_t2v_720p_entry = _entry_for_preset(PRESET_WAN2_2_T2V_720P)
-inference_flux_lora_entry = inference_domain_t2i_entry
 validate_domain_i2v_entry = _entry_for_preset(PRESET_VALIDATE_I2V)
 inference_wan2_2_i2v_720p_entry = _entry_for_preset(PRESET_WAN2_2_I2V_720P)
+
+
+def inference_flux_lora_entry() -> None:
+    from videotuna.utils.deprecation import warn_deprecated_cli_alias
+
+    warn_deprecated_cli_alias("inference-flux-lora", "inference-domain-t2i")
+    inference_domain_t2i_entry()
