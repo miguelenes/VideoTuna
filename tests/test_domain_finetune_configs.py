@@ -115,4 +115,4 @@ def test_wan_domain_inference_smoke_22_yaml():
     assert cfg.inference.frames == 81
     assert cfg.inference.num_inference_steps == 4
     assert cfg.flow.params.model_variant == "2.2"
-    assert "DiffusersVideoFlow" in cfg.flow.target
+    assert cfg.flow.flow_type == "diffusers"

@@ -9,8 +9,9 @@ from pytorch_lightning import seed_everything
 from transformers import logging as transf_logging
 
 from videotuna.base.generation_base import GenerationBase
+from videotuna.flow.factories import build_flow
 from videotuna.utils.args_utils import prepare_train_args
-from videotuna.utils.common_utils import get_dist_info, instantiate_from_config
+from videotuna.utils.common_utils import get_dist_info
 from videotuna.utils.logging_config import bound_logger, configure_logging
 from videotuna.utils.train_utils import (
     init_workspace,
@@ -104,7 +105,7 @@ if __name__ == "__main__":
     logger.info("***** Configuring Model *****")
     train_config: DictConfig = config["train"]
     flow_config: DictConfig = config["flow"]
-    flow: GenerationBase = instantiate_from_config(flow_config, resolve=True)
+    flow: GenerationBase = build_flow(flow_config)
     flow.from_pretrained(
         train_config["ckpt"], train_config["trained_ckpt"], train_config["lorackpt"]
     )

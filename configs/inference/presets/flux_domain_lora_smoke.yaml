@@ -5,7 +5,7 @@
 #     --lorackpt results/train/flux-domain-adult/checkpoint-2000 \
 #     --prompt "sks_style, portrait, soft lighting"
 flow:
-  target: videotuna.flow.diffusers_video.DiffusersVideoFlow
+  flow_type: diffusers
   params:
     model_family: flux
     mode: t2i

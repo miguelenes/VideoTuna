@@ -2,7 +2,7 @@
 # Requires NVIDIA CUDA and torchao>=0.15.0.
 # Usage: poetry run inference-wan2.2-t2v-720p --config configs/inference/presets/low_vram_wan2_2_720p_int8.yaml
 flow:
-  target: videotuna.flow.diffusers_video.DiffusersVideoFlow
+  flow_type: diffusers
   params:
     model_family: wan
     mode: t2v

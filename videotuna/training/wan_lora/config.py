@@ -60,14 +60,18 @@ class WanLoraFlowParams(BaseModel):
 class WanFlowConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    target: str
+    flow_type: Literal["wan"] | None = None
+    target: str | None = None
     params: WanLoraFlowParams
 
     @model_validator(mode="after")
-    def validate_flow_target(self) -> Self:
-        if self.target != WAN_VIDEO_FLOW_TARGET:
+    def validate_flow_discriminator(self) -> Self:
+        if self.flow_type is None and self.target is None:
+            raise ValueError("flow must have either 'flow_type' or 'target'")
+        if self.target is not None and self.target != WAN_VIDEO_FLOW_TARGET:
             raise ValueError(
-                f"flow.target must be {WAN_VIDEO_FLOW_TARGET!r}, got {self.target!r}"
+                f"flow.target must be {WAN_VIDEO_FLOW_TARGET!r}, "
+                f"got {self.target!r}"
             )
         return self
 

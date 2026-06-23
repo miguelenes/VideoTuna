@@ -7,6 +7,7 @@ from pytorch_lightning import seed_everything
 
 from videotuna.base.generation_base import GenerationBase
 from videotuna.cli.inference_options import InferenceRunConfig
+from videotuna.flow.factories import build_flow
 from videotuna.settings import get_settings, inference_settings_session
 from videotuna.utils.args_utils import prepare_inference_config
 from videotuna.utils.attention import (
@@ -15,7 +16,6 @@ from videotuna.utils.attention import (
     get_torch_compile_mode,
 )
 from videotuna.utils.common_utils import (
-    instantiate_from_config,
     monitor_resources,
     save_metrics,
 )
@@ -106,7 +106,16 @@ def _run_inference_impl(run_config: InferenceRunConfig, gpu_num=1, rank=0, **kwa
 
     flow_config = config.pop("flow", OmegaConf.create(flags={"allow_objects": True}))
 
-    flow_target = flow_config.get("target", "")
+    _FLOW_TYPE_TO_TARGET = {
+        "diffusers": "videotuna.flow.diffusers_video.DiffusersVideoFlow",
+        "wan": "videotuna.flow.wanvideo.WanVideoModelFlow",
+    }
+    flow_type = flow_config.get("flow_type", None)
+    flow_target = (
+        _FLOW_TYPE_TO_TARGET.get(flow_type, "")
+        if flow_type
+        else flow_config.get("target", "")
+    )
 
     flow_params = flow_config.get("params", OmegaConf.create())
 
@@ -172,7 +181,7 @@ def _run_inference_impl(run_config: InferenceRunConfig, gpu_num=1, rank=0, **kwa
 
     # 1. create flow
 
-    flow = cast(GenerationBase, instantiate_from_config(flow_config, resolve=True))
+    flow = cast(GenerationBase, build_flow(flow_config))
 
     flow.from_pretrained(
         inference_config.ckpt_path,
