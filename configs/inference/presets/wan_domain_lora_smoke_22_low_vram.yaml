@@ -29,5 +29,7 @@ inference:
   dtype: fp16
   min_vram_gb: 10
   # Optional transformer quant for base inference (LoRA+quant is attempted; use none if bridge fails):
+  #   int8_wo — see low_vram_wan2_2_720p_int8.yaml
+  #   fp8_wo  — see low_vram_wan2_2_720p_fp8.yaml (Ada/Hopper sm >= 8.9)
   # transformer_quant: int8_wo
   # quant_backend: torchao

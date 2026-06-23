@@ -29,6 +29,7 @@ CI_SMOKE_TESTS = [
     "tests/test_wan_i2v_dataset.py",
     "tests/test_wan_training_step.py",
     "tests/test_poetry_scripts.py",
+    "tests/test_diffusers_quantization.py",
 ]
 
 # Line-coverage floor for videotuna/training/ + videotuna/utils/

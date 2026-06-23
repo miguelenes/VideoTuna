@@ -17,9 +17,25 @@ Optimized inference presets for **Wan-AI/Wan2.2-T2V-A14B-Diffusers** (Diffusers 
 |-------------|------|----------------|
 | [`configs/inference/presets/low_vram_wan2_2_720p.yaml`](../../configs/inference/presets/low_vram_wan2_2_720p.yaml) | Minimum | 12–16 GB |
 | [`configs/inference/presets/low_vram_wan2_2_720p_int8.yaml`](../../configs/inference/presets/low_vram_wan2_2_720p_int8.yaml) | Minimum + int8 quant | 10–14 GB (CUDA) |
+| [`configs/inference/presets/low_vram_wan2_2_720p_fp8.yaml`](../../configs/inference/presets/low_vram_wan2_2_720p_fp8.yaml) | Minimum + fp8 quant (Ada/Hopper) | 10–14 GB (CUDA sm ≥ 8.9) |
 | [`configs/inference/presets/balanced_wan2_2_720p.yaml`](../../configs/inference/presets/balanced_wan2_2_720p.yaml) | Recommended | ~24 GB |
 | [`configs/inference/presets/max_speed_wan2_2_720p.yaml`](../../configs/inference/presets/max_speed_wan2_2_720p.yaml) | Max speed | 40–48 GB |
 | [`configs/inference/presets/wan2_2_cpu_smoke.yaml`](../../configs/inference/presets/wan2_2_cpu_smoke.yaml) | Home dev only | RAM (not practical) |
+
+## Quantization by hardware tier
+
+Requires **torchao ≥ 0.15.0** (default Poetry dependency) and NVIDIA CUDA. See [Diffusers torchao quantization](https://huggingface.co/docs/diffusers/main/en/quantization/torchao).
+
+| Tier / GPU examples | `int8_wo` | `fp8_wo` | Preset / CLI |
+|---------------------|-----------|----------|--------------|
+| Home CPU / ROCm | Not supported | Not supported | `transformer_quant: none` |
+| 12–16 GB (A10, RTX 3090 — sm 8.6) | **Recommended** | Not supported (sm < 8.9) | [`low_vram_wan2_2_720p_int8.yaml`](../../configs/inference/presets/low_vram_wan2_2_720p_int8.yaml) or `--transformer-quant int8_wo` |
+| 24 GB RTX 4090 (sm 8.9) | Supported | **Preferred** (speed + VRAM) | [`low_vram_wan2_2_720p_fp8.yaml`](../../configs/inference/presets/low_vram_wan2_2_720p_fp8.yaml) or `--transformer-quant fp8_wo` |
+| 40–48 GB A6000 (sm 8.6) | Supported | Not supported | int8 preset or no quant + `max_speed` |
+| 40–48 GB L40S / Hopper (sm ≥ 8.9) | Supported | **Preferred** | fp8 preset or CLI |
+| 2× A100 (sm 8.0) | Supported if VRAM-tight | Not supported | int8 or offload without quant |
+
+Measure peak VRAM on rental hardware with `tools/spike_wan_quant_compare.py` (records `torchao` version and per-scheme metrics).
 
 ## Three-tier command matrix (rental GPU)
 
@@ -42,6 +58,14 @@ poetry run inference-wan2.2-t2v-720p \
   --min-vram-gb 10
 ```
 
+Ada/Hopper (sm ≥ 8.9) — fp8 weight-only:
+
+```bash
+poetry run inference-wan2.2-t2v-720p \
+  --config configs/inference/presets/low_vram_wan2_2_720p_fp8.yaml \
+  --min-vram-gb 10
+```
+
 Or add to any preset / CLI:
 
 ```bash
@@ -54,9 +78,9 @@ Or add to any preset / CLI:
 | `int4_wo` | Further weight savings | NVIDIA CUDA | Same as int8 |
 | `fp8_wo` | Best speed/memory on Ada+ | sm ≥ 8.9 (RTX 4090, Hopper) | Same as int8 |
 
-**FP8 on Wan 2.2 Diffusers:** use `--transformer-quant fp8_wo` (torchao dynamic weight-only; Ada/Hopper+). Legacy native checkpoint FP8 is not supported in PrivTune.
+**FP8 on Wan 2.2 Diffusers:** use `--transformer-quant fp8_wo` (torchao weight-only; Ada/Hopper sm ≥ 8.9). Legacy native checkpoint FP8 is not supported in PrivTune.
 
-**optimum-quanto:** evaluated via `tools/spike_wan_quant_compare.py` on rental GPU; not added as a default dependency. Use `--quant-backend quanto` only after installing `optimum-quanto>=0.2.6` manually if torchao is insufficient.
+**optimum-quanto:** evaluated via `tools/spike_wan_quant_compare.py` on rental GPU (`--include-quanto`); not added as a default dependency. Use `--quant-backend quanto` only after installing `optimum-quanto>=0.2.6` manually if torchao is insufficient.
 
 When `transformer_quant` is enabled, sequential CPU offload is upgraded to **model CPU offload** automatically for Diffusers quant compatibility.
 
