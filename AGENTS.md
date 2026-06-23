@@ -41,6 +41,29 @@ Cursor rules: [`.cursor/rules/privtune.mdc`](.cursor/rules/privtune.mdc)
 
 After install for Wan LoRA: `poetry run install-deepspeed`
 
+## CI
+
+| Workflow | Trigger | Runner | Purpose |
+|----------|---------|--------|---------|
+| [`.github/workflows/cpu.yml`](.github/workflows/cpu.yml) | push / PR | `ubuntu-latest` | Lint, format, CPU-safe tests (GPU tests skipped) |
+| [`.github/workflows/gpu-nightly.yml`](.github/workflows/gpu-nightly.yml) | weekly + manual | self-hosted (`linux`, `gpu`) | Wan 2.2 GPU smoke regression + artifact upload |
+
+### Self-hosted GPU runner (one-time)
+
+1. Register a [self-hosted runner](https://docs.github.com/en/actions/hosting-your-own-runners) on a Linux host with an NVIDIA GPU (≥12 GB VRAM for the low_vram smoke preset).
+2. Apply labels: `self-hosted`, `linux`, `gpu`.
+3. Pre-install: Python 3.11, Poetry, CUDA driver compatible with torch 2.6+cu126.
+4. Add repo secret `HF_TOKEN` (optional; improves Hugging Face Hub download rate limits).
+5. Manual smoke on the runner host:
+
+```bash
+poetry install -E cuda --with dev
+export VIDEOTUNA_ATTN_BACKEND=sdpa
+poetry run pytest tests/test_diffusers_video_flow.py -m gpu -q
+```
+
+Trigger the workflow manually via **Actions → GPU Nightly → Run workflow** after registering the runner.
+
 ## Verification (required before finishing)
 
 ```bash
