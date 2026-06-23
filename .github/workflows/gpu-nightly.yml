@@ -1,0 +1,57 @@
+name: GPU Nightly
+
+on:
+  schedule:
+    # Weekly Sunday 06:00 UTC
+    - cron: "0 6 * * 0"
+  workflow_dispatch:
+
+jobs:
+  gpu-smoke:
+    runs-on: [self-hosted, linux, gpu]
+    timeout-minutes: 120
+    env:
+      VIDEOTUNA_ATTN_BACKEND: sdpa
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Poetry
+        run: pip install poetry
+
+      - name: Cache Hugging Face hub
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-hub-wan22-${{ hashFiles('configs/inference/presets/wan2_2_gpu_smoke.yaml') }}
+          restore-keys: |
+            hf-hub-wan22-
+
+      - name: Install dependencies (CUDA extra + dev)
+        run: poetry install -E cuda --with dev
+
+      - name: Verify CUDA environment
+        run: poetry run verify-cuda-extras
+
+      - name: GPU smoke — diffusers video flow
+        run: |
+          poetry run pytest tests/test_diffusers_video_flow.py \
+            -m gpu \
+            -q \
+            --strict-markers
+
+      - name: Upload inference artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wan22-gpu-smoke-${{ github.run_id }}
+          path: |
+            results/t2v/wan2.2-gpu-smoke/*.mp4
+            results/t2v/wan2.2-gpu-smoke/metrics.json
+            results/t2v/wan2.2-gpu-smoke/metric.json
+          retention-days: 14
+          if-no-files-found: warn

@@ -3,12 +3,20 @@
 from __future__ import annotations
 
 import argparse
+import json
+import os
+from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+import pytest
 import torch
 from omegaconf import OmegaConf
 
+from videotuna.cli.inference_options import (
+    InferenceRunOptions,
+    inference_options_to_namespace,
+)
 from videotuna.flow.diffusers_video import (
     MODEL_REGISTRY,
     DiffusersVideoFlow,
@@ -19,6 +27,9 @@ from videotuna.utils.diffusers_optimizations import (
     apply_diffusers_optimizations,
     transformer_cache_context,
 )
+
+GPU_SMOKE_PRESET = "configs/inference/presets/wan2_2_gpu_smoke.yaml"
+GPU_SMOKE_SAVEDIR = Path("results/t2v/wan2.2-gpu-smoke")
 
 
 def test_resolve_model_id_defaults():
@@ -118,3 +129,26 @@ def test_yaml_wan22_instantiates_flow():
     flow = instantiate_from_config(cfg.flow, resolve=True)
     assert isinstance(flow, DiffusersVideoFlow)
     assert flow.model_variant == "2.2"
+
+
+@pytest.mark.gpu
+def test_wan22_gpu_smoke_inference():
+    """End-to-end Wan 2.2 Diffusers T2V on GPU (weekly CI regression)."""
+    os.environ["VIDEOTUNA_ATTN_BACKEND"] = "sdpa"
+
+    from scripts.inference_new import run_inference
+
+    args = inference_options_to_namespace(
+        run=InferenceRunOptions(config=GPU_SMOKE_PRESET),
+    )
+    run_inference(args)
+
+    assert GPU_SMOKE_SAVEDIR.is_dir(), f"missing output dir: {GPU_SMOKE_SAVEDIR}"
+    videos = list(GPU_SMOKE_SAVEDIR.glob("*.mp4"))
+    assert videos, f"expected at least one mp4 in {GPU_SMOKE_SAVEDIR}"
+
+    metrics_path = GPU_SMOKE_SAVEDIR / "metrics.json"
+    assert metrics_path.is_file(), f"missing metrics: {metrics_path}"
+    metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+    assert metrics.get("per_sample"), "metrics.json missing per_sample entries"
+    assert metrics["per_sample"][0]["peak_vram_gb"] > 0

@@ -423,7 +423,14 @@ def test():  # pragma: no cover
     Run all unittests
     """
     os.environ["ENV"] = "test"
-    result = subprocess.run(["pytest", "tests"] + sys.argv[1:], check=False)
+    args = sys.argv[1:]
+    has_targets = any(
+        not a.startswith("-")
+        and (a.endswith(".py") or "::" in a or a.startswith("tests"))
+        for a in args
+    )
+    cmd = ["pytest"] + (args if has_targets else ["tests"] + args)
+    result = subprocess.run(cmd, check=False)
     exit(result.returncode)
 
 

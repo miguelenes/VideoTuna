@@ -19,6 +19,9 @@ MAX_SPEED_PRESET = (
 CPU_SMOKE_PRESET = (
     REPO_ROOT / "configs" / "inference" / "presets" / "wan2_2_cpu_smoke.yaml"
 )
+GPU_SMOKE_PRESET = (
+    REPO_ROOT / "configs" / "inference" / "presets" / "wan2_2_gpu_smoke.yaml"
+)
 
 WAN_MODEL_ID = "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
 
@@ -80,3 +83,19 @@ def test_wan_cpu_smoke_preset():
     assert cfg.inference.width == 448
     assert cfg.inference.num_inference_steps == 4
     assert cfg.inference.dtype == "fp32"
+
+
+def test_wan_gpu_smoke_preset():
+    cfg = OmegaConf.load(GPU_SMOKE_PRESET)
+    assert cfg.flow.params.model_family == "wan"
+    assert cfg.flow.params.model_variant == "2.2"
+    assert cfg.inference.memory_preset == "low_vram"
+    assert cfg.inference.enable_sequential_cpu_offload is True
+    assert cfg.inference.dtype == "fp16"
+    assert cfg.inference.min_vram_gb == 10
+    assert cfg.inference.frames == 9
+    assert cfg.inference.height == 480
+    assert cfg.inference.width == 832
+    assert cfg.inference.num_inference_steps == 4
+    assert cfg.inference.n_samples_prompt == 1
+    assert cfg.inference.savedir == "results/t2v/wan2.2-gpu-smoke"

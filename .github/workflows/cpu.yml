@@ -42,14 +42,23 @@ jobs:
       - name: Flux train smoke
         run: poetry run test tests/test_flux_lora_train_smoke.py -q
 
+      - name: Wan LoRA bridge
+        run: poetry run test tests/test_wan_lora_bridge.py -q
+
+      - name: Wan I2V LoRA bridge
+        run: poetry run test tests/test_wan_i2v_lora_bridge.py -q
+
+      - name: Wan domain T2V 2.2 config
+        run: poetry run test tests/test_wan_domain_lora_smoke_22_config.py -q
+
+      - name: Wan domain I2V 2.2 config
+        run: poetry run test tests/test_wan_domain_i2v_smoke_22_config.py -q
+
+      - name: Wan I2V dataset
+        run: poetry run test tests/test_wan_i2v_dataset.py -q
+
+      - name: Wan training step
+        run: poetry run test tests/test_wan_training_step.py -q
+
       - name: Poetry scripts
         run: poetry run test tests/test_poetry_scripts.py -q
-
-      - name: Run remaining CPU-safe tests
-        run: |
-          poetry run pytest tests/ \
-            -m "not gpu and not cpu_smoke" \
-            --ignore=tests/test_training_step_mock.py \
-            --ignore=tests/test_wan_checkpoint.py \
-            --ignore=tests/datasets \
-            -q

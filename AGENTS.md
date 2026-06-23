@@ -49,12 +49,18 @@ poetry run format-check
 poetry run test tests/test_import_smoke.py -q
 poetry run test tests/test_domain_finetune_configs.py -q
 poetry run test tests/test_flux_lora_train_smoke.py -q
+poetry run test tests/test_wan_lora_bridge.py -q
+poetry run test tests/test_wan_i2v_lora_bridge.py -q
+poetry run test tests/test_wan_domain_lora_smoke_22_config.py -q
+poetry run test tests/test_wan_domain_i2v_smoke_22_config.py -q
+poetry run test tests/test_wan_i2v_dataset.py -q
+poetry run test tests/test_wan_training_step.py -q
 poetry run test tests/test_poetry_scripts.py -q
 ```
 
 | Change area | Additional tests |
 |-------------|------------------|
-| Wan 2.2 presets / bridge | `test_wan_inference_presets.py`, `test_wan_lora_bridge.py` |
+| Wan 2.2 presets / bridge | `test_wan_inference_presets.py` |
 | diffusers_video | `test_diffusers_video_flow.py` |
 | device/attention | `test_device_utils.py`, `test_attention_backend.py` |
 | inference CLI / memory | `test_inference_optimization.py` |

@@ -1,0 +1,30 @@
+# GPU CI smoke preset for Wan 2.2 Diffusers (weekly regression only — not for production)
+# Usage:
+#   poetry run inference-wan2.2-t2v-720p \
+#     --config configs/inference/presets/wan2_2_gpu_smoke.yaml
+flow:
+  target: videotuna.flow.diffusers_video.DiffusersVideoFlow
+  params:
+    model_family: wan
+    mode: t2v
+    pipeline_only: true
+    model_variant: "2.2"
+    pretrained_model_name_or_path: Wan-AI/Wan2.2-T2V-A14B-Diffusers
+inference:
+  mode: t2v
+  ckpt_path: Wan-AI/Wan2.2-T2V-A14B-Diffusers
+  savedir: results/t2v/wan2.2-gpu-smoke
+  prompt_file: inputs/t2v/prompts.txt
+  frames: 9
+  height: 480
+  width: 832
+  num_inference_steps: 4
+  unconditional_guidance_scale: 5.0
+  seed: 42
+  savefps: 8
+  n_samples_prompt: 1
+  memory_preset: low_vram
+  enable_sequential_cpu_offload: true
+  enable_vae_tiling: true
+  dtype: fp16
+  min_vram_gb: 10
