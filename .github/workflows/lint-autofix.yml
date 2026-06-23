@@ -23,13 +23,13 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           persist-credentials: true
 
-      # Install ruff only (no Poetry / torch). Version resolved from pyproject.toml.
+      # Install ruff only (no Poetry / torch). Pin matches poetry.lock (0.6.9).
       # Mirrors scripts/__init__.py code_format() targets and command order.
       - name: Install ruff
         uses: astral-sh/ruff-action@v4.0.0
         with:
           args: "--version"
-          version-file: pyproject.toml
+          version: "0.6.9"
 
       - name: Apply lint and format fixes
         run: |
