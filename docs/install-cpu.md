@@ -90,7 +90,7 @@ See [install-rocm.md](install-rocm.md).
 
 ## Apple Silicon
 
-Linux CPU install is separate from Apple Silicon. For Mac arm64, see the Docker path in the [README](../README.md).
+Linux CPU install is separate from Apple Silicon. For Mac arm64, use the Compose **`privtune`** image for containerized dev — see [Docker (optional)](../README.md#docker-optional) in the README. Native CPU training on Mac remains limited (same constraints as Linux CPU smoke).
 
 ## Troubleshooting
 
