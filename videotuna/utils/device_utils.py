@@ -86,7 +86,7 @@ def detect_compute_backend() -> ComputeBackend:
         )
     if not torch.cuda.is_available():
         raise RuntimeError(
-            "VIDEOTUNA_COMPUTE_BACKEND=cuda but torch.cuda.is_available() " "is False."
+            "VIDEOTUNA_COMPUTE_BACKEND=cuda but torch.cuda.is_available() is False."
         )
     return "cuda"
 

@@ -26,7 +26,7 @@ def _help_text(command: list[str]) -> str:
         [
             sys.executable,
             "-c",
-            ("from videotuna.cli.inference_app import app; " f"app({command!r})"),
+            (f"from videotuna.cli.inference_app import app; app({command!r})"),
         ],
         capture_output=True,
         text=True,

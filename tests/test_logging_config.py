@@ -49,8 +49,7 @@ def test_bound_logger_emits_structured_context():
         output,
         level="INFO",
         format=(
-            "phase={extra[phase]} flow={extra[flow]} "
-            "device={extra[device]} | {message}"
+            "phase={extra[phase]} flow={extra[flow]} device={extra[device]} | {message}"
         ),
     )
 

@@ -272,9 +272,7 @@ def get_autoresume_path(logdir):
     else:
         resume_checkpt_path = None
         ckpt_dir = os.path.join(logdir, "checkpoints")
-        mainlogger.info(
-            f"[INFO] no checkpoint found in current workspace: {ckpt_dir}"
-        )
+        mainlogger.info(f"[INFO] no checkpoint found in current workspace: {ckpt_dir}")
 
     return resume_checkpt_path
 

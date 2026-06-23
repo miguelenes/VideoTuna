@@ -37,8 +37,8 @@ def test_easydict_only_in_wan_vendor_tree():
 def test_wan_configs_still_use_easydict():
     """Sanity: upstream Wan config modules still depend on easydict."""
     config_files = _iter_py_files(WAN_CONFIGS_ROOT)
-    assert (
-        config_files
-    ), "expected Wan config modules under videotuna/models/wan/wan/configs/"
+    assert config_files, (
+        "expected Wan config modules under videotuna/models/wan/wan/configs/"
+    )
     users = [path for path in config_files if _file_mentions_easydict(path)]
     assert users, "expected at least one Wan config module to import easydict"

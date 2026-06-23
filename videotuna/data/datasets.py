@@ -101,9 +101,9 @@ class DatasetFromCSV(torch.utils.data.Dataset):
         if len(data_root) == 1:
             data_root = data_root * len(csv_path)
 
-        assert len(csv_path) == len(
-            data_root
-        ), "The number of csv files and data root should be the same."
+        assert len(csv_path) == len(data_root), (
+            "The number of csv files and data root should be the same."
+        )
 
         if transform is None:
             transform = dict(
@@ -116,9 +116,9 @@ class DatasetFromCSV(torch.utils.data.Dataset):
                 image=get_transforms_image((height, width), num_frames),
             )
 
-        assert (
-            "video" in transform or "image" in transform
-        ), "The transform should contain 'video' or 'image'."
+        assert "video" in transform or "image" in transform, (
+            "The transform should contain 'video' or 'image'."
+        )
         self.transform = transform
         self.height = height
         self.width = width

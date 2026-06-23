@@ -57,9 +57,9 @@ class VideoTunaModelCheckpoint(pl.callbacks.ModelCheckpoint):
         *args,
         **kwargs,
     ):
-        assert (
-            save_flow or save_only_selected_model
-        ), "At least one of `save_flow` and `save_only_trained_model` should be True."
+        assert save_flow or save_only_selected_model, (
+            "At least one of `save_flow` and `save_only_trained_model` should be True."
+        )
         super().__init__(*args, **kwargs)
         self.save_flow = save_flow
         self.save_only_selected_model = save_only_selected_model
