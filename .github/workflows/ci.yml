@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  POETRY_NO_INTERACTION: "1"
+  POETRY_VIRTUALENVS_IN_PROJECT: "true"
+  VIDEOTUNA_ATTN_BACKEND: eager
+  VIDEOTUNA_COMPUTE_BACKEND: cpu
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.head_ref || github.ref }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      # Install ruff only (no Poetry / torch). Version resolved from pyproject.toml.
+      # Mirrors scripts/__init__.py code_format() targets and command order.
+      - name: Install ruff
+        uses: astral-sh/ruff-action@v4
+        with:
+          args: "--version"
+          version-file: pyproject.toml
+
+      - name: Apply lint and format fixes
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          ruff check --fix videotuna tests scripts tools
+          ruff check --select I --fix .
+          ruff format .
+
+      - name: Commit style fixes
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        uses: stefanzweifel/git-auto-commit-action@v7
+        with:
+          commit_message: "style: apply ruff lint and format fixes"
+          commit_author: "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version-file: .python-version
+          cache: poetry
+
+      - name: Install Poetry
+        run: pip install "poetry==2.1.3"
+
+      - name: Install dependencies (CPU extra + dev + training)
+        run: poetry install -E cpu --with dev --with training
+
+      - name: Install CPU PyTorch wheels
+        run: poetry run install-cpu-torch
+
+      - name: Verify CPU torch
+        run: poetry run verify-cpu-torch
+
+      - name: Lint
+        run: poetry run ruff check --output-format=github videotuna tests scripts tools
+
+      - name: Format check
+        run: poetry run format-check
+
+      - name: Smoke tests + coverage gate
+        run: poetry run coverage-gate
+
+      - name: Coverage summary
+        if: always()
+        run: |
+          {
+            echo "## Coverage (videotuna/training + videotuna/utils)"
+            poetry run coverage report \
+              --include='videotuna/training/*,videotuna/utils/*' \
+              || echo "_Coverage report unavailable (tests may have failed)._"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.xml
+          if-no-files-found: ignore

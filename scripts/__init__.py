@@ -27,7 +27,7 @@ __all__ = [
     "WAN_T2V_LORA_CONFIG",
 ]
 
-# Single source of truth for CPU CI smoke tests (see .github/workflows/cpu.yml).
+# Single source of truth for CPU CI smoke tests (see .github/workflows/ci.yml).
 CI_SMOKE_TESTS = [
     "tests/test_import_smoke.py",
     "tests/test_domain_finetune_configs.py",
@@ -489,13 +489,19 @@ def coverage_gate():
     )
     if run.returncode != 0:
         exit(run.returncode)
+    include = "videotuna/training/*,videotuna/utils/*"
     report = subprocess.run(
         [
             "coverage",
             "report",
-            "--include=videotuna/training/*,videotuna/utils/*",
+            "--include",
+            include,
             f"--fail-under={COVERAGE_GATE_FAIL_UNDER}",
         ],
+        check=False,
+    )
+    subprocess.run(
+        ["coverage", "xml", "-o", "coverage.xml", "--include", include],
         check=False,
     )
     exit(report.returncode)
