@@ -78,6 +78,16 @@ def _require_cuda_for_quant(transformer_quant: str) -> None:
         )
 
 
+def _require_quanto() -> None:
+    try:
+        import optimum.quanto  # noqa: F401
+    except ImportError as exc:
+        raise ImportError(
+            "quant_backend=quanto requires the quanto extra. "
+            "Install with: poetry install -E quanto"
+        ) from exc
+
+
 def _require_fp8_gpu() -> None:
     if not gpu_is_available():
         return
@@ -118,13 +128,7 @@ def validate_transformer_quant(
         _require_fp8_gpu()
 
     if backend == "quanto":
-        try:
-            import optimum.quanto  # noqa: F401
-        except ImportError as exc:
-            raise ImportError(
-                "quant_backend=quanto requires optimum-quanto. "
-                "Install with: pip install optimum-quanto>=0.2.6"
-            ) from exc
+        _require_quanto()
     else:
         try:
             import torchao  # noqa: F401
@@ -186,6 +190,7 @@ def _build_torchao_component_config(transformer_quant: str) -> Any:
 
 
 def _build_quanto_component_config(transformer_quant: str) -> Any:
+    _require_quanto()
     from diffusers import QuantoConfig
 
     mapping = {

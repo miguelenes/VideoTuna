@@ -2495,7 +2495,7 @@ version = "1.13.0"
 description = "Ninja is a small build system with a focus on speed"
 optional = false
 python-versions = ">=3.8"
-groups = ["training"]
+groups = ["main", "training"]
 files = [
     {file = "ninja-1.13.0-py3-none-macosx_10_9_universal2.whl", hash = "sha256:fa2a8bfc62e31b08f83127d1613d10821775a0eb334197154c4d6067b7068ff1"},
     {file = "ninja-1.13.0-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:3d00c692fb717fd511abeb44b8c5d00340c36938c12d6538ba989fe764e79630"},
@@ -2517,6 +2517,7 @@ files = [
     {file = "ninja-1.13.0-py3-none-win_arm64.whl", hash = "sha256:3c0b40b1f0bba764644385319028650087b4c1b18cdfa6f45cb39a3669b81aa9"},
     {file = "ninja-1.13.0.tar.gz", hash = "sha256:4a40ce995ded54d9dc24f8ea37ff3bf62ad192b547f6c7126e7e25045e76f978"},
 ]
+markers = {main = "extra == \"quanto\""}
 
 [[package]]
 name = "nodeenv"
@@ -2867,6 +2868,30 @@ numpy = [
     {version = ">=1.23.5", markers = "python_version >= \"3.11\""},
     {version = ">=1.26.0", markers = "python_version >= \"3.12\""},
 ]
+
+[[package]]
+name = "optimum-quanto"
+version = "0.2.7"
+description = "A pytorch quantization backend for optimum."
+optional = true
+python-versions = ">=3.9.0"
+groups = ["main"]
+markers = "extra == \"quanto\""
+files = [
+    {file = "optimum_quanto-0.2.7-py3-none-any.whl", hash = "sha256:1369b1d9a4a197f88c0d1c67e8d950694e5b86ce4c9f3878e178d5be35339f61"},
+    {file = "optimum_quanto-0.2.7.tar.gz", hash = "sha256:91b5c2dc8a9100297dc7924a93747fb77ab010784b5e1f6d0208976ba054dade"},
+]
+
+[package.dependencies]
+huggingface_hub = "*"
+ninja = "*"
+numpy = "*"
+safetensors = "*"
+torch = ">=2.6.0"
+
+[package.extras]
+dev = ["pytest", "ruff"]
+examples = ["accelerate", "datasets", "diffusers", "scipy", "sentencepiece", "torchvision", "transformers"]
 
 [[package]]
 name = "packaging"
@@ -5205,10 +5230,11 @@ cpu = []
 cuda = ["bitsandbytes", "nvidia-cublas-cu12", "nvidia-cuda-cupti-cu12", "nvidia-cuda-nvrtc-cu12", "nvidia-cuda-runtime-cu12", "nvidia-cudnn-cu12", "nvidia-cufft-cu12", "nvidia-curand-cu12", "nvidia-cusolver-cu12", "nvidia-cusparse-cu12", "nvidia-cusparselt-cu12", "nvidia-nccl-cu12", "nvidia-nvjitlink-cu12", "nvidia-nvtx-cu12", "triton", "xformers", "xfuser"]
 cuda124 = []
 cuda126 = []
+quanto = ["optimum-quanto"]
 rocm = []
 video-fast = ["torchcodec"]
 
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.11"
-content-hash = "8455f55429847072dd9d680d883f3b6dde943e484ef300585d3c049d2b86de0d"
+content-hash = "8501b3a8ac03302e6714012a69cf8a47a4042866e87d3ebd2703c6e8841b7250"

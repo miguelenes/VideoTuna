@@ -133,7 +133,7 @@ def test_validate_transformer_quant_quanto_import_guard():
             return real_import(name, *args, **kwargs)
 
         with mock.patch("builtins.__import__", side_effect=fake_import):
-            with pytest.raises(ImportError, match="optimum-quanto"):
+            with pytest.raises(ImportError, match="poetry install -E quanto"):
                 validate_transformer_quant(
                     transformer_quant="int8_wo",
                     quant_backend="quanto",

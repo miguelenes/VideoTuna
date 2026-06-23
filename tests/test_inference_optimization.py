@@ -324,3 +324,94 @@ def test_require_accelerator_for_flow_raises_without_gpu():
     ).read_text(encoding="utf-8")
     assert "generic_inference_entry" in source
     assert "import argparse" not in source
+
+
+@pytest.mark.gpu
+def test_wan_domain_low_vram_quanto_int4_gpu_smoke():
+    """GPU integration: optimum-quanto int4_wo on Wan 2.2 low-VRAM preset."""
+    pytest.importorskip("optimum.quanto")
+
+    from pathlib import Path
+
+    import torch
+    import yaml
+    from diffusers import WanPipeline
+
+    from videotuna.utils.device_utils import detect_compute_backend
+    from videotuna.utils.diffusers_optimizations import apply_diffusers_optimizations
+    from videotuna.utils.diffusers_quantization import (
+        build_pipeline_quantization_config,
+        maybe_adjust_offload_for_quant,
+        resolve_quant_components,
+        validate_transformer_quant,
+    )
+
+    if not torch.cuda.is_available():
+        pytest.skip("GPU not available")
+    if detect_compute_backend() == "rocm":
+        pytest.skip("quanto quant is CUDA-only")
+
+    repo_root = Path(__file__).resolve().parents[1]
+    preset_path = (
+        repo_root
+        / "configs"
+        / "inference"
+        / "presets"
+        / "wan_domain_lora_smoke_22_low_vram.yaml"
+    )
+    cfg = yaml.safe_load(preset_path.read_text(encoding="utf-8"))
+    flow_params = cfg["flow"]["params"]
+    inference = cfg["inference"]
+    model_id = flow_params["pretrained_model_name_or_path"]
+    model_variant = flow_params["model_variant"]
+
+    args = argparse.Namespace(
+        transformer_quant="int4_wo",
+        quant_backend="quanto",
+        enable_sequential_cpu_offload=inference["enable_sequential_cpu_offload"],
+        enable_model_cpu_offload=False,
+        enable_vae_tiling=inference["enable_vae_tiling"],
+        enable_vae_slicing=False,
+        fuse_qkv=False,
+        enable_attention_cache=False,
+        device=None,
+        device_map=None,
+    )
+    maybe_adjust_offload_for_quant(args, "int4_wo")
+    assert args.enable_sequential_cpu_offload is False
+    assert args.enable_model_cpu_offload is True
+
+    validate_transformer_quant(
+        transformer_quant="int4_wo",
+        quant_backend="quanto",
+        offload_mode="model",
+    )
+    components = resolve_quant_components("wan", model_variant, "t2v")
+    assert components == ["transformer", "transformer_2"]
+    quant_config = build_pipeline_quantization_config(
+        transformer_quant="int4_wo",
+        quant_backend="quanto",
+        components=components,
+    )
+    assert quant_config is not None
+    assert set(quant_config.quant_mapping.keys()) == {"transformer", "transformer_2"}
+
+    pipe = WanPipeline.from_pretrained(
+        model_id,
+        torch_dtype=torch.float16,
+        quantization_config=quant_config,
+    )
+    apply_diffusers_optimizations(pipe, args, model_family="wan")
+
+    generator = torch.Generator(device="cuda").manual_seed(42)
+    output = pipe(
+        prompt="sks_style, slow camera push-in, soft lighting",
+        num_frames=5,
+        height=256,
+        width=448,
+        num_inference_steps=2,
+        guidance_scale=5.0,
+        generator=generator,
+    )
+    assert output is not None
+    assert len(output.frames[0]) == 5

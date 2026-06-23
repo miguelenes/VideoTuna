@@ -20,6 +20,8 @@ build-backend = "poetry.core.masonry.api"
 # Training: `poetry install -E cuda --with training`
 # Optional faster video decode (Wan dataloading):
 #   `poetry install -E cuda --with training -E video-fast`
+# Optional Wan transformer quant (quanto backend):
+#   `poetry install -E cuda -E quanto`
 # Dev:      `poetry install --with dev`
 
 [tool.poetry.dependencies]
@@ -83,6 +85,7 @@ dashscope = "^1.23.0"
 # Wan vendor only — videotuna/models/wan/wan/configs/
 easydict = "^1.13"
 torchcodec = { version = "~0.2.1", optional = true }
+optimum-quanto = { version = ">=0.2.6", optional = true }
 
 [tool.poetry.extras]
 cuda = [
@@ -109,6 +112,7 @@ cpu = []
 cuda124 = []
 cuda126 = ["cuda"]
 video-fast = ["torchcodec"]
+quanto = ["optimum-quanto"]
 
 [tool.poetry.group.training]
 optional = true
