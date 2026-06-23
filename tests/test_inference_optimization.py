@@ -108,6 +108,34 @@ def test_validate_cpu_offload_rejected_on_cpu_smoke():
         validate_cpu_offload_flags(args)
 
 
+def test_validate_cpu_offload_both_flags_sequential_wins():
+    from videotuna.utils.inference_cli import validate_cpu_offload_flags
+
+    args = argparse.Namespace(
+        cpu_smoke=False,
+        device="cuda:0",
+        enable_sequential_cpu_offload=True,
+        enable_model_cpu_offload=True,
+        memory_preset=None,
+    )
+    with (
+        mock.patch("videotuna.utils.device_utils.gpu_is_available", return_value=True),
+        mock.patch(
+            "videotuna.utils.device_utils.detect_compute_backend", return_value="cuda"
+        ),
+        mock.patch("videotuna.utils.device_utils.resolve_cpu_mode", return_value="off"),
+        mock.patch("videotuna.utils.inference_cli.logger.warning") as warn,
+    ):
+        validate_cpu_offload_flags(args)
+
+    assert args.enable_sequential_cpu_offload is True
+    assert args.enable_model_cpu_offload is False
+    warn.assert_called_once()
+    assert "sequential" in warn.call_args[0][0].lower()
+    profile = resolve_inference_profile(args, apply_preset=False)
+    assert profile.offload_mode == "sequential"
+
+
 def test_apply_cpu_smoke_env():
     from videotuna.utils.inference_cli import apply_cpu_smoke_env
 

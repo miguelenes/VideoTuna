@@ -18,7 +18,7 @@ from videotuna.settings import (
     get_settings,
 )
 
-ComputeBackend = Literal["cuda", "rocm", "cpu", "mps"]
+ComputeBackend = Literal["cuda", "rocm", "cpu"]
 InferenceDtype = Literal["bf16", "fp16", "fp32"]
 FlowCapabilityTier = Literal["cpu_ok", "cpu_smoke", "gpu_required"]
 CpuMode = Literal["off", "smoke", "force"]
@@ -58,12 +58,10 @@ def _detect_compute_backend_raw() -> ComputeBackend:
 
 
 def detect_compute_backend() -> ComputeBackend:
-    """Return the active compute backend (cuda, rocm, cpu, or mps)."""
+    """Return the active compute backend (cuda, rocm, or cpu)."""
     requested = get_settings().compute_backend
     if requested == "auto":
         return _detect_compute_backend_raw()
-    if requested == "mps":
-        return "mps"
     if requested == "cpu":
         return "cpu"
     if requested == "rocm":
@@ -117,7 +115,14 @@ def normalize_device_prefer(prefer: str | int | None) -> str | None:
     text = str(prefer).strip().lower()
     if not text:
         return None
-    if text in ("cpu", "mps"):
+    if text == "mps":
+        raise ValueError(
+            f"Invalid device {prefer!r}. MPS is not supported. "
+            "PrivTune supports cpu, cuda, and cuda:N. "
+            "For config validation on Apple Silicon, use "
+            "VIDEOTUNA_CPU_MODE=smoke or --cpu-smoke."
+        )
+    if text == "cpu":
         return text
     if text.isdigit():
         return f"cuda:{int(text)}"

@@ -8,7 +8,7 @@ from loguru import logger
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-ComputeBackendSetting = Literal["auto", "cuda", "rocm", "cpu", "mps"]
+ComputeBackendSetting = Literal["auto", "cuda", "rocm", "cpu"]
 CpuModeSetting = Literal["off", "smoke", "force"]
 AttnBackendSetting = Literal["auto", "flash", "sdpa", "eager"]
 TorchCompileModeSetting = Literal["reduce-overhead", "max-autotune"]
@@ -79,7 +79,15 @@ class PrivTuneSettings(BaseSettings):
     )
     @classmethod
     def _normalize_string_literals(cls, value: object) -> object:
-        return _normalize_lower(value)
+        normalized = _normalize_lower(value)
+        if normalized == "mps":
+            raise ValueError(
+                "VIDEOTUNA_COMPUTE_BACKEND=mps is not supported. "
+                "PrivTune supports auto, cuda, rocm, and cpu. "
+                "For config validation on Apple Silicon, use "
+                "VIDEOTUNA_CPU_MODE=smoke or --cpu-smoke."
+            )
+        return normalized
 
     @field_validator("cpu_mode", mode="before")
     @classmethod

@@ -35,12 +35,21 @@ def apply_cpu_smoke_env(args: Any) -> None:
 
 
 def validate_cpu_offload_flags(args: Any) -> None:
-    """Reject GPU VRAM offload flags when running CPU-only inference."""
+    """Reject GPU VRAM offload on CPU inference; resolve dual offload flag conflicts."""
     from videotuna.utils.device_utils import (
         detect_compute_backend,
         gpu_is_available,
         resolve_cpu_mode,
     )
+
+    if getattr(args, "enable_sequential_cpu_offload", False) and getattr(
+        args, "enable_model_cpu_offload", False
+    ):
+        logger.warning(
+            "Both --enable_sequential_cpu_offload and --enable_model_cpu_offload "
+            "were set; using sequential CPU offload (ignoring model offload)."
+        )
+        args.enable_model_cpu_offload = False
 
     cpu_mode = resolve_cpu_mode(cli_smoke=getattr(args, "cpu_smoke", False))
     device = (getattr(args, "device", None) or "").strip().lower()

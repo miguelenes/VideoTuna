@@ -37,7 +37,7 @@ Cursor rules: [`.cursor/rules/privtune.mdc`](.cursor/rules/privtune.mdc)
 | Use case | Poetry | uv |
 |----------|--------|-----|
 | **Default (CUDA + training)** | `poetry install -E cuda --with training` | `uv sync --group training` |
-| Inference AMD ROCm | `poetry install -E rocm --with training` then `poetry run install-rocm` | see [install-rocm.md](docs/install-rocm.md) |
+| Inference AMD ROCm | `poetry install -E rocm --with training` then `poetry run install-rocm` | Wan training requires CUDA; ROCm is inference + Flux training only — see [install-rocm.md](docs/install-rocm.md) |
 | CPU dev / CI | `poetry install -E cpu --with dev --with training` then `poetry run install-cpu-torch` | see [install-cpu.md](docs/install-cpu.md) |
 | + Dev | add `--with dev` | `uv sync --group dev` |
 

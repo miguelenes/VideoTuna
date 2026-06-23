@@ -33,6 +33,23 @@ poetry run python -c "import torch; print(torch.cuda.is_available(), torch.versi
 poetry run python -c "from videotuna.utils.device_utils import describe_compute_environment; print(describe_compute_environment())"
 ```
 
+## Training vs inference scope
+
+| Workflow | ROCm support | Notes |
+|----------|--------------|-------|
+| Flux T2I LoRA training | Supported | Accelerate only; no DeepSpeed |
+| Wan 2.1 T2V/I2V LoRA training | **Not supported** | Requires DeepSpeed ZeRO-3; `poetry run install-deepspeed` aborts on ROCm |
+| Wan 2.2 / Flux inference & validation | Supported | Use `VIDEOTUNA_ATTN_BACKEND=sdpa` + CPU offload presets |
+
+Wan training requires NVIDIA CUDA:
+
+```bash
+poetry install -E cuda --with training
+poetry run install-deepspeed
+```
+
+For Flux training on ROCm, add `--with training` to the install command above (no `install-deepspeed`).
+
 ## Environment variables
 
 | Variable | Purpose |
@@ -58,7 +75,7 @@ Per-model presets: [MODEL_VERSIONS.md](MODEL_VERSIONS.md).
 | Tier | Models | Status |
 |------|--------|--------|
 | **Supported** | Flux T2I, Wan 2.2 Diffusers | Use `sdpa` + CPU offload |
-| **Experimental** | Wan 2.1 native train/infer | No flash/xfuser |
+| **Not supported** | Wan 2.1 native train/infer | CUDA + DeepSpeed required; see [Training vs inference scope](#training-vs-inference-scope) |
 
 ## NVIDIA install (default)
 
@@ -102,6 +119,10 @@ poetry run install-rocm
 **flash-attn / xformers errors**
 
 - ROCm does not use these packages. Set `export VIDEOTUNA_ATTN_BACKEND=sdpa`
+
+**`install-deepspeed` exits with "not supported on AMD ROCm"**
+
+Expected. Wan LoRA training needs NVIDIA CUDA + DeepSpeed ZeRO-3. Use ROCm for inference/validation and Flux T2I training only, or train Wan on a CUDA machine / cloud GPU (see [domain-adult-finetune.md](runbooks/domain-adult-finetune.md)).
 
 ## Lockfile note
 

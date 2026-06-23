@@ -8,14 +8,22 @@ All training data must be rights-cleared and consented. Never commit datasets, w
 
 ```bash
 cd /path/to/PrivTune
-poetry install -E cuda --with training   # or: poetry install -E rocm --with training
-poetry run install-deepspeed             # required for Wan LoRA (ZeRO-3 offload)
-huggingface-cli login                    # FLUX.1-dev is gated on Hugging Face
+huggingface-cli login   # FLUX.1-dev is gated on Hugging Face
+
+# NVIDIA (Phases 1–2.5)
+poetry install -E cuda --with training
+poetry run install-deepspeed   # required for Wan LoRA (ZeRO-3 offload)
+
+# AMD ROCm (Phase 1 Flux training + Phase 3 inference only)
+# poetry install -E rocm --with training
+# poetry run install-rocm
+# export VIDEOTUNA_ATTN_BACKEND=sdpa
+# Do NOT run install-deepspeed — Wan training is CUDA-only (see install-rocm.md)
 ```
 
 | Environment | Extra steps |
 |-------------|-------------|
-| AMD ROCm | `export VIDEOTUNA_ATTN_BACKEND=sdpa` — do not run `install-flash-attn` |
+| AMD ROCm | `export VIDEOTUNA_ATTN_BACKEND=sdpa` — do not run `install-flash-attn` or `install-deepspeed`; Wan training requires CUDA |
 | CPU only | Config validation only — run training on a GPU machine (see [CPU stub](#cpu-stub-no-gpu)) |
 
 ## VRAM and time expectations

@@ -19,7 +19,8 @@ def test_normalize_device_prefer():
     assert device_utils.normalize_device_prefer(1) == "cuda:1"
     assert device_utils.normalize_device_prefer("0") == "cuda:0"
     assert device_utils.normalize_device_prefer("cpu") == "cpu"
-    assert device_utils.normalize_device_prefer("mps") == "mps"
+    with pytest.raises(ValueError, match="MPS is not supported"):
+        device_utils.normalize_device_prefer("mps")
 
 
 def test_normalize_device_prefer_invalid():
@@ -273,6 +274,12 @@ def test_compute_backend_env_rocm_mismatch():
         with mock.patch.object(device_utils, "_torch_hip_version", return_value=None):
             with pytest.raises(RuntimeError, match="not built with HIP"):
                 device_utils.detect_compute_backend()
+
+
+def test_compute_backend_env_mps_rejected():
+    with mock.patch.dict("os.environ", {"VIDEOTUNA_COMPUTE_BACKEND": "mps"}):
+        with pytest.raises(ValueError, match="mps is not supported"):
+            device_utils.detect_compute_backend()
 
 
 def test_require_xfuser_sequence_parallel_on_rocm():
