@@ -13,3 +13,31 @@ Primary instructions: [`AGENTS.md`](../AGENTS.md) at the repo root.
 - **Before finishing (required):** `poetry run lint`, `poetry run format-check`, `poetry run coverage-gate`
 - Env vars: [`.env.example`](../.env.example) (`VIDEOTUNA_*` retained) · Vendor policy: [`docs/vendor-policy.md`](../docs/vendor-policy.md)
 - Never commit `.env`, checkpoints, `outputs/`, weights, or secrets
+
+## Coding conventions
+
+- **ruff**: Select `E`, `F`, `C90`, `I`; line-length 88; target py311; max-complexity 19
+- **isort**: First-party known = `["videotuna"]`; imports sorted via ruff's `I` rule
+- **mypy**: Typed allowlist only on `videotuna.settings`, `videotuna.cli.inference_options`, `videotuna.training.wan_lora.config`, `videotuna.utils.wan_lora_bridge`
+- **Formatting**: 4-space indent, LF endings, UTF-8 (see `.editorconfig`)
+- **Comments**: Never add code comments unless explicitly requested
+- **Emojis**: Never add emojis to files unless explicitly requested
+- **Device handling**: Always use `videotuna/utils/device_utils.py` — never call `torch.cuda.is_available()` directly in flow code
+
+## Testing
+
+- **Framework**: pytest `^9.1`; markers: `gpu`, `rocm`, `cpu_smoke`
+- **Coverage gate**: 33% line-coverage floor on `videotuna/training/` + `videotuna/utils/`
+- **Run suite**: `poetry run test -q`; single file: `poetry run test tests/test_foo.py -q`
+- **Pre-commit**: `poetry run lint` + `poetry run format-check` + `poetry run type-check` + `poetry run coverage-gate`
+
+### Key test files by change area
+
+| Area | Tests |
+|------|-------|
+| Wan 2.2 presets / bridge | `test_wan_inference_presets.py`, `test_wan_lora_bridge.py` |
+| `diffusers_video` flow | `test_diffusers_video_flow.py` |
+| Device / attention | `test_device_utils.py`, `test_attention_backend.py` |
+| Inference CLI / memory | `test_inference_optimization.py` |
+| Flux LoRA training | `test_flux_lora_train_smoke.py`, `test_flux_lora_features.py` |
+| Import / vendor boundary | `test_import_smoke.py`, `test_vendor_import_boundary.py` |
