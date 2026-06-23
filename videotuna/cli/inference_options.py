@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import warnings
 from dataclasses import dataclass, fields
 from typing import Annotated, Any, Literal
 
 from cyclopts import Parameter
+from pydantic import BaseModel, ConfigDict
 
 from videotuna.utils.inference_profile import MemoryPreset
 
@@ -107,17 +109,73 @@ class InferencePreset:
     require_prompt_dir: bool = False
 
 
+class InferenceRunConfig(BaseModel):
+    """Validated inference CLI options consumed directly by ``run_inference``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    config: str
+    mode: str | None = None
+    ckpt_path: str | None = None
+    lorackpt: str | None = None
+    trained_ckpt: str | None = None
+    prompt_file: str | None = None
+    prompt_dir: str | None = None
+    savedir: str | None = None
+    standard_vbench: bool | None = None
+    seed: int | None = None
+    height: int | None = None
+    width: int | None = None
+    frames: int | None = None
+    fps: int | None = None
+    n_samples_prompt: int | None = None
+    bs: int | None = None
+    ddim_steps: int | None = None
+    ddim_eta: float | None = None
+    uncond_prompt: str | None = None
+    unconditional_guidance_scale: float | None = None
+    unconditional_guidance_scale_temporal: float | None = None
+    multiple_cond_cfg: bool | None = None
+    cfg_img: float | None = None
+    timestep_spacing: str | None = None
+    guidance_rescale: float | None = None
+    loop: bool | None = None
+    gfi: bool | None = None
+    savefps: str | None = None
+    time_shift: float | None = None
+    num_inference_steps: int | None = None
+    i2v_resolution: str | None = None
+    lora_rank: int | None = None
+    cpu_smoke: bool = False
+    device: str | None = None
+    min_vram_gb: float | None = None
+    memory_preset: MemoryPreset | None = None
+    enable_vae_tiling: bool = False
+    enable_vae_slicing: bool = False
+    enable_model_cpu_offload: bool = False
+    enable_sequential_cpu_offload: bool = False
+    dtype: DtypeChoice | None = None
+    device_map: DeviceMapChoice | None = None
+    ulysses_degree: int | None = None
+    ring_degree: int | None = None
+    compile: bool = False
+    fuse_qkv: bool = False
+    enable_attention_cache: bool = False
+    transformer_quant: str | None = None
+    quant_backend: str | None = None
+
+
 def _non_null_values(options: Any) -> dict[str, Any]:
     return {field.name: getattr(options, field.name) for field in fields(options)}
 
 
-def inference_options_to_namespace(
+def inference_options_to_config(
     *,
     run: InferenceRunOptions | None = None,
     standard: StandardInferenceOptions | None = None,
     preset: InferencePreset | None = None,
-) -> argparse.Namespace:
-    """Flatten typed option groups into a namespace for legacy inference code."""
+) -> InferenceRunConfig:
+    """Flatten typed option groups into a validated inference config."""
     merged: dict[str, Any] = {}
 
     if preset is not None:
@@ -133,8 +191,8 @@ def inference_options_to_namespace(
         if value is not None:
             merged[key] = value
 
-    if merged.get("cpu_smoke") is None:
-        merged["cpu_smoke"] = False
+    if "config" not in merged:
+        raise ValueError("Inference requires a YAML config path (--config or preset).")
 
     bool_defaults = (
         "enable_vae_tiling",
@@ -146,10 +204,26 @@ def inference_options_to_namespace(
         "enable_attention_cache",
     )
     for key in bool_defaults:
-        if key not in merged:
-            merged[key] = False
+        merged.setdefault(key, False)
+    merged.setdefault("cpu_smoke", False)
 
-    return argparse.Namespace(**merged)
+    return InferenceRunConfig.model_validate(merged)
+
+
+def inference_options_to_namespace(
+    *,
+    run: InferenceRunOptions | None = None,
+    standard: StandardInferenceOptions | None = None,
+    preset: InferencePreset | None = None,
+) -> argparse.Namespace:
+    """Deprecated: use :func:`inference_options_to_config` instead."""
+    warnings.warn(
+        "inference_options_to_namespace is deprecated; use inference_options_to_config",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    config = inference_options_to_config(run=run, standard=standard, preset=preset)
+    return argparse.Namespace(**config.model_dump())
 
 
 def validate_preset_requirements(

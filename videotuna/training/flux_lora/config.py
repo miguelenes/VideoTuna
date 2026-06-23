@@ -3,105 +3,39 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, Self
+
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from videotuna.utils.logging_config import bound_logger
 
 logger = bound_logger(phase="t2i", flow="flux_lora")
 
-_ALLOWED_TRAIN_KEYS = frozenset(
-    {
-        "aspect_bucket_rounding",
-        "caption_dropout_probability",
-        "checkpointing_steps",
-        "checkpoints_total_limit",
-        "data_backend_config",
-        "disable_benchmark",
-        "disable_tf32",
-        "gradient_checkpointing",
-        "gradient_accumulation_steps",
-        "learning_rate",
-        "lora_rank",
-        "lora_type",
-        "lr_scheduler",
-        "lr_warmup_steps",
-        "max_train_steps",
-        "minimum_image_size",
-        "mixed_precision",
-        "model_family",
-        "model_type",
-        "num_train_epochs",
-        "num_workers",
-        "optimizer",
-        "output_dir",
-        "pretrained_model_name_or_path",
-        "resolution",
-        "resolution_type",
-        "resume_from_checkpoint",
-        "seed",
-        "train_batch_size",
-        "validation_guidance",
-        "validation_guidance_rescale",
-        "validation_num_inference_steps",
-        "validation_prompt",
-        "validation_resolution",
-        "validation_seed",
-        "validation_steps",
-        "write_batch_size",
-    }
-)
+OptimizerChoice = Literal["adamw", "adamw_bf16"]
 
 
 def _normalize_key(key: str) -> str:
     return key[2:] if key.startswith("--") else key
 
 
-def _coerce_value(key: str, value: Any) -> Any:
-    if key in {"gradient_checkpointing", "disable_benchmark", "disable_tf32"}:
-        if isinstance(value, str):
-            return value.lower() in {"true", "1", "yes"}
-        return bool(value)
-    if key in {
-        "lora_rank",
-        "max_train_steps",
-        "checkpointing_steps",
-        "checkpoints_total_limit",
-        "train_batch_size",
-        "write_batch_size",
-        "resolution",
-        "validation_steps",
-        "validation_num_inference_steps",
-        "lr_warmup_steps",
-        "num_train_epochs",
-        "seed",
-        "validation_seed",
-        "num_workers",
-        "aspect_bucket_rounding",
-        "minimum_image_size",
-        "gradient_accumulation_steps",
-    }:
-        return int(value)
-    if key in {
-        "learning_rate",
-        "validation_guidance",
-        "validation_guidance_rescale",
-        "caption_dropout_probability",
-    }:
-        return float(value)
-    return value
+def _coerce_bool(value: object) -> bool:
+    if isinstance(value, str):
+        return value.lower() in {"true", "1", "yes"}
+    return bool(value)
 
 
-@dataclass
-class FluxTextEmbedConfig:
+class FluxTextEmbedConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     cache_dir: str
     write_batch_size: int | None = None
     disabled: bool = False
 
 
-@dataclass
-class FluxLoraDataConfig:
+class FluxLoraDataConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     instance_data_dir: str
     caption_strategy: str = "filename"
     default_caption: str | None = None
@@ -116,8 +50,9 @@ class FluxLoraDataConfig:
     text_embeds: FluxTextEmbedConfig | None = None
 
 
-@dataclass
-class FluxLoraTrainConfig:
+class FluxLoraTrainConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     pretrained_model_name_or_path: str
     output_dir: str
     instance_data_dir: str
@@ -140,7 +75,7 @@ class FluxLoraTrainConfig:
     checkpoints_total_limit: int | None = None
     resume_from_checkpoint: str | None = None
     mixed_precision: str = "bf16"
-    optimizer: str = "adamw"
+    optimizer: OptimizerChoice = "adamw"
     seed: int = 42
     disable_tf32: bool = False
     disable_benchmark: bool = False
@@ -156,6 +91,52 @@ class FluxLoraTrainConfig:
     validation_num_inference_steps: int = 10
     validation_seed: int = 42
     data_backend_config: str | None = None
+
+    @field_validator(
+        "disable_tf32",
+        "disable_benchmark",
+        "gradient_checkpointing",
+        mode="before",
+    )
+    @classmethod
+    def _coerce_bool_fields(cls, value: object) -> bool:
+        return _coerce_bool(value)
+
+    @model_validator(mode="after")
+    def validate_flux_constraints(self) -> Self:
+        if self.model_family != "flux":
+            raise ValueError(f"model_family must be 'flux', got {self.model_family!r}")
+        if self.model_type != "lora":
+            raise ValueError(f"model_type must be 'lora', got {self.model_type!r}")
+        if self.lora_type != "standard":
+            raise ValueError(f"lora_type must be 'standard', got {self.lora_type!r}")
+        if self.num_train_epochs != -1:
+            raise ValueError(
+                "num_train_epochs must be -1 "
+                "(PrivTune Flux trainer is step-based via max_train_steps)"
+            )
+        if self.resolution_type != "pixel_area":
+            raise ValueError(
+                f"resolution_type must be 'pixel_area', got {self.resolution_type!r}"
+            )
+        if self.validation_guidance_rescale != 0.0:
+            raise ValueError(
+                "validation_guidance_rescale is not supported for Flux (must be 0.0)"
+            )
+        if self.gradient_accumulation_steps < 1:
+            raise ValueError(
+                f"gradient_accumulation_steps must be >= 1, "
+                f"got {self.gradient_accumulation_steps}"
+            )
+        if self.resume_from_checkpoint is not None:
+            if (
+                not isinstance(self.resume_from_checkpoint, str)
+                or not self.resume_from_checkpoint.strip()
+            ):
+                raise ValueError(
+                    "resume_from_checkpoint must be null, 'latest', or a non-empty path"
+                )
+        return self
 
 
 def _parse_text_embeds_backend(
@@ -219,55 +200,47 @@ def _parse_local_backend(backends: list[dict[str, Any]]) -> FluxLoraDataConfig:
     )
 
 
-def _validate_train_values(normalized: dict[str, Any]) -> None:
-    if normalized.get("model_family", "flux") != "flux":
-        raise ValueError(
-            f"model_family must be 'flux', got {normalized.get('model_family')!r}"
-        )
-    if normalized.get("model_type", "lora") != "lora":
-        raise ValueError(
-            f"model_type must be 'lora', got {normalized.get('model_type')!r}"
-        )
-    if normalized.get("lora_type", "standard") != "standard":
-        raise ValueError(
-            f"lora_type must be 'standard', got {normalized.get('lora_type')!r}"
-        )
-    if int(normalized.get("num_train_epochs", -1)) != -1:
-        raise ValueError(
-            "num_train_epochs must be -1 "
-            "(PrivTune Flux trainer is step-based via max_train_steps)"
-        )
-    optimizer = normalized.get("optimizer", "adamw")
-    if optimizer not in {"adamw", "adamw_bf16"}:
-        raise ValueError(
-            f"optimizer must be 'adamw' or 'adamw_bf16', got {optimizer!r}"
-        )
-    resolution_type = normalized.get("resolution_type", "pixel_area")
-    if resolution_type != "pixel_area":
-        raise ValueError(
-            f"resolution_type must be 'pixel_area', got {resolution_type!r}"
-        )
-    if float(normalized.get("validation_guidance_rescale", 0.0)) != 0.0:
-        raise ValueError(
-            "validation_guidance_rescale is not supported for Flux (must be 0.0)"
-        )
-    _validate_gradient_accumulation(normalized)
-    _validate_resume_from_checkpoint(normalized)
-
-
-def _validate_gradient_accumulation(normalized: dict[str, Any]) -> None:
-    grad_accum = int(normalized.get("gradient_accumulation_steps", 1))
-    if grad_accum < 1:
-        raise ValueError(f"gradient_accumulation_steps must be >= 1, got {grad_accum}")
-
-
-def _validate_resume_from_checkpoint(normalized: dict[str, Any]) -> None:
-    resume = normalized.get("resume_from_checkpoint")
-    if resume is not None:
-        if not isinstance(resume, str) or not resume.strip():
-            raise ValueError(
-                "resume_from_checkpoint must be null, 'latest', or a non-empty path"
-            )
+def _normalize_train_payload(raw: dict[str, Any]) -> dict[str, Any]:
+    """Normalize SimpleTuner-style keys and coerce JSON scalar types."""
+    normalized: dict[str, Any] = {}
+    for key, value in raw.items():
+        norm_key = _normalize_key(key)
+        if norm_key in {
+            "gradient_checkpointing",
+            "disable_benchmark",
+            "disable_tf32",
+        }:
+            normalized[norm_key] = _coerce_bool(value)
+        elif norm_key in {
+            "lora_rank",
+            "max_train_steps",
+            "checkpointing_steps",
+            "checkpoints_total_limit",
+            "train_batch_size",
+            "write_batch_size",
+            "resolution",
+            "validation_steps",
+            "validation_num_inference_steps",
+            "lr_warmup_steps",
+            "num_train_epochs",
+            "seed",
+            "validation_seed",
+            "num_workers",
+            "aspect_bucket_rounding",
+            "minimum_image_size",
+            "gradient_accumulation_steps",
+        }:
+            normalized[norm_key] = int(value)
+        elif norm_key in {
+            "learning_rate",
+            "validation_guidance",
+            "validation_guidance_rescale",
+            "caption_dropout_probability",
+        }:
+            normalized[norm_key] = float(value)
+        else:
+            normalized[norm_key] = value
+    return normalized
 
 
 def _merge_data_config(
@@ -310,78 +283,19 @@ def load_train_config(
     with open(data_config_path) as f:
         backends = json.load(f)
 
-    normalized: dict[str, Any] = {}
-    for key, value in raw.items():
-        norm_key = _normalize_key(key)
-        if norm_key not in _ALLOWED_TRAIN_KEYS:
-            raise ValueError(
-                f"Unsupported Flux training config keys: {sorted({norm_key})}"
-            )
-        normalized[norm_key] = _coerce_value(norm_key, value)
-
-    _validate_train_values(normalized)
-
+    normalized = _normalize_train_payload(raw)
     data_cfg = _parse_local_backend(backends)
+
     instance_data_dir = (
         normalized.get("instance_data_dir") or data_cfg.instance_data_dir
     )
-    resolution = int(normalized.get("resolution", data_cfg.resolution))
-    minimum_image_size = int(
-        normalized.get("minimum_image_size", data_cfg.minimum_image_size)
-    )
-    aspect_bucket_rounding = int(
-        normalized.get("aspect_bucket_rounding", data_cfg.aspect_bucket_rounding)
-    )
-    resolution_type = str(normalized.get("resolution_type", data_cfg.resolution_type))
+    normalized["instance_data_dir"] = instance_data_dir
+    normalized.setdefault("resolution", data_cfg.resolution)
+    normalized.setdefault("minimum_image_size", data_cfg.minimum_image_size)
+    normalized.setdefault("aspect_bucket_rounding", data_cfg.aspect_bucket_rounding)
+    normalized.setdefault("resolution_type", data_cfg.resolution_type)
 
-    train_cfg = FluxLoraTrainConfig(
-        pretrained_model_name_or_path=normalized["pretrained_model_name_or_path"],
-        output_dir=normalized["output_dir"],
-        instance_data_dir=instance_data_dir,
-        model_family=normalized.get("model_family", "flux"),
-        model_type=normalized.get("model_type", "lora"),
-        lora_type=normalized.get("lora_type", "standard"),
-        lora_rank=int(normalized.get("lora_rank", 4)),
-        learning_rate=float(normalized.get("learning_rate", 8e-5)),
-        lr_scheduler=normalized.get("lr_scheduler", "polynomial"),
-        lr_warmup_steps=int(normalized.get("lr_warmup_steps", 5)),
-        max_train_steps=int(normalized.get("max_train_steps", 1000)),
-        num_train_epochs=int(normalized.get("num_train_epochs", -1)),
-        train_batch_size=int(normalized.get("train_batch_size", 1)),
-        num_workers=int(normalized.get("num_workers", 0)),
-        resolution=resolution,
-        resolution_type=resolution_type,
-        aspect_bucket_rounding=aspect_bucket_rounding,
-        minimum_image_size=minimum_image_size,
-        checkpointing_steps=int(normalized.get("checkpointing_steps", 500)),
-        checkpoints_total_limit=normalized.get("checkpoints_total_limit"),
-        resume_from_checkpoint=normalized.get("resume_from_checkpoint"),
-        mixed_precision=normalized.get("mixed_precision", "bf16"),
-        optimizer=normalized.get("optimizer", "adamw"),
-        seed=int(normalized.get("seed", 42)),
-        disable_tf32=bool(normalized.get("disable_tf32", False)),
-        disable_benchmark=bool(normalized.get("disable_benchmark", False)),
-        gradient_checkpointing=bool(normalized.get("gradient_checkpointing", True)),
-        gradient_accumulation_steps=int(
-            normalized.get("gradient_accumulation_steps", 1)
-        ),
-        caption_dropout_probability=float(
-            normalized.get("caption_dropout_probability", 0.0)
-        ),
-        write_batch_size=int(normalized.get("write_batch_size", 128)),
-        validation_prompt=normalized.get("validation_prompt"),
-        validation_steps=normalized.get("validation_steps"),
-        validation_resolution=str(normalized.get("validation_resolution", "512x512")),
-        validation_guidance=float(normalized.get("validation_guidance", 3.0)),
-        validation_guidance_rescale=float(
-            normalized.get("validation_guidance_rescale", 0.0)
-        ),
-        validation_num_inference_steps=int(
-            normalized.get("validation_num_inference_steps", 10)
-        ),
-        validation_seed=int(normalized.get("validation_seed", 42)),
-        data_backend_config=normalized.get("data_backend_config"),
-    )
+    train_cfg = FluxLoraTrainConfig.model_validate(normalized)
     merged_data_cfg = _merge_data_config(data_cfg, train_cfg)
     return train_cfg, merged_data_cfg
 

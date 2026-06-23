@@ -9,18 +9,17 @@ from unittest import mock
 import pytest
 
 from videotuna.cli.inference_options import (
+    InferenceRunOptions,
     StandardInferenceOptions,
-    inference_options_to_namespace,
+    inference_options_to_config,
 )
+from videotuna.settings import get_settings, inference_settings_session
 from videotuna.utils.common_utils import monitor_resources, save_metrics
-from videotuna.utils.inference_cli import (
-    apply_compile_env,
-    prepare_cli_inference_args,
-)
+from videotuna.utils.inference_cli import prepare_cli_inference_config
 from videotuna.utils.inference_profile import resolve_inference_profile
 
 
-def test_standard_inference_options_to_namespace():
+def test_standard_inference_options_to_config():
     standard = StandardInferenceOptions(
         device="cuda:1",
         min_vram_gb=24.0,
@@ -34,18 +33,22 @@ def test_standard_inference_options_to_namespace():
         transformer_quant="int8_wo",
         quant_backend="torchao",
     )
-    args = inference_options_to_namespace(standard=standard)
-    assert args.device == "cuda:1"
-    assert args.min_vram_gb == 24.0
-    assert args.memory_preset == "low_vram"
-    assert args.enable_vae_tiling is True
-    assert args.enable_sequential_cpu_offload is True
-    assert args.dtype == "bf16"
-    assert args.ulysses_degree == 2
-    assert args.compile is True
-    assert args.transformer_quant == "int8_wo"
-    assert args.quant_backend == "torchao"
-    assert not hasattr(args, "enable_fp8")
+    run_config = inference_options_to_config(
+        run=InferenceRunOptions(
+            config="configs/inference/presets/flux_domain_lora_smoke.yaml"
+        ),
+        standard=standard,
+    )
+    assert run_config.device == "cuda:1"
+    assert run_config.min_vram_gb == 24.0
+    assert run_config.memory_preset == "low_vram"
+    assert run_config.enable_vae_tiling is True
+    assert run_config.enable_sequential_cpu_offload is True
+    assert run_config.dtype == "bf16"
+    assert run_config.ulysses_degree == 2
+    assert run_config.compile is True
+    assert run_config.transformer_quant == "int8_wo"
+    assert run_config.quant_backend == "torchao"
 
 
 def test_resolve_inference_profile():
@@ -79,19 +82,17 @@ def test_resolve_inference_profile():
     assert profile.dtype == "bf16"
 
 
-def test_prepare_cli_inference_args_validates_parallel():
-    args = argparse.Namespace(
-        memory_preset=None,
+def test_prepare_cli_inference_config_validates_parallel():
+    from videotuna.cli.inference_options import InferenceRunConfig
+
+    run_config = InferenceRunConfig(
+        config="configs/inference/presets/flux_domain_lora_smoke.yaml",
         ulysses_degree=2,
         ring_degree=2,
-        cpu_smoke=False,
-        device=None,
-        enable_sequential_cpu_offload=False,
-        enable_model_cpu_offload=False,
     )
     with mock.patch.dict(os.environ, {"WORLD_SIZE": "3"}):
         with pytest.raises(ValueError, match="ulysses_degree"):
-            prepare_cli_inference_args(args)
+            prepare_cli_inference_config(run_config)
 
 
 def test_validate_cpu_offload_rejected_on_cpu_smoke():
@@ -136,15 +137,25 @@ def test_validate_cpu_offload_both_flags_sequential_wins():
     assert profile.offload_mode == "sequential"
 
 
-def test_apply_cpu_smoke_env():
+def test_cpu_smoke_session_sets_eager_attn_backend():
+    from videotuna.utils.attention import get_attn_backend
+
+    with inference_settings_session(cpu_smoke=True):
+        assert get_settings().cpu_mode == "smoke"
+        assert get_settings().attn_backend == "eager"
+        assert get_settings().torch_compile is False
+        assert get_attn_backend() == "eager"
+
+
+def test_apply_cpu_smoke_env_deprecated_noop():
+    from videotuna.cli.inference_options import InferenceRunConfig
     from videotuna.utils.inference_cli import apply_cpu_smoke_env
 
-    args = argparse.Namespace(cpu_smoke=True)
-    with mock.patch.dict(os.environ, {}, clear=True):
-        apply_cpu_smoke_env(args)
-        assert os.environ["VIDEOTUNA_CPU_MODE"] == "smoke"
-        assert os.environ["VIDEOTUNA_ATTN_BACKEND"] == "eager"
-        assert os.environ["VIDEOTUNA_TORCH_COMPILE"] == "0"
+    run_config = InferenceRunConfig(
+        config="configs/inference/presets/flux_domain_lora_smoke.yaml",
+        cpu_smoke=True,
+    )
+    apply_cpu_smoke_env(run_config)
 
 
 @mock.patch.dict(
@@ -190,10 +201,12 @@ def test_attn_auto_resolves():
 
 
 def test_apply_compile_env():
-    apply_compile_env(True)
-    assert os.environ["VIDEOTUNA_TORCH_COMPILE"] == "1"
-    apply_compile_env(False)
-    assert os.environ["VIDEOTUNA_TORCH_COMPILE"] == "0"
+    with inference_settings_session(cpu_smoke=False, compile_flag=True):
+        assert get_settings().torch_compile is True
+    with inference_settings_session(cpu_smoke=False, compile_flag=False):
+        assert get_settings().torch_compile is False
+    with inference_settings_session(cpu_smoke=True, compile_flag=True):
+        assert get_settings().torch_compile is False
 
 
 @mock.patch.dict(os.environ, {"VIDEOTUNA_ATTN_BACKEND": "eager"})

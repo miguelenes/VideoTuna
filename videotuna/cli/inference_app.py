@@ -11,7 +11,7 @@ from videotuna.cli.inference_options import (
     InferencePreset,
     InferenceRunOptions,
     StandardInferenceOptions,
-    inference_options_to_namespace,
+    inference_options_to_config,
     validate_preset_requirements,
 )
 from videotuna.utils.cli_console import install_pretty_tracebacks
@@ -62,12 +62,12 @@ def _run_inference_with_options(
     run_opts = run or InferenceRunOptions()
     if preset is not None:
         validate_preset_requirements(run_opts, preset)
-    args = inference_options_to_namespace(
+    run_config = inference_options_to_config(
         run=run_opts,
         standard=standard,
         preset=preset,
     )
-    run_inference(args)
+    run_inference(run_config)
 
 
 def _register_inference_command(

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Literal
+import os
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import Any, Iterator, Literal
 
 from loguru import logger
 from pydantic import field_validator
@@ -151,6 +154,100 @@ class PrivTuneSettings(BaseSettings):
         return text or None
 
 
+_SESSION_SETTINGS: ContextVar[PrivTuneSettings | None] = ContextVar(
+    "privtune_session_settings",
+    default=None,
+)
+
+_SETTINGS_ENV_MAP: dict[str, str] = {
+    "compute_backend": ENV_COMPUTE_BACKEND,
+    "cpu_mode": ENV_CPU_MODE,
+    "allow_cpu_inference": ENV_ALLOW_CPU_INFERENCE,
+    "attn_backend": ENV_ATTN_BACKEND,
+    "attn_backend_strict": ENV_ATTN_BACKEND_STRICT,
+    "torch_compile": ENV_TORCH_COMPILE,
+    "torch_compile_mode": ENV_TORCH_COMPILE_MODE,
+    "metrics_owner": ENV_METRICS_OWNER,
+    "metrics_backend": ENV_METRICS_BACKEND,
+    "trackio_space_id": ENV_TRACKIO_SPACE_ID,
+    "trackio_project": ENV_TRACKIO_PROJECT,
+    "log_level": ENV_LOG_LEVEL,
+    "bench_model": ENV_BENCH_MODEL,
+}
+
+
+def _settings_value_to_env(value: object) -> str:
+    if isinstance(value, bool):
+        return "1" if value else "0"
+    if value is None:
+        return ""
+    return str(value)
+
+
+def _sync_env_from_settings(settings: PrivTuneSettings) -> dict[str, str | None]:
+    """Write session settings to VIDEOTUNA_* env (for subprocess compatibility)."""
+    saved: dict[str, str | None] = {}
+    payload = settings.model_dump()
+    for field_name, env_key in _SETTINGS_ENV_MAP.items():
+        saved[env_key] = os.environ.get(env_key)
+        os.environ[env_key] = _settings_value_to_env(payload[field_name])
+    return saved
+
+
+def _restore_env(saved: dict[str, str | None]) -> None:
+    for env_key, previous in saved.items():
+        if previous is None:
+            os.environ.pop(env_key, None)
+        else:
+            os.environ[env_key] = previous
+
+
 def get_settings() -> PrivTuneSettings:
     """Return settings loaded from the current environment (no cache)."""
+    session = _SESSION_SETTINGS.get()
+    if session is not None:
+        return session
     return PrivTuneSettings()
+
+
+@contextmanager
+def settings_session(**overrides: Any) -> Iterator[PrivTuneSettings]:
+    """Apply session-scoped settings overrides.
+
+    Overrides are visible via :func:`get_settings` and synced to ``VIDEOTUNA_*``
+    environment variables for the duration of the context (restored on exit).
+    """
+    base = _SESSION_SETTINGS.get() or PrivTuneSettings()
+    merged = base.model_copy(update=overrides)
+    saved_env = _sync_env_from_settings(merged)
+    token = _SESSION_SETTINGS.set(merged)
+    try:
+        yield merged
+    finally:
+        _SESSION_SETTINGS.reset(token)
+        _restore_env(saved_env)
+
+
+@contextmanager
+def inference_settings_session(
+    *,
+    cpu_smoke: bool = False,
+    compile_flag: bool = False,
+) -> Iterator[PrivTuneSettings]:
+    """Inference session overrides for CPU smoke and torch.compile."""
+    overrides: dict[str, Any] = {}
+    if cpu_smoke:
+        overrides.update(
+            {
+                "cpu_mode": "smoke",
+                "attn_backend": "eager",
+                "torch_compile": False,
+            }
+        )
+    elif compile_flag:
+        overrides["torch_compile"] = True
+    else:
+        overrides["torch_compile"] = False
+
+    with settings_session(**overrides) as settings:
+        yield settings

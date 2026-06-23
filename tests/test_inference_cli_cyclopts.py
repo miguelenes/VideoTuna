@@ -14,9 +14,10 @@ from videotuna.cli.inference_app import (
     app,
 )
 from videotuna.cli.inference_options import (
+    InferenceRunConfig,
     InferenceRunOptions,
     StandardInferenceOptions,
-    inference_options_to_namespace,
+    inference_options_to_config,
     validate_preset_requirements,
 )
 
@@ -70,20 +71,16 @@ def test_inference_help_omits_legacy_hunyuan_fp8(command: list[str]) -> None:
 def test_flag_parity_across_presets() -> None:
     run = InferenceRunOptions(lorackpt="/tmp/lora", num_inference_steps=8)
     standard = StandardInferenceOptions(memory_preset="balanced", device="cuda:0")
-    t2i = vars(
-        inference_options_to_namespace(
-            run=run,
-            standard=standard,
-            preset=PRESET_DOMAIN_T2I,
-        )
-    )
-    wan = vars(
-        inference_options_to_namespace(
-            run=run,
-            standard=standard,
-            preset=PRESET_WAN2_2_T2V_720P,
-        )
-    )
+    t2i = inference_options_to_config(
+        run=run,
+        standard=standard,
+        preset=PRESET_DOMAIN_T2I,
+    ).model_dump()
+    wan = inference_options_to_config(
+        run=run,
+        standard=standard,
+        preset=PRESET_WAN2_2_T2V_720P,
+    ).model_dump()
 
     shared_keys = {k for k in t2i if k not in {"config", "enable_model_cpu_offload"}}
     for key in shared_keys:
@@ -96,9 +93,9 @@ def test_flag_parity_across_presets() -> None:
 
 
 def test_domain_t2i_preset_applies_without_user_config() -> None:
-    args = inference_options_to_namespace(preset=PRESET_DOMAIN_T2I)
-    assert args.config == PRESET_DOMAIN_T2I.config
-    assert args.enable_model_cpu_offload is True
+    run_config = inference_options_to_config(preset=PRESET_DOMAIN_T2I)
+    assert run_config.config == PRESET_DOMAIN_T2I.config
+    assert run_config.enable_model_cpu_offload is True
 
 
 def test_validate_domain_t2v_requires_checkpoint() -> None:
@@ -115,7 +112,7 @@ def test_cyclopts_parses_standard_flags() -> None:
         *,
         standard: StandardInferenceOptions | None = None,
     ) -> None:
-        captured["args"] = inference_options_to_namespace(run=run, standard=standard)
+        captured["run_config"] = inference_options_to_config(run=run, standard=standard)
 
     probe = app.__class__(name="probe")
     probe.command(name="probe")(handler)
@@ -127,10 +124,21 @@ def test_cyclopts_parses_standard_flags() -> None:
             "--memory-preset",
             "low_vram",
             "--enable_vae_tiling",
+            "--config",
+            "configs/inference/presets/flux_domain_lora_smoke.yaml",
         ]
     )
-    args = captured["args"]
-    assert isinstance(args, object)
-    assert getattr(args, "lorackpt") == "/tmp/lora"
-    assert getattr(args, "memory_preset") == "low_vram"
-    assert getattr(args, "enable_vae_tiling") is True
+    run_config = captured["run_config"]
+    assert isinstance(run_config, InferenceRunConfig)
+    assert run_config.lorackpt == "/tmp/lora"
+    assert run_config.memory_preset == "low_vram"
+    assert run_config.enable_vae_tiling is True
+
+
+def test_inference_run_config_round_trip() -> None:
+    run_config = inference_options_to_config(preset=PRESET_DOMAIN_T2I)
+    round_tripped = InferenceRunConfig.model_validate(
+        run_config.model_dump(mode="json")
+    )
+    assert round_tripped.config == run_config.config
+    assert round_tripped.enable_model_cpu_offload == run_config.enable_model_cpu_offload

@@ -334,7 +334,7 @@ _DIFFUSERS_BACKEND_MAP = {
 
 
 def apply_diffusers_attention_backend(model) -> None:
-    """Map VIDEOTUNA_ATTN_BACKEND to diffusers set_attention_backend."""
+    """Map resolved attention backend to diffusers ``set_attention_backend``."""
     backend = get_attn_backend()
     diffusers_backend = _DIFFUSERS_BACKEND_MAP[backend]
     if backend == "flash" and detect_compute_backend() == "rocm":
