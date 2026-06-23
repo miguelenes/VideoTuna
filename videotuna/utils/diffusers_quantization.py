@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import importlib.metadata
 from typing import Any, Literal, Optional
 
 import torch
 from loguru import logger
+from packaging.version import Version
 
 from videotuna.utils.device_utils import detect_compute_backend, gpu_is_available
 
@@ -16,6 +18,7 @@ TRANSFORMER_QUANT_CHOICES = ("none", "int8_wo", "int4_wo", "fp8_wo")
 QUANT_BACKEND_CHOICES = ("torchao", "quanto")
 
 _FP8_MIN_COMPUTE_CAPABILITY = (8, 9)
+_TORCHAO_MIN_VERSION = "0.15.0"
 
 
 def normalize_transformer_quant(value: Optional[str]) -> str:
@@ -88,6 +91,22 @@ def _require_quanto() -> None:
         ) from exc
 
 
+def _require_torchao_min_version(min_version: str = _TORCHAO_MIN_VERSION) -> None:
+    try:
+        import torchao  # noqa: F401
+    except ImportError as exc:
+        raise ImportError(
+            f"quant_backend=torchao requires torchao>={min_version}. "
+            "Install with: poetry install"
+        ) from exc
+    installed = importlib.metadata.version("torchao")
+    if Version(installed) < Version(min_version):
+        raise ImportError(
+            f"quant_backend=torchao requires torchao>={min_version}; "
+            f"found {installed}. Run: poetry update torchao"
+        )
+
+
 def _require_fp8_gpu() -> None:
     if not gpu_is_available():
         return
@@ -130,13 +149,7 @@ def validate_transformer_quant(
     if backend == "quanto":
         _require_quanto()
     else:
-        try:
-            import torchao  # noqa: F401
-        except ImportError as exc:
-            raise ImportError(
-                "quant_backend=torchao requires torchao>=0.15.0. "
-                "Install with: poetry install"
-            ) from exc
+        _require_torchao_min_version()
 
     if offload_mode == "sequential":
         logger.warning(
@@ -175,13 +188,13 @@ def _build_torchao_component_config(transformer_quant: str) -> Any:
     from diffusers import TorchAoConfig
 
     if transformer_quant == "int8_wo":
-        from torchao.quantization import Int8WeightOnlyConfig
+        from torchao.quantization import Int8WeightOnlyConfig, PerGroup
 
-        return TorchAoConfig(Int8WeightOnlyConfig(group_size=128))
+        return TorchAoConfig(Int8WeightOnlyConfig(granularity=PerGroup(128), version=2))
     if transformer_quant == "int4_wo":
         from torchao.quantization import Int4WeightOnlyConfig
 
-        return TorchAoConfig(Int4WeightOnlyConfig(group_size=128))
+        return TorchAoConfig(Int4WeightOnlyConfig(group_size=128, version=2))
     if transformer_quant == "fp8_wo":
         from torchao.quantization import Float8WeightOnlyConfig
 

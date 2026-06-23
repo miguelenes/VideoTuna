@@ -3,8 +3,10 @@
 from unittest import mock
 
 import pytest
+import torch
 
 from videotuna.utils.diffusers_quantization import (
+    _build_torchao_component_config,
     build_pipeline_quantization_config,
     normalize_quant_backend,
     normalize_transformer_quant,
@@ -18,12 +20,18 @@ def test_resolve_quant_components_wan_22():
     assert components == ["transformer", "transformer_2"]
 
 
+def test_resolve_quant_components_wan_22_i2v():
+    components = resolve_quant_components("wan", "2.2", "i2v")
+    assert components == ["transformer", "transformer_2"]
+
+
 def test_resolve_quant_components_flux():
     assert resolve_quant_components("flux", None, "t2i") == ["transformer"]
 
 
 def test_normalize_transformer_quant_defaults():
     assert normalize_transformer_quant(None) == "none"
+    assert normalize_transformer_quant("") == "none"
     assert normalize_transformer_quant("int8_wo") == "int8_wo"
 
 
@@ -37,6 +45,11 @@ def test_normalize_quant_backend_defaults():
     assert normalize_quant_backend("quanto") == "quanto"
 
 
+def test_normalize_quant_backend_invalid():
+    with pytest.raises(ValueError, match="Unsupported quant_backend"):
+        normalize_quant_backend("bitsandbytes")
+
+
 def test_build_pipeline_quantization_config_none():
     assert (
         build_pipeline_quantization_config(
@@ -48,27 +61,45 @@ def test_build_pipeline_quantization_config_none():
     )
 
 
-def test_build_pipeline_quantization_config_wan_torchao():
-    mock_torchao_cfg = mock.MagicMock()
-    mock_pipe_cfg = mock.MagicMock()
-    with mock.patch(
-        "videotuna.utils.diffusers_quantization._build_torchao_component_config",
-        return_value=mock_torchao_cfg,
-    ):
-        with mock.patch(
-            "diffusers.PipelineQuantizationConfig",
-            return_value=mock_pipe_cfg,
-        ) as pipe_cfg_cls:
-            cfg = build_pipeline_quantization_config(
-                transformer_quant="int8_wo",
-                quant_backend="torchao",
-                components=["transformer", "transformer_2"],
-            )
-    assert cfg is mock_pipe_cfg
-    pipe_cfg_cls.assert_called_once()
-    mapping = pipe_cfg_cls.call_args.kwargs["quant_mapping"]
-    assert set(mapping.keys()) == {"transformer", "transformer_2"}
-    assert mapping["transformer"] is mock_torchao_cfg
+def test_build_torchao_int8_config():
+    from torchao.quantization import Int8WeightOnlyConfig, PerGroup
+
+    cfg = _build_torchao_component_config("int8_wo")
+    assert isinstance(cfg.quant_type, Int8WeightOnlyConfig)
+    assert isinstance(cfg.quant_type.granularity, PerGroup)
+    assert cfg.quant_type.granularity.group_size == 128
+    assert cfg.quant_type.version == 2
+
+
+def test_build_torchao_int4_config():
+    from torchao.quantization import Int4WeightOnlyConfig
+
+    cfg = _build_torchao_component_config("int4_wo")
+    assert isinstance(cfg.quant_type, Int4WeightOnlyConfig)
+    assert cfg.quant_type.group_size == 128
+    assert cfg.quant_type.version == 2
+
+
+def test_build_torchao_fp8_config():
+    from torchao.quantization import Float8WeightOnlyConfig
+
+    cfg = _build_torchao_component_config("fp8_wo")
+    assert isinstance(cfg.quant_type, Float8WeightOnlyConfig)
+    assert cfg.quant_type.weight_dtype == torch.float8_e4m3fn
+
+
+def test_build_pipeline_quantization_config_torchao_integration():
+    from diffusers import PipelineQuantizationConfig, TorchAoConfig
+
+    cfg = build_pipeline_quantization_config(
+        transformer_quant="int8_wo",
+        quant_backend="torchao",
+        components=["transformer", "transformer_2"],
+    )
+    assert isinstance(cfg, PipelineQuantizationConfig)
+    assert set(cfg.quant_mapping.keys()) == {"transformer", "transformer_2"}
+    for component_cfg in cfg.quant_mapping.values():
+        assert isinstance(component_cfg, TorchAoConfig)
 
 
 def test_validate_transformer_quant_rejects_cpu():
@@ -116,6 +147,44 @@ def test_validate_transformer_quant_fp8_requires_ada():
                         quant_backend="torchao",
                         offload_mode="none",
                     )
+
+
+def test_validate_transformer_quant_fp8_passes_on_ada():
+    with mock.patch(
+        "videotuna.utils.diffusers_quantization.detect_compute_backend",
+        return_value="cuda",
+    ):
+        with mock.patch(
+            "videotuna.utils.diffusers_quantization.gpu_is_available",
+            return_value=True,
+        ):
+            with mock.patch(
+                "videotuna.utils.diffusers_quantization.torch.cuda.get_device_capability",
+                return_value=(8, 9),
+            ):
+                quant = validate_transformer_quant(
+                    transformer_quant="fp8_wo",
+                    quant_backend="torchao",
+                    offload_mode="model",
+                )
+    assert quant == "fp8_wo"
+
+
+def test_validate_transformer_quant_torchao_version_guard():
+    with mock.patch(
+        "videotuna.utils.diffusers_quantization.detect_compute_backend",
+        return_value="cuda",
+    ):
+        with mock.patch(
+            "videotuna.utils.diffusers_quantization.importlib.metadata.version",
+            return_value="0.9.0",
+        ):
+            with pytest.raises(ImportError, match="torchao>=0.15.0"):
+                validate_transformer_quant(
+                    transformer_quant="int8_wo",
+                    quant_backend="torchao",
+                    offload_mode="model",
+                )
 
 
 def test_validate_transformer_quant_quanto_import_guard():
