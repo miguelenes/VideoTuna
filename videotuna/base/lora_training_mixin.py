@@ -5,7 +5,7 @@ from loguru import logger
 from peft import get_peft_model
 
 from videotuna.base.component_loader import Component
-from videotuna.utils.common_utils import instantiate_from_config, print_green
+from videotuna.utils.common_utils import instantiate_from_config
 from videotuna.utils.lora_utils import (
     collect_lora_parameter_names,
     resolve_lora_target_modules,
@@ -90,4 +90,4 @@ class LoraTrainingMixin:
                 model.train()
                 model.requires_grad_(True)
 
-        print_green(f"Set the following components as trainable: {components}")
+        logger.success(f"Set the following components as trainable: {components}")

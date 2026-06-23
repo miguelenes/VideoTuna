@@ -14,6 +14,7 @@ from videotuna.cli.inference_options import (
     inference_options_to_namespace,
     validate_preset_requirements,
 )
+from videotuna.utils.cli_console import install_pretty_tracebacks
 
 FLUX_DOMAIN_SMOKE_CONFIG = "configs/inference/presets/flux_domain_lora_smoke.yaml"
 WAN_DOMAIN_SMOKE_22_CONFIG = "configs/inference/presets/wan_domain_lora_smoke_22.yaml"
@@ -104,6 +105,8 @@ def _make_app(preset: InferencePreset | None = None, *, name: str | None = None)
     _register_inference_command(app, preset, is_default=True)
     return app
 
+
+install_pretty_tracebacks()
 
 app = App(name="privtune-inference", help="PrivTune domain inference and validation.")
 _register_inference_command(app, PRESET_DOMAIN_T2I, name="inference-domain-t2i")
