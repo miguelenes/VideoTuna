@@ -465,6 +465,10 @@ def train(config: FluxLoraTrainConfig, data_config: FluxLoraDataConfig) -> None:
     dataloader = _build_dataloader(dataset, config)
 
     optimizer = _create_optimizer(transformer, config)
+    opt_impl = (
+        "optimi.AdamW" if config.optimizer == "adamw_bf16" else "torch.optim.AdamW"
+    )
+    log.info("Using optimizer {} ({})", config.optimizer, opt_impl)
     max_train_steps = config.max_train_steps
     lr_scheduler = get_scheduler(
         config.lr_scheduler,
