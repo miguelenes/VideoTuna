@@ -468,8 +468,7 @@ def inference_wan2_2_t2v_720p():
     inference_wan2_2_t2v_720p_entry()
 
 
-def train_domain_t2i():
-    """Flux T2I domain LoRA training."""
+def train_flux_lora():
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
     config_path = FLUX_T2I_CONFIG
     data_config_path = FLUX_T2I_DATA_CONFIG
@@ -492,8 +491,7 @@ def train_domain_t2i():
     exit(result.returncode)
 
 
-def train_domain_t2v():
-    """Wan 2.1 T2V domain LoRA training."""
+def train_wan2_1_t2v_lora():
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
     ckpt = "checkpoints/wan/Wan2.1-T2V-14B"
     config = WAN_T2V_LORA_CONFIG
@@ -522,8 +520,17 @@ def train_domain_t2v():
     exit(result.returncode)
 
 
-def train_domain_i2v():
-    """Wan 2.1 I2V domain LoRA training."""
+def train_domain_t2i():
+    """Canonical alias for Flux T2I domain LoRA training."""
+    train_flux_lora()
+
+
+def train_domain_t2v():
+    """Canonical alias for Wan 2.1 T2V domain LoRA training."""
+    train_wan2_1_t2v_lora()
+
+
+def train_wan2_1_i2v_lora():
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
     ckpt = "checkpoints/wan/Wan2.1-I2V-14B-480P"
     config = WAN_I2V_LORA_CONFIG
@@ -552,32 +559,14 @@ def train_domain_i2v():
     exit(result.returncode)
 
 
-def train_flux_lora():
-    from videotuna.utils.deprecation import warn_deprecated_cli_alias
-
-    warn_deprecated_cli_alias("train-flux-lora", "train-domain-t2i")
-    train_domain_t2i()
-
-
-def train_wan2_1_t2v_lora():
-    from videotuna.utils.deprecation import warn_deprecated_cli_alias
-
-    warn_deprecated_cli_alias("train-wan2-1-t2v-lora", "train-domain-t2v")
-    train_domain_t2v()
-
-
-def train_wan2_1_i2v_lora():
-    from videotuna.utils.deprecation import warn_deprecated_cli_alias
-
-    warn_deprecated_cli_alias("train-wan2-1-i2v-lora", "train-domain-i2v")
-    train_domain_i2v()
+def train_domain_i2v():
+    """Canonical alias for Wan 2.1 I2V domain LoRA training."""
+    train_wan2_1_i2v_lora()
 
 
 def inference_domain_t2i():
-    """Flux domain LoRA smoke inference."""
-    from videotuna.cli.inference_app import inference_domain_t2i_entry
-
-    inference_domain_t2i_entry()
+    """Canonical alias for Flux domain LoRA smoke inference."""
+    inference_flux_lora()
 
 
 def validate_domain_t2v():

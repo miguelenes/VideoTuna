@@ -44,13 +44,13 @@ case "${TRAIN_PROFILE}" in
   flux-lora)
   CONFIG_PATH="${CONFIG_PATH:-configs/domain/flux_t2i_cloud_smoke.json}"
   DATA_CONFIG_PATH="${DATA_CONFIG_PATH:-configs/domain/flux_t2i_data.json}"
-  run_cmd poetry run train-domain-t2i \
+  run_cmd poetry run train-flux-lora \
     --config_path "${CONFIG_PATH}" \
     --data_config_path "${DATA_CONFIG_PATH}"
   ;;
   wan-t2v-lora)
   CONFIG_PATH="${CONFIG_PATH:-configs/domain/wan_t2v_lora_cloud_smoke.yaml}"
-  run_cmd poetry run train-domain-t2v --base "${CONFIG_PATH}"
+  run_cmd poetry run train-wan2-1-t2v-lora --base "${CONFIG_PATH}"
   ;;
   *)
   echo "Unknown TRAIN_PROFILE=${TRAIN_PROFILE}" | tee -a "${LOG_ERR}"

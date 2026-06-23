@@ -40,19 +40,6 @@ poetry run install-deepspeed   # required for Wan LoRA (DeepSpeed ZeRO-3)
 | CPU dev / CI | `poetry install -E cpu --with dev --with training` then `poetry run install-cpu-torch` | see [install-cpu.md](docs/install-cpu.md) |
 | + Dev (pytest, ruff) | add `--with dev` | `uv sync --group dev` |
 
-### Docker (optional)
-
-For containerized dev (e.g. Mac arm64), use the Compose image **`privtune`** (`privtune:latest` or `privtune:${TAG}`):
-
-```shell
-export HOST_UID=$(id -u) HOST_GID=$(id -g)
-docker compose build privtune
-docker compose run --rm privtune bash
-# inside container: poetry install -E cuda --with training
-```
-
-The legacy **`videotune`** Compose service and `videotune:latest` image tag remain as a backward-compatible alias (deprecated). A separate legacy all-in-one RunPod image lives under [`docker/Dockerfile`](docker/Dockerfile) and is not the recommended training path.
-
 See [`docs/vendor-policy.md`](docs/vendor-policy.md) for vendored upstream policy.
 
 ## Data preparation
@@ -90,7 +77,7 @@ poetry run train-domain-t2v
 
 Configs: [`configs/domain/flux_t2i.json`](configs/domain/flux_t2i.json), [`configs/domain/flux_t2i_data.json`](configs/domain/flux_t2i_data.json), [`configs/domain/wan_t2v_lora.yaml`](configs/domain/wan_t2v_lora.yaml).
 
-Legacy CLI aliases are deprecated; see [`docs/deprecations.md`](docs/deprecations.md).
+Legacy aliases `train-flux-lora` and `train-wan2-1-t2v-lora` remain available.
 
 Outputs:
 
@@ -110,7 +97,7 @@ poetry run inference-domain-t2i \
 **Phase 2 interim (Wan 2.1 native smoke):**
 
 ```bash
-poetry run inference-run \
+poetry run python scripts/inference_new.py \
   --config configs/inference/presets/wan_domain_lora_smoke.yaml \
   --ckpt_path checkpoints/wan/Wan2.1-T2V-14B \
   --trained_ckpt results/train/.../denoiser-000-000000025.ckpt \

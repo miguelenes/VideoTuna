@@ -32,8 +32,8 @@ Wan training requires DeepSpeed ZeRO-3: `poetry run install-deepspeed`
 | Wan 2.2 domain LoRA | `configs/inference/presets/wan_domain_lora_smoke_22.yaml` | `poetry run validate-domain-t2v --trained_ckpt <ckpt>` |
 | Wan 2.2 domain I2V LoRA | `configs/inference/presets/wan_domain_i2v_smoke_22.yaml` | `poetry run validate-domain-i2v --trained_ckpt <ckpt> --prompt_dir <dir>` |
 | Wan 2.2 (general) | `configs/inference/presets/balanced_wan2_2_720p.yaml` | `poetry run inference-wan2.2-t2v-720p` |
-| Wan 2.1 LoRA (optional) | `configs/inference/presets/wan_domain_lora_smoke.yaml` | `poetry run inference-run` + `--trained_ckpt` |
-| Wan 2.1 I2V LoRA (optional) | `configs/inference/presets/wan_domain_i2v_smoke.yaml` | `poetry run inference-run` + `--prompt_dir` |
+| Wan 2.1 LoRA (optional) | `configs/inference/presets/wan_domain_lora_smoke.yaml` | `inference_new` + `--trained_ckpt` |
+| Wan 2.1 I2V LoRA (optional) | `configs/inference/presets/wan_domain_i2v_smoke.yaml` | `inference_new` + `--prompt_dir` |
 
 LoRA bridge (Wan 2.1 native → 2.2 Diffusers): `videotuna/utils/wan_lora_bridge.py`
 

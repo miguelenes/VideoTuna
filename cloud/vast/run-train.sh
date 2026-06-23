@@ -45,13 +45,13 @@ case "${TRAIN_PROFILE}" in
   flux-lora)
   CONFIG_PATH="${CONFIG_PATH:-configs/domain/flux_t2i.json}"
   DATA_CONFIG_PATH="${DATA_CONFIG_PATH:-configs/domain/flux_t2i_data.json}"
-  run_cmd poetry run train-domain-t2i \
+  run_cmd poetry run train-flux-lora \
     --config_path "${CONFIG_PATH}" \
     --data_config_path "${DATA_CONFIG_PATH}"
   ;;
   wan-t2v-lora)
   CONFIG_PATH="${CONFIG_PATH:-configs/domain/wan_t2v_lora.yaml}"
-  ARGS=(poetry run train-domain-t2v --base "${CONFIG_PATH}")
+  ARGS=(poetry run train-wan2-1-t2v-lora --base "${CONFIG_PATH}")
   if [[ -n "${RESUME_CKPT}" ]]; then
     ARGS+=(--resume_ckpt "${RESUME_CKPT}")
   fi
@@ -59,7 +59,7 @@ case "${TRAIN_PROFILE}" in
   ;;
   wan-i2v-lora)
   CONFIG_PATH="${CONFIG_PATH:-configs/domain/wan_i2v_lora.yaml}"
-  ARGS=(poetry run train-domain-i2v --base "${CONFIG_PATH}")
+  ARGS=(poetry run train-wan2-1-i2v-lora --base "${CONFIG_PATH}")
   if [[ -n "${RESUME_CKPT}" ]]; then
     ARGS+=(--resume_ckpt "${RESUME_CKPT}")
   fi
