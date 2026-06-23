@@ -3,7 +3,6 @@ import re
 from copy import deepcopy
 from pathlib import Path
 
-
 _MODEL_CONFIG_PATHS = [Path(__file__).parent / "model_configs/"]
 _MODEL_CONFIGS = {}  # directory (model_name: config) of model architecture configs
 

@@ -72,7 +72,6 @@ class LlavaGemmaForCausalLM(GemmaForCausalLM, LlavaMetaForCausalLM):
         return_dict: Optional[bool] = None,
         cache_position: Optional[torch.LongTensor] = None,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
-
         if inputs_embeds is None:
             (
                 input_ids,

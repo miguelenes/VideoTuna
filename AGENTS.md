@@ -2,11 +2,14 @@
 
 ## Project overview
 
-**PrivTune** (`privtune` in Poetry; Python import path `videotuna/`) is a private-domain LoRA training platform:
+**PrivTune** (`privtune` in Poetry; Python import path `videotuna/`) is a **training platform ONLY** for private-domain LoRA:
 
-- **Phase 1:** Flux T2I LoRA (`videotuna/training/flux_lora/`, `train-flux-lora`)
-- **Phase 2:** Wan 2.1 T2V LoRA (`videotuna/flow/wanvideo.py`, `train-wan2-1-t2v-lora`)
-- **Phase 3:** Wan 2.2 Diffusers validation inference (`inference-wan2.2-t2v-720p`)
+- **Phase 1:** Flux T2I LoRA (`videotuna/training/flux_lora/`, `train-domain-t2i`)
+- **Phase 2:** Wan 2.1 T2V LoRA (`videotuna/flow/wanvideo.py`, `train-domain-t2v`)
+- **Phase 2.5 (optional):** Wan 2.1 I2V LoRA (`train-domain-i2v`) — LoRA-only; full Wan fine-tune is out of scope
+- **Phase 3:** Wan 2.2 Diffusers domain LoRA validation via `validate-domain-t2v` (production-ready; see runbook). General Wan 2.2 720p inference profile remains optional — [`wan2.2-inference-profile.md`](docs/runbooks/wan2.2-inference-profile.md).
+
+Training stacks differ by design — see [ADR-001](docs/decisions/0001-dual-training-stacks.md).
 
 Canonical runbook: [`docs/runbooks/domain-adult-finetune.md`](docs/runbooks/domain-adult-finetune.md)
 
@@ -33,44 +36,50 @@ Cursor rules: [`.cursor/rules/privtune.mdc`](.cursor/rules/privtune.mdc)
 
 | Use case | Poetry | uv |
 |----------|--------|-----|
-| Inference NVIDIA | `poetry install -E cuda` | `uv sync` |
-| Inference AMD ROCm | `poetry install -E rocm` then `poetry run install-rocm` | see [install-rocm.md](docs/install-rocm.md) |
-| CPU dev / CI | `poetry install -E cpu` then `poetry run install-cpu-torch` | see [install-cpu.md](docs/install-cpu.md) |
-| + Training | `poetry install -E cuda --with training` | `uv sync --group training` |
-| + Dev | `poetry install --with dev` | `uv sync --group dev` |
+| **Default (CUDA + training)** | `poetry install -E cuda --with training` | `uv sync --group training` |
+| Inference AMD ROCm | `poetry install -E rocm --with training` then `poetry run install-rocm` | Wan training requires CUDA; ROCm is inference + Flux training only — see [install-rocm.md](docs/install-rocm.md) |
+| CPU dev / CI | `poetry install -E cpu --with dev --with training` then `poetry run install-cpu-torch` | see [install-cpu.md](docs/install-cpu.md) |
+| + Dev | add `--with dev` | `uv sync --group dev` |
+
+After install for Wan LoRA: `poetry run install-deepspeed`
 
 ## Verification (required before finishing)
 
 ```bash
-poetry run test tests/test_import_smoke.py -q
 poetry run lint
+poetry run format-check
+poetry run coverage-gate
 ```
+
+`coverage-gate` runs the CI smoke test list and enforces a **33%** line-coverage floor on `videotuna/training/` + `videotuna/utils/`. For local exploratory reporting without a gate, use `poetry run coverage-report`.
 
 | Change area | Additional tests |
 |-------------|------------------|
-| Domain configs | `test_domain_finetune_configs.py` |
-| Flux trainer | `test_flux_lora_train_smoke.py` |
-| Wan 2.2 presets | `test_wan_inference_presets.py` |
+| Wan 2.2 presets / bridge | `test_wan_inference_presets.py` |
 | diffusers_video | `test_diffusers_video_flow.py` |
 | device/attention | `test_device_utils.py`, `test_attention_backend.py` |
+| inference CLI / memory | `test_inference_optimization.py` |
 
 ## Commands
 
-### Training
+### Training (canonical)
 
 ```bash
-poetry run train-flux-lora --config_path configs/006_flux/domain_adult_t2i.json \
-  --data_config_path configs/006_flux/domain_adult_t2i_data.json
-poetry run train-wan2-1-t2v-lora --base configs/008_wanvideo/wan2_1_t2v_14B_lora_domain.yaml
+poetry run train-domain-t2i
+poetry run train-domain-t2v
 poetry run install-deepspeed   # Wan LoRA
 ```
+
+Configs: `configs/domain/flux_t2i.json`, `configs/domain/flux_t2i_data.json`, `configs/domain/wan_t2v_lora.yaml`
+
+Legacy aliases: `train-flux-lora`, `train-wan2-1-t2v-lora`
 
 ### Smoke inference
 
 ```bash
-poetry run inference-flux-lora --lorackpt results/train/flux-domain-adult/checkpoint-2000
-poetry run python scripts/inference_new.py --config configs/inference/presets/wan_domain_lora_smoke.yaml ...
-poetry run inference-wan2.2-t2v-720p --config configs/inference/presets/balanced_wan2_2_720p.yaml
+poetry run inference-domain-t2i --lorackpt results/train/flux-domain-adult/checkpoint-2000
+poetry run validate-domain-t2v --trained_ckpt results/train/.../denoiser.ckpt
+poetry run inference-wan2.2-t2v-720p   # general Wan 2.2 720p — optional
 ```
 
 ### Dev tooling
@@ -79,7 +88,7 @@ poetry run inference-wan2.2-t2v-720p --config configs/inference/presets/balanced
 poetry run test -q
 poetry run lint
 poetry run format-check
-poetry run benchmark-attn-backends --pipeline wan
+poetry run type-check   # mypy on typed allowlist only (see pyproject.toml)
 ```
 
 ## Environment variables
@@ -97,12 +106,11 @@ poetry run benchmark-attn-backends --pipeline wan
 
 ```
 videotuna/
-  flow/          # wanvideo.py, diffusers_video.py
-  models/wan/    # Wan 2.1 training
-  training/flux_lora/
-  utils/
-scripts/         # inference_new.py, train_new.py, train_flux_lora.py
-configs/006_flux/, configs/008_wanvideo/, configs/inference/
+  training/flux_lora/   # Phase 1
+  models/wan/           # Phase 2
+  flow/                 # wanvideo, diffusers_video
+configs/domain/         # flux_t2i*.json, wan_t2v_lora.yaml
+configs/inference/presets/  # smoke + Wan 2.2 presets
 cloud/vast/
 docs/runbooks/
 ```
@@ -111,15 +119,15 @@ docs/runbooks/
 
 - Never commit `.env`, checkpoints, `outputs/`, `results/`, or training data.
 - ROCm: `VIDEOTUNA_ATTN_BACKEND=sdpa`; do not run `install-flash-attn`.
-- QA = training callbacks + smoke inference (no VBench).
+- **QA = training callbacks + smoke inference.** VBench was removed: domain QA does not need generic T2V benchmarking; ImageLogger previews and LoRA smoke inference cover the supported workflows.
 
 ## Related docs
 
 | Doc | Topic |
 |-----|-------|
+| [0001-dual-training-stacks.md](docs/decisions/0001-dual-training-stacks.md) | Why Flux uses Accelerate and Wan uses Lightning+DeepSpeed |
 | [domain-adult-finetune.md](docs/runbooks/domain-adult-finetune.md) | Domain training runbook |
-| [wan2.2-inference-profile.md](docs/runbooks/wan2.2-inference-profile.md) | Wan 2.2 rental GPU presets |
-| [capability-matrix.md](docs/capability-matrix.md) | Supported model matrix |
+| [wan2.2-inference-profile.md](docs/runbooks/wan2.2-inference-profile.md) | Wan 2.2 rental GPU presets (Phase 3) |
 | [checkpoints.md](docs/checkpoints.md) | Weight layout |
 
 ## Cursor Cloud specific instructions
@@ -132,3 +140,7 @@ The Cloud VM is **CPU-only (no GPU/CUDA driver)** and runs Python 3.12 (satisfie
 - **Full suite + the `test_import_smoke.py` gate need the `training` group** (`pytorch_lightning`, `pandas`); without it ~5 modules fail to import. Install with `--with dev --with training`.
 - **Known pre-existing baseline failures (not environment issues):** `poetry run lint` reports ~1000 ruff errors; `poetry run pytest tests` shows ~6 failures (`tests/datasets/test_dataset_from_csv.py` hits a `PosixPath` bug in `videotuna/data/datasets.py`, and `test_wan_checkpoint.py::test_wan_from_pretrained_missing_dir` depends on diffusers/network behavior). The rest (~129) pass.
 - **GPU training/inference and real FLUX/Wan weights are not runnable here.** `inference-wan2.2-t2v-720p` and the CPU smoke preset download a 14B Wan 2.2 model. Validate core behavior via the CPU test gates in [capability-matrix.md](docs/capability-matrix.md) and small LoRA training-step smokes instead.
+=======
+| [MODEL_VERSIONS.md](docs/MODEL_VERSIONS.md) | Model pins |
+
+Removed: `capability-matrix.md`, `finetune_flux.md`, `finetune_wan.md`, `evaluation.md` (superseded by runbook + smoke inference).

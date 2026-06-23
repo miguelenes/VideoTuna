@@ -17,6 +17,13 @@ import os
 import warnings
 
 import torch
+from transformers import (
+    AutoConfig,
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    BitsAndBytesConfig,
+)
+
 from llava.constants import (
     DEFAULT_IM_END_TOKEN,
     DEFAULT_IM_START_TOKEN,
@@ -24,12 +31,6 @@ from llava.constants import (
 )
 from llava.model import *
 from llava.utils import rank0_print
-from transformers import (
-    AutoConfig,
-    AutoModelForCausalLM,
-    AutoTokenizer,
-    BitsAndBytesConfig,
-)
 
 
 def load_pretrained_model(

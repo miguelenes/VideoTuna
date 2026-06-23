@@ -1,7 +1,6 @@
 import argparse
 import datetime
 import os
-import sys
 
 import pytorch_lightning as pl
 import torch
@@ -9,14 +8,12 @@ from omegaconf import DictConfig, OmegaConf
 from pytorch_lightning import seed_everything
 from transformers import logging as transf_logging
 
-# sys.path.insert(1, os.path.join(sys.path[0], '..'))
-sys.path.insert(0, os.getcwd())
 from videotuna.base.generation_base import GenerationBase
 from videotuna.utils.args_utils import prepare_train_args
 from videotuna.utils.common_utils import get_dist_info, instantiate_from_config
+from videotuna.utils.logging_config import bound_logger, configure_logging
 from videotuna.utils.train_utils import (
     init_workspace,
-    set_logger,
 )
 
 
@@ -35,7 +32,8 @@ def get_parser(**parser_kwargs):
         nargs="*",
         metavar="base_config.yaml",
         help="paths to base configs. Loaded from left-to-right. "
-        "Parameters can be overwritten or added with command-line options of the form `--key value`.",
+        "Parameters can be overwritten or added with command-line options "
+        "of the form `--key value`.",
         default=list(),
     )
     parser.add_argument(
@@ -85,9 +83,10 @@ def setup_logger(config: DictConfig):
     workdir, ckptdir, cfgdir, loginfo = init_workspace(
         train_config.name, train_config.logdir, config, lightning_config, global_rank
     )
-    logger = set_logger(
-        logfile=os.path.join(loginfo, "log_%d:%s.txt" % (global_rank, now))
+    configure_logging(
+        log_file=os.path.join(loginfo, "log_%d:%s.txt" % (global_rank, now))
     )
+    logger = bound_logger(phase="t2v", flow="wanvideo")
     train_config["workdir"] = workdir
     train_config["ckptdir"] = ckptdir
     return logger

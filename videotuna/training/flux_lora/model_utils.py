@@ -61,6 +61,8 @@ def load_flux_training_models(
 
     if gradient_checkpointing:
         transformer.enable_gradient_checkpointing()
+    elif hasattr(transformer, "disable_gradient_checkpointing"):
+        transformer.disable_gradient_checkpointing()
 
     return {
         "tokenizer_one": tokenizer_one,

@@ -7,8 +7,21 @@ WORKSPACE="${WORKSPACE:-/workspace}"
 REPO="${WORKSPACE}/VideoTuna"
 MARKER="${WORKSPACE}/.videotuna_provisioned"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROVISION_RETRY="${SCRIPT_DIR}/provision_retry.py"
 
 log() { echo "[videotuna-bootstrap] $*"; }
+
+enable_fast_hf_download() {
+  if [[ "${VIDEOTUNA_FAST_HF_DOWNLOAD:-0}" == "1" ]]; then
+    export HF_XET_HIGH_PERFORMANCE=1
+    log "Fast HF downloads enabled (HF_XET_HIGH_PERFORMANCE=1 via VIDEOTUNA_FAST_HF_DOWNLOAD)"
+  fi
+}
+
+ensure_provision_retry() {
+  log "Ensuring bootstrap retry dependencies (tenacity, pyyaml)..."
+  python3 "${PROVISION_RETRY}" install-bootstrap-deps
+}
 
 ensure_poetry() {
   export PATH="${HOME}/.local/bin:${PATH}"
@@ -16,8 +29,7 @@ ensure_poetry() {
     log "Poetry already installed: $(poetry --version)"
     return 0
   fi
-  log "Installing Poetry via official installer..."
-  curl -sSL https://install.python-poetry.org | python3 -
+  python3 "${PROVISION_RETRY}" install-poetry
   export PATH="${HOME}/.local/bin:${PATH}"
   poetry --version
 }
@@ -69,16 +81,16 @@ EOF
       echo "HF_TOKEN=${HF_TOKEN}" >>"${env_file}"
     fi
   fi
-  if [[ -n "${WANDB_API_KEY:-}" ]]; then
-    if grep -q '^WANDB_API_KEY=' "${env_file}"; then
-      sed -i "s|^WANDB_API_KEY=.*|WANDB_API_KEY=${WANDB_API_KEY}|" "${env_file}"
-    else
-      echo "WANDB_API_KEY=${WANDB_API_KEY}" >>"${env_file}"
-    fi
-  fi
   if [[ -n "${VIDEOTUNA_ATTN_BACKEND:-}" ]]; then
     sed -i "s|^VIDEOTUNA_ATTN_BACKEND=.*|VIDEOTUNA_ATTN_BACKEND=${VIDEOTUNA_ATTN_BACKEND}|" \
       "${env_file}" || echo "VIDEOTUNA_ATTN_BACKEND=${VIDEOTUNA_ATTN_BACKEND}" >>"${env_file}"
+  fi
+  if [[ "${VIDEOTUNA_FAST_HF_DOWNLOAD:-0}" == "1" ]]; then
+    if grep -q '^HF_XET_HIGH_PERFORMANCE=' "${env_file}"; then
+      sed -i "s|^HF_XET_HIGH_PERFORMANCE=.*|HF_XET_HIGH_PERFORMANCE=1|" "${env_file}"
+    else
+      echo "HF_XET_HIGH_PERFORMANCE=1" >>"${env_file}"
+    fi
   fi
   log "Wrote ${env_file}"
 }
@@ -93,16 +105,18 @@ install_videotuna() {
   export HF_HOME="${HF_HOME:-${WORKSPACE}/.cache/huggingface}"
 
   log "Running poetry install -E cuda --with training..."
-  poetry install -E cuda --with training --no-interaction
+  python3 "${PROVISION_RETRY}" run -- poetry install -E cuda --with training --no-interaction
+
+  poetry run python -c "import hf_xet" 2>/dev/null \
+    || log "WARNING: hf-xet not importable; HF downloads use fallback path"
 
   log "Installing DeepSpeed (required for Wan / CogVideoX LoRA)..."
-  if ! poetry run install-deepspeed; then
-    log "WARNING: install-deepspeed failed — Wan training may not work until fixed"
-  fi
+  python3 "${PROVISION_RETRY}" run -- poetry run install-deepspeed
 
   if [[ "${VIDEOTUNA_INSTALL_FLASH_ATTN:-0}" == "1" ]]; then
     log "Installing flash-attn (optional, datacenter GPUs)..."
-    poetry run install-flash-attn || log "WARNING: install-flash-attn failed; use VIDEOTUNA_ATTN_BACKEND=sdpa"
+    python3 "${PROVISION_RETRY}" run -- poetry run install-flash-attn \
+      || log "WARNING: install-flash-attn failed; use VIDEOTUNA_ATTN_BACKEND=sdpa"
   fi
 }
 
@@ -126,27 +140,34 @@ download_weights_if_missing() {
     return 0
   fi
   export HF_HOME="${HF_HOME:-${WORKSPACE}/.cache/huggingface}"
-  local hf_cmd="hf"
-  if ! command -v hf >/dev/null 2>&1; then
-    hf_cmd="huggingface-cli"
-  fi
-  if ! command -v "${hf_cmd}" >/dev/null 2>&1; then
-    cd "${REPO}"
-    hf_cmd="poetry run hf"
-  fi
 
-  if [[ ! -d "${WORKSPACE}/checkpoints/flux/FLUX.1-dev" ]]; then
-    log "Pre-downloading FLUX.1-dev..."
-    ${hf_cmd} download black-forest-labs/FLUX.1-dev \
-      --local-dir "${WORKSPACE}/checkpoints/flux/FLUX.1-dev" || \
-      log "WARNING: FLUX.1-dev download failed"
-  fi
-  if [[ ! -d "${WORKSPACE}/checkpoints/wan/Wan2.1-T2V-14B" ]]; then
-    log "Pre-downloading Wan2.1-T2V-14B..."
-    ${hf_cmd} download Wan-AI/Wan2.1-T2V-14B \
-      --local-dir "${WORKSPACE}/checkpoints/wan/Wan2.1-T2V-14B" || \
-      log "WARNING: Wan2.1-T2V-14B download failed"
-  fi
+  log "Pre-downloading FLUX.1-dev (with retries)..."
+  python3 "${PROVISION_RETRY}" hf-download \
+    black-forest-labs/FLUX.1-dev \
+    "${WORKSPACE}/checkpoints/flux/FLUX.1-dev" \
+    --repo-root "${REPO}"
+
+  log "Pre-downloading Wan2.1-T2V-14B (with retries)..."
+  python3 "${PROVISION_RETRY}" hf-download \
+    Wan-AI/Wan2.1-T2V-14B \
+    "${WORKSPACE}/checkpoints/wan/Wan2.1-T2V-14B" \
+    --repo-root "${REPO}"
+
+  log "Pre-downloading Wan2.1-I2V-14B-480P (with retries)..."
+  python3 "${PROVISION_RETRY}" hf-download \
+    Wan-AI/Wan2.1-I2V-14B-480P \
+    "${WORKSPACE}/checkpoints/wan/Wan2.1-I2V-14B-480P" \
+    --repo-root "${REPO}"
+
+  log "Pre-downloading Wan2.2-T2V-A14B-Diffusers into HF hub cache (with retries)..."
+  python3 "${PROVISION_RETRY}" hf-download-cache \
+    Wan-AI/Wan2.2-T2V-A14B-Diffusers \
+    --repo-root "${REPO}"
+
+  log "Pre-downloading Wan2.2-I2V-A14B-Diffusers into HF hub cache (with retries)..."
+  python3 "${PROVISION_RETRY}" hf-download-cache \
+    Wan-AI/Wan2.2-I2V-A14B-Diffusers \
+    --repo-root "${REPO}"
 }
 
 run_smoke_validation() {
@@ -165,6 +186,8 @@ run_smoke_validation() {
 
 main() {
   log "Starting VideoTuna bootstrap (workspace=${WORKSPACE})"
+  enable_fast_hf_download
+  ensure_provision_retry
   ensure_poetry
   setup_workspace_layout
   write_env_file

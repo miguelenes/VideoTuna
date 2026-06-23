@@ -2,7 +2,6 @@ import torch
 
 
 class FlowMatchScheduler:
-
     def __init__(
         self,
         num_inference_steps=100,

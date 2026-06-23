@@ -15,6 +15,8 @@ import sglang as sgl
 import uvicorn
 from fastapi import BackgroundTasks, FastAPI, Request
 from fastapi.responses import StreamingResponse
+from sglang.backend.runtime_endpoint import RuntimeEndpoint
+
 from llava.constants import (
     DEFAULT_IMAGE_TOKEN,
     WORKER_HEART_BEAT_INTERVAL,
@@ -24,7 +26,6 @@ from llava.mm_utils import (
     load_image_from_base64,
 )
 from llava.utils import build_logger, pretty_print_semaphore, server_error_msg
-from sglang.backend.runtime_endpoint import RuntimeEndpoint
 
 GB = 1 << 30
 
@@ -200,13 +201,16 @@ class ModelWorker:
         stop_str = [stop_str] if stop_str is not None else None
 
         if max_new_tokens < 1:
-            yield json.dumps(
-                {
-                    "text": ori_prompt
-                    + "Exceeds max token length. Please start a new conversation, thanks.",
-                    "error_code": 0,
-                }
-            ).encode() + b"\0"
+            yield (
+                json.dumps(
+                    {
+                        "text": ori_prompt
+                        + "Exceeds max token length. Please start a new conversation, thanks.",
+                        "error_code": 0,
+                    }
+                ).encode()
+                + b"\0"
+            )
             return
 
         # print(prompt)

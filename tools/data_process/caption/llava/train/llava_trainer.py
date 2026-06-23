@@ -344,7 +344,6 @@ class LengthGroupedSampler(Sampler):
 
 
 class LLaVATrainer(Trainer):
-
     def create_accelerator_and_postprocess(self):
         grad_acc_kwargs = {"num_steps": self.args.gradient_accumulation_steps}
         grad_acc_kwargs["sync_with_dataloader"] = False
@@ -661,9 +660,7 @@ class LLaVATrainer(Trainer):
 
             if self.args.local_rank == 0 or self.args.local_rank == -1:
                 self.model.config.save_pretrained(output_dir)
-                torch.save(
-                    weight_to_save, os.path.join(output_dir, "mm_projector.bin")
-                )
+                torch.save(weight_to_save, os.path.join(output_dir, "mm_projector.bin"))
         else:
             super(LLaVATrainer, self)._save_checkpoint(model, trial, metrics)
 
@@ -720,9 +717,7 @@ class LLaVADPOTrainer(DPOTrainer):
 
             if self.args.local_rank == 0 or self.args.local_rank == -1:
                 self.model.config.save_pretrained(output_dir)
-                torch.save(
-                    weight_to_save, os.path.join(output_dir, "mm_projector.bin")
-                )
+                torch.save(weight_to_save, os.path.join(output_dir, "mm_projector.bin"))
         else:
             # super(LLaVADPOTrainer, self)._save_checkpoint(model, trial, metrics)
             # print(type(model))

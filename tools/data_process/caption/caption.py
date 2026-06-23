@@ -7,7 +7,7 @@ import warnings
 
 import numpy as np
 import tqdm
-from decord import VideoReader, cpu
+from videotuna.utils.video_io import AvVideoReader as VideoReader
 from llava.constants import (
     DEFAULT_IMAGE_TOKEN,
     IMAGE_TOKEN_INDEX,
@@ -50,7 +50,7 @@ def get_inf1(folder_path):
 
 
 def get_inf(video_path):
-    vr = VideoReader(video_path, ctx=cpu(0))
+    vr = VideoReader(video_path)
     video_length = len(vr)
     video_fps = vr.get_avg_fps()
     width = vr[0].shape[0]
@@ -62,9 +62,9 @@ def get_inf(video_path):
 # Function to extract frames from video
 def load_video(video_path, max_frames_num):
     if type(video_path) == str:
-        vr = VideoReader(video_path, ctx=cpu(0))
+        vr = VideoReader(video_path)
     else:
-        vr = VideoReader(video_path[0], ctx=cpu(0))
+        vr = VideoReader(video_path[0])
     total_frame_num = len(vr)
     uniform_sampled_frames = np.linspace(
         0, total_frame_num - 1, max_frames_num, dtype=int

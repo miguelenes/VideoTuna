@@ -18,15 +18,14 @@
 import numbers
 import random
 
-import decord
 import numpy as np
 import torch
 import torch.nn.functional as F
 import torchvision.transforms as torch_transforms
-from decord import VideoReader, cpu
-from einops import rearrange
 from PIL import Image
 from torchvision.datasets.folder import pil_loader
+
+from videotuna.utils.video_io import get_video_frame_count, read_video_frames
 
 from .datasets_utils import IMG_EXTS, VIDEO_EXTS
 
@@ -642,13 +641,8 @@ class LoadVideo:
 
     def __call__(self, video_path):
         assert video_path.split(".")[-1] in VIDEO_EXTS
-        decord.bridge.set_bridge("torch")
-        video = VideoReader(video_path, ctx=cpu(0))
-        video_len = len(video)
-        indexes = range(0, video_len)
-        vframes = video.get_batch(indexes)
-        vframes = rearrange(vframes, "t h w c -> t c h w")
-        return vframes
+        total = get_video_frame_count(video_path)
+        return read_video_frames(video_path, range(total))
 
 
 class CheckVideo:

@@ -52,14 +52,18 @@ Prefer **git submodule** or **pip/git dependency** over copying large trees.
 
 ## Inventory
 
-| Path | Upstream | License | Entrypoints | Status |
-|------|----------|---------|-------------|--------|
-| `videotuna/training/flux_lora/` | PrivTune first-party | N/A | `train-flux-lora` | **Keep** |
-| `videotuna/models/wan/` | [Wan-Video/Wan2.1](https://github.com/Wan-Video/Wan2.1) | Upstream terms | `train-wan2-1-t2v-lora`, native LoRA smoke | **Keep** |
+| Path | Upstream | License | Entrypoints | Vendor deps | Status |
+|------|----------|---------|-------------|-------------|--------|
+| `videotuna/training/flux_lora/` | PrivTune first-party | N/A | `train-flux-lora` | — | **Keep** — Accelerate stack ([ADR-001](decisions/0001-dual-training-stacks.md)) |
+| `videotuna/models/wan/` | [Wan-Video/Wan2.2](https://github.com/Wan-Video/Wan2.2) (Wan 2.1 hub weights for domain training — see `VENDOR.md`) | Apache-2.0 | `train-domain-t2v`, `train-domain-i2v`, `train-wan2-1-*-lora`, `scripts/train_new.py`, `scripts/inference_new.py` | `easydict` (configs only) | **Keep** — Lightning+DeepSpeed stack ([ADR-001](decisions/0001-dual-training-stacks.md)); T2V/I2V only; s2v/animate/ti2v pruned (see `VENDOR.md`) |
+
+Provenance details: [`videotuna/models/wan/VENDOR.md`](../videotuna/models/wan/VENDOR.md).
+
+`easydict` is pinned in `pyproject.toml` for upstream Wan config modules under `videotuna/models/wan/wan/configs/`. First-party code must not import it; `tests/test_vendor_import_boundary.py` enforces that boundary.
 
 ## Flux LoRA training
 
-First-party trainer at `videotuna/training/flux_lora/` (Diffusers + PEFT + Accelerate). Configs under `configs/006_flux/`. Inference via `DiffusersVideoFlow` / `inference-flux-lora`.
+First-party trainer at `videotuna/training/flux_lora/` (Diffusers + PEFT + Accelerate). Configs under `configs/domain/`. Inference via `DiffusersVideoFlow` / `inference-flux-lora`. Training stack rationale: [ADR-001](decisions/0001-dual-training-stacks.md).
 
 ## Removing vendored code
 

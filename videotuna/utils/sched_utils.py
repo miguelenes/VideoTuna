@@ -17,7 +17,9 @@ def default(val: Any, d: Union[Any, Callable[[], Any]]) -> Any:
     return d() if callable(d) else d
 
 
-def extract_into_tensor(a: torch.Tensor, t: torch.Tensor, x_shape: torch.Size) -> torch.Tensor:
+def extract_into_tensor(
+    a: torch.Tensor, t: torch.Tensor, x_shape: torch.Size
+) -> torch.Tensor:
     b, *_ = t.shape
     out = a.gather(-1, t)
     return out.reshape(b, *((1,) * (len(x_shape) - 1)))
@@ -30,8 +32,8 @@ def noise_like(
     dtype: Optional[torch.dtype] = None,
 ) -> torch.Tensor:
     dtype = dtype or torch.float32
-    repeat_noise = lambda: torch.randn((1, *shape[1:]), device=device, dtype=dtype).repeat(
-        shape[0], *((1,) * (len(shape) - 1))
-    )
+    repeat_noise = lambda: torch.randn(
+        (1, *shape[1:]), device=device, dtype=dtype
+    ).repeat(shape[0], *((1,) * (len(shape) - 1)))
     noise = lambda: torch.randn(shape, device=device, dtype=dtype)
     return repeat_noise() if repeat else noise()

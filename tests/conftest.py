@@ -48,21 +48,6 @@ def _suppress_third_party_import_warnings():
         yield
 
 
-def pytest_configure(config):
-    config.addinivalue_line(
-        "markers",
-        "gpu: tests that require a GPU (skipped when torch.cuda.is_available() is False)",
-    )
-    config.addinivalue_line(
-        "markers",
-        "rocm: tests that require an AMD ROCm GPU",
-    )
-    config.addinivalue_line(
-        "markers",
-        "cpu_smoke: slow CPU integration tests (optional nightly)",
-    )
-
-
 def pytest_collection_modifyitems(config, items):
     try:
         import torch

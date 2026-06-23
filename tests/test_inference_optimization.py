@@ -1,4 +1,4 @@
-"""Tests for inference CLI, metrics, and FP8 validation."""
+"""Tests for inference CLI, metrics, and optimization."""
 
 import argparse
 import json
@@ -8,44 +8,33 @@ from unittest import mock
 
 import pytest
 
-from videotuna.utils.common_utils import monitor_resources, save_metrics
-from videotuna.utils.fp8_utils import (
-    fp8_map_path,
-    precision_from_dtype_flag,
-    validate_fp8_inference,
+from videotuna.cli.inference_options import (
+    StandardInferenceOptions,
+    inference_options_to_namespace,
 )
+from videotuna.utils.common_utils import monitor_resources, save_metrics
 from videotuna.utils.inference_cli import (
-    add_standard_inference_flags,
     apply_compile_env,
     prepare_cli_inference_args,
-    resolve_offload_mode,
 )
-from videotuna.utils.memory_presets import apply_memory_preset
+from videotuna.utils.inference_profile import resolve_inference_profile
 
 
-def test_add_standard_inference_flags():
-    parser = argparse.ArgumentParser()
-    add_standard_inference_flags(parser)
-    args = parser.parse_args(
-        [
-            "--device",
-            "cuda:1",
-            "--min-vram-gb",
-            "24",
-            "--memory-preset",
-            "low_vram",
-            "--enable_vae_tiling",
-            "--enable_sequential_cpu_offload",
-            "--dtype",
-            "bf16",
-            "--ulysses_degree",
-            "2",
-            "--ring_degree",
-            "2",
-            "--compile",
-            "--enable_fp8",
-        ]
+def test_standard_inference_options_to_namespace():
+    standard = StandardInferenceOptions(
+        device="cuda:1",
+        min_vram_gb=24.0,
+        memory_preset="low_vram",
+        enable_vae_tiling=True,
+        enable_sequential_cpu_offload=True,
+        dtype="bf16",
+        ulysses_degree=2,
+        ring_degree=2,
+        compile=True,
+        transformer_quant="int8_wo",
+        quant_backend="torchao",
     )
+    args = inference_options_to_namespace(standard=standard)
     assert args.device == "cuda:1"
     assert args.min_vram_gb == 24.0
     assert args.memory_preset == "low_vram"
@@ -54,10 +43,12 @@ def test_add_standard_inference_flags():
     assert args.dtype == "bf16"
     assert args.ulysses_degree == 2
     assert args.compile is True
-    assert args.enable_fp8 is True
+    assert args.transformer_quant == "int8_wo"
+    assert args.quant_backend == "torchao"
+    assert not hasattr(args, "enable_fp8")
 
 
-def test_apply_memory_preset_low_vram():
+def test_resolve_inference_profile():
     args = argparse.Namespace(
         memory_preset="low_vram",
         enable_model_cpu_offload=False,
@@ -65,23 +56,27 @@ def test_apply_memory_preset_low_vram():
         enable_vae_tiling=False,
         dtype=None,
     )
-    apply_memory_preset(args)
+    profile = resolve_inference_profile(args)
+    assert profile.offload_mode == "sequential"
+    assert profile.enable_sequential_cpu_offload is True
+    assert profile.enable_model_cpu_offload is False
+    assert profile.enable_vae_tiling is True
+    assert profile.dtype == "fp16"
+    assert profile.memory_preset == "low_vram"
     assert args.enable_sequential_cpu_offload is True
     assert args.enable_vae_tiling is True
     assert args.dtype == "fp16"
 
-
-def test_apply_memory_preset_max_speed():
     args = argparse.Namespace(
-        memory_preset="max_speed",
+        memory_preset=None,
         enable_model_cpu_offload=True,
-        enable_sequential_cpu_offload=True,
-        dtype=None,
+        enable_sequential_cpu_offload=False,
+        enable_vae_tiling=False,
+        dtype="bf16",
     )
-    apply_memory_preset(args)
-    assert args.enable_model_cpu_offload is False
-    assert args.enable_sequential_cpu_offload is False
-    assert args.dtype == "bf16"
+    profile = resolve_inference_profile(args, apply_preset=False)
+    assert profile.offload_mode == "model"
+    assert profile.dtype == "bf16"
 
 
 def test_prepare_cli_inference_args_validates_parallel():
@@ -111,6 +106,34 @@ def test_validate_cpu_offload_rejected_on_cpu_smoke():
     )
     with pytest.raises(RuntimeError, match="CPU offload flags"):
         validate_cpu_offload_flags(args)
+
+
+def test_validate_cpu_offload_both_flags_sequential_wins():
+    from videotuna.utils.inference_cli import validate_cpu_offload_flags
+
+    args = argparse.Namespace(
+        cpu_smoke=False,
+        device="cuda:0",
+        enable_sequential_cpu_offload=True,
+        enable_model_cpu_offload=True,
+        memory_preset=None,
+    )
+    with (
+        mock.patch("videotuna.utils.device_utils.gpu_is_available", return_value=True),
+        mock.patch(
+            "videotuna.utils.device_utils.detect_compute_backend", return_value="cuda"
+        ),
+        mock.patch("videotuna.utils.device_utils.resolve_cpu_mode", return_value="off"),
+        mock.patch("videotuna.utils.inference_cli.logger.warning") as warn,
+    ):
+        validate_cpu_offload_flags(args)
+
+    assert args.enable_sequential_cpu_offload is True
+    assert args.enable_model_cpu_offload is False
+    warn.assert_called_once()
+    assert "sequential" in warn.call_args[0][0].lower()
+    profile = resolve_inference_profile(args, apply_preset=False)
+    assert profile.offload_mode == "sequential"
 
 
 def test_apply_cpu_smoke_env():
@@ -166,58 +189,11 @@ def test_attn_auto_resolves():
         assert backend in ("sdpa", "eager")
 
 
-def test_resolve_offload_mode():
-    args = argparse.Namespace(
-        enable_sequential_cpu_offload=True,
-        enable_model_cpu_offload=False,
-    )
-    assert resolve_offload_mode(args) == "sequential"
-    args = argparse.Namespace(
-        enable_sequential_cpu_offload=False,
-        enable_model_cpu_offload=True,
-    )
-    assert resolve_offload_mode(args) == "model"
-
-
 def test_apply_compile_env():
     apply_compile_env(True)
     assert os.environ["VIDEOTUNA_TORCH_COMPILE"] == "1"
     apply_compile_env(False)
     assert os.environ["VIDEOTUNA_TORCH_COMPILE"] == "0"
-
-
-def test_fp8_map_path():
-    assert fp8_map_path("model.pt").endswith("model_map.pt")
-
-
-def test_precision_from_dtype_flag():
-    assert precision_from_dtype_flag("fp16") == "fp16"
-    assert precision_from_dtype_flag(None, default="bf16") == "bf16"
-
-
-def test_validate_fp8_inference_rejected_on_cpu():
-    with mock.patch(
-        "videotuna.utils.fp8_utils.detect_compute_backend", return_value="cpu"
-    ):
-        with pytest.raises(RuntimeError, match="not supported on CPU"):
-            validate_fp8_inference("model.pt")
-
-
-def test_validate_fp8_inference_missing_map():
-    with tempfile.NamedTemporaryFile(suffix=".pt") as tmp:
-        with mock.patch(
-            "videotuna.utils.fp8_utils.detect_compute_backend", return_value="cuda"
-        ):
-            with mock.patch(
-                "videotuna.utils.fp8_utils.gpu_is_available", return_value=False
-            ):
-                with mock.patch(
-                    "videotuna.utils.fp8_utils.fp8_dtype_available", return_value=True
-                ):
-                    mock_torchao = mock.MagicMock()
-                    with mock.patch.dict("sys.modules", {"torchao": mock_torchao}):
-                        with pytest.raises(FileNotFoundError):
-                            validate_fp8_inference(tmp.name)
 
 
 @mock.patch.dict(os.environ, {"VIDEOTUNA_ATTN_BACKEND": "eager"})
@@ -306,9 +282,7 @@ def test_apply_diffusers_optimizations_compiles_when_no_offload():
         with mock.patch.object(
             diffusers_optimizations, "apply_diffusers_attention_backend"
         ):
-            with mock.patch.object(
-                diffusers_optimizations, "resolve_inference_device"
-            ):
+            with mock.patch.object(diffusers_optimizations, "resolve_inference_device"):
                 with mock.patch.object(pipe, "to"):
                     diffusers_optimizations.apply_diffusers_optimizations(pipe, args)
     compile_mock.assert_called_once_with(transformer)
@@ -342,11 +316,102 @@ def test_apply_diffusers_optimizations_skips_compile_with_offload():
     compile_mock.assert_not_called()
 
 
-
 def test_require_accelerator_for_flow_raises_without_gpu():
     from pathlib import Path
 
     source = (
         Path(__file__).resolve().parents[1] / "scripts" / "inference_new.py"
     ).read_text(encoding="utf-8")
-    assert "import argparse" in source
+    assert "generic_inference_entry" in source
+    assert "import argparse" not in source
+
+
+@pytest.mark.gpu
+def test_wan_domain_low_vram_quanto_int4_gpu_smoke():
+    """GPU integration: optimum-quanto int4_wo on Wan 2.2 low-VRAM preset."""
+    pytest.importorskip("optimum.quanto")
+
+    from pathlib import Path
+
+    import torch
+    import yaml
+    from diffusers import WanPipeline
+
+    from videotuna.utils.device_utils import detect_compute_backend
+    from videotuna.utils.diffusers_optimizations import apply_diffusers_optimizations
+    from videotuna.utils.diffusers_quantization import (
+        build_pipeline_quantization_config,
+        maybe_adjust_offload_for_quant,
+        resolve_quant_components,
+        validate_transformer_quant,
+    )
+
+    if not torch.cuda.is_available():
+        pytest.skip("GPU not available")
+    if detect_compute_backend() == "rocm":
+        pytest.skip("quanto quant is CUDA-only")
+
+    repo_root = Path(__file__).resolve().parents[1]
+    preset_path = (
+        repo_root
+        / "configs"
+        / "inference"
+        / "presets"
+        / "wan_domain_lora_smoke_22_low_vram.yaml"
+    )
+    cfg = yaml.safe_load(preset_path.read_text(encoding="utf-8"))
+    flow_params = cfg["flow"]["params"]
+    inference = cfg["inference"]
+    model_id = flow_params["pretrained_model_name_or_path"]
+    model_variant = flow_params["model_variant"]
+
+    args = argparse.Namespace(
+        transformer_quant="int4_wo",
+        quant_backend="quanto",
+        enable_sequential_cpu_offload=inference["enable_sequential_cpu_offload"],
+        enable_model_cpu_offload=False,
+        enable_vae_tiling=inference["enable_vae_tiling"],
+        enable_vae_slicing=False,
+        fuse_qkv=False,
+        enable_attention_cache=False,
+        device=None,
+        device_map=None,
+    )
+    maybe_adjust_offload_for_quant(args, "int4_wo")
+    assert args.enable_sequential_cpu_offload is False
+    assert args.enable_model_cpu_offload is True
+
+    validate_transformer_quant(
+        transformer_quant="int4_wo",
+        quant_backend="quanto",
+        offload_mode="model",
+    )
+    components = resolve_quant_components("wan", model_variant, "t2v")
+    assert components == ["transformer", "transformer_2"]
+    quant_config = build_pipeline_quantization_config(
+        transformer_quant="int4_wo",
+        quant_backend="quanto",
+        components=components,
+    )
+    assert quant_config is not None
+    assert set(quant_config.quant_mapping.keys()) == {"transformer", "transformer_2"}
+
+    pipe = WanPipeline.from_pretrained(
+        model_id,
+        torch_dtype=torch.float16,
+        quantization_config=quant_config,
+    )
+    apply_diffusers_optimizations(pipe, args, model_family="wan")
+
+    generator = torch.Generator(device="cuda").manual_seed(42)
+    output = pipe(
+        prompt="sks_style, slow camera push-in, soft lighting",
+        num_frames=5,
+        height=256,
+        width=448,
+        num_inference_steps=2,
+        guidance_scale=5.0,
+        generator=generator,
+    )
+    assert output is not None
+    assert len(output.frames[0]) == 5

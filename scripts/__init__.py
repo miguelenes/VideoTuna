@@ -10,6 +10,32 @@ from datetime import datetime
 
 current_time = datetime.now().strftime("%Y%m%d%H%M%S")
 
+FLUX_T2I_CONFIG = "configs/domain/flux_t2i.json"
+FLUX_T2I_DATA_CONFIG = "configs/domain/flux_t2i_data.json"
+FLUX_T2I_CLOUD_SMOKE = "configs/domain/flux_t2i_cloud_smoke.json"
+WAN_T2V_LORA_CONFIG = "configs/domain/wan_t2v_lora.yaml"
+WAN_T2V_LORA_CLOUD_SMOKE = "configs/domain/wan_t2v_lora_cloud_smoke.yaml"
+WAN_I2V_LORA_CONFIG = "configs/domain/wan_i2v_lora.yaml"
+
+# Single source of truth for CPU CI smoke tests (see .github/workflows/cpu.yml).
+CI_SMOKE_TESTS = [
+    "tests/test_import_smoke.py",
+    "tests/test_domain_finetune_configs.py",
+    "tests/test_flux_lora_train_smoke.py",
+    "tests/test_wan_lora_bridge.py",
+    "tests/test_wan_i2v_lora_bridge.py",
+    "tests/test_wan_domain_lora_smoke_22_config.py",
+    "tests/test_wan_domain_i2v_smoke_22_config.py",
+    "tests/test_wan_i2v_dataset.py",
+    "tests/test_wan_training_step.py",
+    "tests/test_poetry_scripts.py",
+    "tests/test_diffusers_quantization.py",
+]
+
+# Line-coverage floor for videotuna/training/ + videotuna/utils/
+# (CI smoke baseline ~36%).
+COVERAGE_GATE_FAIL_UNDER = 33
+
 
 def _require_cuda_backend(installer_name: str) -> None:
     """Abort when the active PyTorch build is ROCm (CUDA-only installer)."""
@@ -30,7 +56,8 @@ def _require_cuda_backend(installer_name: str) -> None:
 
 def install_deepspeed():
     """
-    Install DeepSpeed with CUDA 12.6 toolkit support (rebuilds against the active torch).
+    Install DeepSpeed with CUDA 12.6 toolkit support
+    (rebuilds against the active torch).
 
     When conda is unavailable, skips the CUDA toolkit step and installs via pip.
     If deepspeed>=0.19.2 is already importable, exits successfully without rebuilding.
@@ -362,18 +389,31 @@ def install_flash_attn_rocm():
     sys.exit(1)
 
 
+_FORMAT_TARGETS = ["."]
+_LINT_TARGETS = ["videotuna", "tests", "scripts", "tools"]
+
+
 def code_format(check=False):
     """
     Run the code formatting
     """
-    commands = [["isort", "."], ["black", "."]]
+    cmds = (
+        [
+            ["ruff", "format", "--check", *_FORMAT_TARGETS],
+            ["ruff", "check", "--select", "I", *_FORMAT_TARGETS],
+        ]
+        if check
+        else [
+            ["ruff", "check", "--fix", *_LINT_TARGETS],
+            ["ruff", "check", "--select", "I", "--fix", *_FORMAT_TARGETS],
+            ["ruff", "format", *_FORMAT_TARGETS],
+        ]
+    )
     return_code = 0
 
-    for command in commands:
-        if check:
-            command.append("--check")
+    for command in cmds:
         process = subprocess.run(command, check=False)
-        if process.returncode > 0:
+        if process.returncode != 0:
             return_code = process.returncode
             break
 
@@ -392,7 +432,7 @@ def lint():
     Run the linter
     """
     result = subprocess.run(
-        ["ruff", "check", "videotuna", "tests"] + sys.argv[1:], check=False
+        ["ruff", "check", *_LINT_TARGETS] + sys.argv[1:], check=False
     )
     exit(result.returncode)
 
@@ -402,7 +442,14 @@ def test():  # pragma: no cover
     Run all unittests
     """
     os.environ["ENV"] = "test"
-    result = subprocess.run(["pytest", "tests"] + sys.argv[1:], check=False)
+    args = sys.argv[1:]
+    has_targets = any(
+        not a.startswith("-")
+        and (a.endswith(".py") or "::" in a or a.startswith("tests"))
+        for a in args
+    )
+    cmd = ["pytest"] + (args if has_targets else ["tests"] + args)
+    result = subprocess.run(cmd, check=False)
     exit(result.returncode)
 
 
@@ -420,6 +467,29 @@ def coverage_report():
     exit(result.returncode)
 
 
+def coverage_gate():
+    """
+    Run CI smoke tests with coverage and enforce a modest floor on core modules.
+    """
+    os.environ["ENV"] = "test"
+    run = subprocess.run(
+        ["coverage", "run", "-m", "pytest", "-q", *CI_SMOKE_TESTS],
+        check=False,
+    )
+    if run.returncode != 0:
+        exit(run.returncode)
+    report = subprocess.run(
+        [
+            "coverage",
+            "report",
+            "--include=videotuna/training/*,videotuna/utils/*",
+            f"--fail-under={COVERAGE_GATE_FAIL_UNDER}",
+        ],
+        check=False,
+    )
+    exit(report.returncode)
+
+
 def type_check():
     """
     Run the type checking
@@ -429,38 +499,21 @@ def type_check():
 
 
 def inference_flux_lora():
-    result = subprocess.run(
-        [
-            "python",
-            "scripts/inference_new.py",
-            "--config",
-            "configs/inference/presets/flux_domain_lora_smoke.yaml",
-            "--enable_model_cpu_offload",
-        ]
-        + sys.argv[1:],
-        check=False,
-    )
-    exit(result.returncode)
+    from videotuna.cli.inference_app import inference_flux_lora_entry
+
+    inference_flux_lora_entry()
 
 
 def inference_wan2_2_t2v_720p():
-    result = subprocess.run(
-        [
-            "python",
-            "scripts/inference_new.py",
-            "--config",
-            "configs/inference/wan2_2_t2v_a14b.yaml",
-        ]
-        + sys.argv[1:],
-        check=False,
-    )
-    exit(result.returncode)
+    from videotuna.cli.inference_app import inference_wan2_2_t2v_720p_entry
+
+    inference_wan2_2_t2v_720p_entry()
 
 
 def train_flux_lora():
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
-    config_path = "configs/006_flux/domain_adult_t2i.json"
-    data_config_path = "configs/006_flux/domain_adult_t2i_data.json"
+    config_path = FLUX_T2I_CONFIG
+    data_config_path = FLUX_T2I_DATA_CONFIG
     result = subprocess.run(
         [
             "accelerate",
@@ -483,12 +536,12 @@ def train_flux_lora():
 def train_wan2_1_t2v_lora():
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
     ckpt = "checkpoints/wan/Wan2.1-T2V-14B"
-    config = "configs/008_wanvideo/wan2_1_t2v_14B_lora_domain.yaml"
+    config = WAN_T2V_LORA_CONFIG
     resroot = "results/train"
     expname = "train_wan_domain_t2v_lora"
     result = subprocess.run(
         [
-            "python",
+            sys.executable,
             "scripts/train_new.py",
             "-t",
             "--ckpt",
@@ -507,6 +560,75 @@ def train_wan2_1_t2v_lora():
         check=False,
     )
     exit(result.returncode)
+
+
+def train_domain_t2i():
+    """Canonical alias for Flux T2I domain LoRA training."""
+    train_flux_lora()
+
+
+def train_domain_t2v():
+    """Canonical alias for Wan 2.1 T2V domain LoRA training."""
+    train_wan2_1_t2v_lora()
+
+
+def train_wan2_1_i2v_lora():
+    os.environ["TOKENIZERS_PARALLELISM"] = "false"
+    ckpt = "checkpoints/wan/Wan2.1-I2V-14B-480P"
+    config = WAN_I2V_LORA_CONFIG
+    resroot = "results/train"
+    expname = "train_wan_domain_i2v_lora"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/train_new.py",
+            "-t",
+            "--ckpt",
+            ckpt,
+            "--base",
+            config,
+            "--logdir",
+            resroot,
+            "--name",
+            f"{expname}_{current_time}",
+            "--devices",
+            "0,",
+            "--auto_resume",
+        ]
+        + sys.argv[1:],
+        check=False,
+    )
+    exit(result.returncode)
+
+
+def train_domain_i2v():
+    """Canonical alias for Wan 2.1 I2V domain LoRA training."""
+    train_wan2_1_i2v_lora()
+
+
+def inference_domain_t2i():
+    """Canonical alias for Flux domain LoRA smoke inference."""
+    inference_flux_lora()
+
+
+def validate_domain_t2v():
+    """Canonical Wan 2.2 domain LoRA validation after training."""
+    from videotuna.cli.inference_app import validate_domain_t2v_entry
+
+    validate_domain_t2v_entry()
+
+
+def validate_domain_i2v():
+    """Canonical Wan 2.2 domain I2V LoRA validation after training."""
+    from videotuna.cli.inference_app import validate_domain_i2v_entry
+
+    validate_domain_i2v_entry()
+
+
+def inference_wan2_2_i2v_720p():
+    from videotuna.cli.inference_app import inference_wan2_2_i2v_720p_entry
+
+    inference_wan2_2_i2v_720p_entry()
 
 
 def benchmark_attn_backends():

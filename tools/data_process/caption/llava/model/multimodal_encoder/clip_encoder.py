@@ -160,7 +160,6 @@ class CLIPVisionTower(nn.Module):
 
 class CLIPVisionTowerS2(CLIPVisionTower):
     def __init__(self, vision_tower, args, delay_load=False):
-
         self.s2_scales = getattr(args, "s2_scales", "336,672,1008")
         self.s2_scales = list(map(int, self.s2_scales.split(",")))
         self.s2_scales.sort()

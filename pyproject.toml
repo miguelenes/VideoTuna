@@ -13,11 +13,17 @@ packages = [{ include = "videotuna" }]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
-# Default install (`poetry install -E cuda`) = NVIDIA CUDA inference stack.
+# Default install (`poetry install -E cuda --with training`) = NVIDIA CUDA + domain LoRA training stack.
 # AMD ROCm: `poetry install -E rocm` then `poetry run install-rocm`
 # CPU dev:  `poetry install -E cpu` then `poetry run install-cpu-torch` (see docs/install-cpu.md)
 # Note: `cpu` extra is a marker; CPU torch wheels come from `install-cpu-torch`.
 # Training: `poetry install -E cuda --with training`
+# Optional faster video decode (Wan dataloading):
+#   `poetry install -E cuda --with training -E video-fast`
+# Optional Wan transformer quant (quanto backend):
+#   `poetry install -E cuda -E quanto`
+# Optional Flux Trackio experiment tracking:
+#   `poetry install -E cuda --with training -E trackio`
 # Dev:      `poetry install --with dev`
 
 [tool.poetry.dependencies]
@@ -25,9 +31,8 @@ python = "^3.11"
 av = "12.3.0"
 beautifulsoup4 = "4.12.3"
 peft = "^0.17.0"
-decord = "0.6.0"
 einops = "0.8.0"
-fire = "0.6.0"
+cyclopts = "^3.0.0"
 torch = { version = "^2.6.0", source = "pytorch-cu126" }
 torchvision = { version = "^0.21.0", source = "pytorch-cu126" }
 triton = { version = "3.2.0", markers = "platform_system == 'Linux' and platform_machine == 'x86_64'", optional = true }
@@ -59,28 +64,32 @@ pillow = "10.4.0"
 pyyaml = "6.0.2"
 rotary-embedding-torch = "0.6.5"
 requests = "2.32.3"
-safetensors = "^0.5.0"
+safetensors = "^0.8.0"
 timm = "1.0.8"
 tqdm = "4.66.5"
 transformers = "^4.48.0"
 imageio = "2.35.1"
 imageio-ffmpeg = "0.5.1"
 scipy = "1.14.1"
-beartype = "0.18.5"
-moviepy = "1.0.3"
+moviepy = "^2.2.1"
 open-clip-torch = "2.12.0"
 numpy = ">=1.26,<2.3"
-diffusers = "^0.36.0"
+diffusers = "^0.38.0"
 torchsde = "0.2.6"
 colorama = "0.4.6"
 torch-optimi = "^0.2.1"
-accelerate = "^1.2.0"
-torchao = "^0.9.0"
+accelerate = "^1.14.0"
+torchao = "^0.15.0"
 backports-tarfile = "^1.2.0"
+pydantic = "^2.0"
 pydantic-settings = "^2.8.0"
 dashscope = "^1.23.0"
+# Wan vendor only — videotuna/models/wan/wan/configs/
 easydict = "^1.13"
-librosa = "^0.11.0"
+torchcodec = { version = "~0.2.1", optional = true }
+optimum-quanto = { version = ">=0.2.6", optional = true }
+# Trackio 0.21+ requires huggingface-hub>=1.10; transformers pins hub<1.0.
+trackio = { version = "~0.20.0", optional = true }
 
 [tool.poetry.extras]
 cuda = [
@@ -106,6 +115,9 @@ rocm = []
 cpu = []
 cuda124 = []
 cuda126 = ["cuda"]
+video-fast = ["torchcodec"]
+quanto = ["optimum-quanto"]
+trackio = ["trackio"]
 
 [tool.poetry.group.training]
 optional = true
@@ -113,7 +125,6 @@ optional = true
 [tool.poetry.group.training.dependencies]
 deepspeed = "0.19.2"
 pytorch-lightning = "2.4.0"
-wandb = "0.17.8"
 tensorboard = "^2.19.0"
 pandas = "2.2.2"
 scikit-learn = "^1.6.1"
@@ -122,10 +133,8 @@ scikit-learn = "^1.6.1"
 optional = true
 
 [tool.poetry.group.dev.dependencies]
-black = "^24.0.0"
-isort = "^5.12.0"
 mypy = "^1.11.2"
-pytest = "7.2.0"
+pytest = "^9.1"
 pre-commit = "^4.1.0"
 coverage = "^7.6.1"
 ruff = "^0.6.8"
@@ -141,16 +150,13 @@ package = true
 training = [
     "deepspeed==0.19.2",
     "pytorch-lightning==2.4.0",
-    "wandb==0.17.8",
     "tensorboard>=2.19.0",
     "pandas==2.2.2",
     "scikit-learn>=1.6.1",
 ]
 dev = [
-    "black>=24.0.0",
-    "isort>=5.12.0",
     "mypy>=1.11.2",
-    "pytest==7.2.0",
+    "pytest>=9.1,<10",
     "pre-commit>=4.1.0",
     "coverage>=7.6.1",
     "ruff>=0.6.8",
@@ -187,6 +193,7 @@ install-rocm = 'scripts:install_rocm'
 install-cpu-torch = 'scripts:install_cpu_torch'
 install-flash-attn-rocm = 'scripts:install_flash_attn_rocm'
 coverage-report = 'scripts:coverage_report'
+coverage-gate = 'scripts:coverage_gate'
 format = 'scripts:code_format'
 format-check = 'scripts:code_format_check'
 lint = 'scripts:lint'
@@ -195,25 +202,26 @@ verify-cuda-extras = 'scripts.verify_cuda_extras:main'
 verify-cpu-torch = 'scripts.verify_cpu_torch:main'
 test = 'scripts:test'
 type-check = 'scripts:type_check'
-inference-flux-lora = 'scripts:inference_flux_lora'
-"inference-wan2.2-t2v-720p" = 'scripts:inference_wan2_2_t2v_720p'
+inference-flux-lora = 'videotuna.cli.inference_app:inference_flux_lora_entry'
+"inference-wan2.2-t2v-720p" = 'videotuna.cli.inference_app:inference_wan2_2_t2v_720p_entry'
 train-flux-lora = 'scripts:train_flux_lora'
 train-wan2-1-t2v-lora = 'scripts:train_wan2_1_t2v_lora'
+train-domain-t2i = 'scripts:train_domain_t2i'
+train-domain-t2v = 'scripts:train_domain_t2v'
+train-wan2-1-i2v-lora = 'scripts:train_wan2_1_i2v_lora'
+train-domain-i2v = 'scripts:train_domain_i2v'
+inference-domain-t2i = 'videotuna.cli.inference_app:inference_domain_t2i_entry'
+validate-domain-t2v = 'videotuna.cli.inference_app:validate_domain_t2v_entry'
+validate-domain-i2v = 'videotuna.cli.inference_app:validate_domain_i2v_entry'
+"inference-wan2.2-i2v-720p" = 'videotuna.cli.inference_app:inference_wan2_2_i2v_720p_entry'
 
 [tool.pytest.ini_options]
+testpaths = ["tests"]
 markers = [
     "gpu: tests that require an NVIDIA/ROCm GPU (skipped when torch.cuda.is_available() is False)",
     "rocm: tests that require an AMD ROCm GPU",
     "cpu_smoke: slow CPU integration tests (optional nightly)",
 ]
-
-[tool.black]
-line-length = 88
-target-version = ['py311']
-include = '\.pyi?$'
-
-[tool.isort]
-profile = "black"
 
 [[tool.mypy.overrides]]
 module = []
@@ -223,9 +231,24 @@ ignore_missing_imports = true
 mypy_path = "typings"
 
 [tool.ruff]
-select = ["E", "F", "C90"]
-ignore = []
-exclude = []
+line-length = 88
+target-version = "py311"
+exclude = ["tools/data_process"]
+
+[tool.ruff.lint]
+select = ["E", "F", "C90", "I"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["videotuna"]
+
+[tool.coverage.run]
+source = ["videotuna"]
+relative_files = true
+
+[tool.coverage.report]
+precision = 1
+show_missing = true
+skip_empty = true
 
 [tool.pyrefly]
 search-path = ["typings"]

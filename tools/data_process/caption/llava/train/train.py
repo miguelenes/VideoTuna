@@ -49,7 +49,7 @@ from llava.mm_utils import (
 )
 from llava.model import *
 from llava.train.llava_trainer import LLaVATrainer
-from llava.utils import process_video_with_decord, rank0_print
+from llava.utils import process_video_with_av, rank0_print
 from packaging import version
 from PIL import Image, ImageFile
 from torch.utils.data import Dataset
@@ -344,9 +344,7 @@ def safe_save_model_for_hf_trainer(trainer: transformers.Trainer, output_dir: st
                     os.path.join(mm_projector_folder, f"{current_folder}.bin"),
                 )
             else:
-                torch.save(
-                    weight_to_save, os.path.join(output_dir, "mm_projector.bin")
-                )
+                torch.save(weight_to_save, os.path.join(output_dir, "mm_projector.bin"))
         return
 
     if trainer.deepspeed:
@@ -1399,7 +1397,7 @@ class LazySupervisedDataset(Dataset):
                         except IOError:
                             print(f"Failed to read frame at path: {frame_path}")
                 else:
-                    video = process_video_with_decord(video_file, self.data_args)
+                    video = process_video_with_av(video_file, self.data_args)
 
                 processor = self.data_args.image_processor
                 image = processor.preprocess(video, return_tensors="pt")["pixel_values"]

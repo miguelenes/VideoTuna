@@ -38,6 +38,35 @@ def test_wan_low_vram_preset():
     assert cfg["inference"]["width"] == 1280
 
 
+def test_wan_low_vram_int8_quant_preset():
+    path = (
+        REPO_ROOT
+        / "configs"
+        / "inference"
+        / "presets"
+        / "low_vram_wan2_2_720p_int8.yaml"
+    )
+    cfg = _load_yaml(path)
+    assert cfg["inference"]["transformer_quant"] == "int8_wo"
+    assert cfg["inference"]["quant_backend"] == "torchao"
+    assert cfg["inference"]["enable_model_cpu_offload"] is True
+
+
+def test_wan_low_vram_fp8_quant_preset():
+    path = (
+        REPO_ROOT
+        / "configs"
+        / "inference"
+        / "presets"
+        / "low_vram_wan2_2_720p_fp8.yaml"
+    )
+    cfg = _load_yaml(path)
+    assert cfg["inference"]["transformer_quant"] == "fp8_wo"
+    assert cfg["inference"]["quant_backend"] == "torchao"
+    assert cfg["inference"]["enable_model_cpu_offload"] is True
+    assert cfg["inference"]["dtype"] == "bf16"
+
+
 def test_wan_balanced_preset():
     cfg = _load_yaml(BALANCED_PRESET)
     assert cfg["flow"]["params"]["pretrained_model_name_or_path"] == WAN_MODEL_ID

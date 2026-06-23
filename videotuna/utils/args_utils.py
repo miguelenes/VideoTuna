@@ -8,9 +8,14 @@ from typing import Union
 import torch
 from colorama import Fore, Style
 from loguru import logger
-from omegaconf import DictConfig, MissingMandatoryValue, OmegaConf
+from omegaconf import DictConfig, OmegaConf
 from pytorch_lightning import Trainer
 
+from videotuna.training.wan_lora.config import (
+    WanLoraTrainConfig,
+    validated_config_to_dictconfig,
+)
+from videotuna.utils.config_mapping import apply_config_mappings
 from videotuna.utils.lightning_utils import add_trainer_args_to_parser
 
 
@@ -52,17 +57,7 @@ def prepare_train_args(parser: argparse.ArgumentParser):
             if v is not None:
                 train_config[k] = v
 
-    if OmegaConf.select(config, "train.mapping") is not None:
-        for source_path, target_path in config.train.mapping.items():
-            if not path_exists(config, source_path):
-                raise ValueError(f"Error: invalid mapping {source_path} not exists")
-            if not path_exists(config, target_path):
-                raise ValueError(f"Error: invalid mapping {target_path} not exists")
-
-            value = OmegaConf.select(config, source_path)
-            if value is not None:
-                OmegaConf.update(config, target_path, value)
-                logger.info(f"update {target_path} by {source_path} value: {value}")
+    apply_config_mappings(config, section="train")
     logger.info(f"All Config: {OmegaConf.to_yaml(config)}")
 
     def resolve_dtype(dtype_str):
@@ -74,13 +69,19 @@ def prepare_train_args(parser: argparse.ArgumentParser):
         }
         return mapping.get(dtype_str)
 
-    OmegaConf.register_new_resolver("dtype_resolver", resolve_dtype)
+    if not OmegaConf.has_resolver("dtype_resolver"):
+        OmegaConf.register_new_resolver("dtype_resolver", resolve_dtype)
 
     ## extract trainer config
     trainer_config = config.train.lightning.trainer
     for k in get_nondefault_trainer_args(args):
         trainer_config[k] = getattr(args, k)
-    return config
+
+    resolved = OmegaConf.to_container(config, resolve=True)
+    if not isinstance(resolved, dict):
+        raise TypeError("Training config must resolve to a mapping")
+    validated = WanLoraTrainConfig.model_validate(resolved)
+    return validated_config_to_dictconfig(validated)
 
 
 def get_nondefault_trainer_args(args):
@@ -95,18 +96,7 @@ def get_nondefault_trainer_args(args):
     )
 
 
-# omegaconf has bug, does not work as expected
-def path_exists(cfg, path):
-    try:
-        OmegaConf.select(cfg, path, throw_on_missing=True)
-        return True
-    except MissingMandatoryValue:
-        return False
-
-
-def prepare_inference_args(
-    args: argparse.Namespace, config: DictConfig
-) -> DictConfig:
+def prepare_inference_args(args: argparse.Namespace, config: DictConfig) -> DictConfig:
     """
     Prepare the arguments by updating the config with the command line arguments.
 
@@ -114,7 +104,11 @@ def prepare_inference_args(
     :param config: The config object.
     :return: The updated config object.
     """
-    from videotuna.utils.inference_cli import prepare_cli_inference_args
+    from videotuna.utils.inference_cli import (
+        prepare_cli_inference_args,
+        validate_cpu_offload_flags,
+    )
+    from videotuna.utils.inference_profile import resolve_inference_profile
 
     prepare_cli_inference_args(args)
 
@@ -127,23 +121,15 @@ def prepare_inference_args(
             if v is not None:
                 inference_config[k] = v
 
+    resolve_inference_profile(inference_config)
+    validate_cpu_offload_flags(inference_config)
+
     check_args(inference_config)
     inference_config.savedir = process_savedir(inference_config.savedir)
     config.inference = inference_config
     print_inference_config(inference_config)
 
-    # update flow config with inference mapping config
-    if OmegaConf.select(config, "inference.mapping") is not None:
-        for source_path, target_path in config.inference.mapping.items():
-            if not path_exists(config, source_path):
-                raise ValueError(f"Error: invalid mapping {source_path} not exists")
-            if not path_exists(config, target_path):
-                raise ValueError(f"Error: invalid mapping {target_path} not exists")
-
-            value = OmegaConf.select(config, source_path)
-            if value is not None:
-                OmegaConf.update(config, target_path, value)
-                logger.info(f"update {target_path} by {source_path} value: {value}")
+    apply_config_mappings(config, section="inference")
 
     logger.info(f"All Config: {OmegaConf.to_yaml(config)}")
 
@@ -157,7 +143,8 @@ def prepare_inference_args(
         }
         return mapping.get(dtype_str)
 
-    OmegaConf.register_new_resolver("dtype_resolver", resolve_dtype)
+    if not OmegaConf.has_resolver("dtype_resolver"):
+        OmegaConf.register_new_resolver("dtype_resolver", resolve_dtype)
     resolved = OmegaConf.to_container(config, resolve=True)
     if not isinstance(resolved, dict):
         raise TypeError("Inference config must resolve to a mapping")

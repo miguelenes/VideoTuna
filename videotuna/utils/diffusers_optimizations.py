@@ -61,9 +61,7 @@ def apply_diffusers_optimizations(
 ) -> None:
     """Apply offload, VAE tiling/slicing, QKV fusion, attention, and cache APIs."""
     offload = resolve_offload_mode(args)
-    target_device = device or resolve_inference_device(
-        getattr(args, "device", None)
-    )
+    target_device = device or resolve_inference_device(getattr(args, "device", None))
     device_map = getattr(args, "device_map", None)
 
     if device_map == "auto" and offload == "none":
@@ -93,7 +91,7 @@ def apply_diffusers_optimizations(
 def _apply_device_map(pipe: Any, device: torch.device) -> None:
     """Spread large Diffusers models across visible GPUs (experimental)."""
     try:
-        from accelerate import infer_auto_device_map, dispatch_model
+        from accelerate import dispatch_model, infer_auto_device_map
     except ImportError as exc:
         raise RuntimeError(
             "device_map=auto requires accelerate. Install with: poetry install"

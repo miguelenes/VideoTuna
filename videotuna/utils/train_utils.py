@@ -1,15 +1,13 @@
-import logging
 import os
 from collections import OrderedDict
 
+import torch
 from omegaconf import OmegaConf
 
-mainlogger = logging.getLogger("mainlogger")
-
-
-import torch
-
 from videotuna.utils.load_weights import load_from_pretrainedSD_checkpoint
+from videotuna.utils.logging_config import bound_logger, configure_logging
+
+mainlogger = bound_logger(phase="t2v", flow="wanvideo")
 
 
 def init_workspace(name, logdir, model_config, lightning_config, rank=0):
@@ -278,21 +276,6 @@ def get_autoresume_path(logdir):
 
 
 def set_logger(logfile, name="mainlogger"):
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.INFO)
-
-    # Set the logger to prevent log propagation to the parent logger and print twice.
-    logger.propagate = False
-
-    fh = logging.FileHandler(logfile, mode="w")
-    fh.setLevel(logging.INFO)
-
-    ch = logging.StreamHandler()
-    ch.setLevel(logging.DEBUG)
-
-    fh.setFormatter(logging.Formatter("%(asctime)s-%(levelname)s: %(message)s"))
-    ch.setFormatter(logging.Formatter("%(message)s"))
-
-    logger.addHandler(fh)
-    logger.addHandler(ch)
-    return logger
+    """Configure loguru and return a bound training logger (legacy API)."""
+    configure_logging(log_file=logfile)
+    return bound_logger(phase="t2v", flow="wanvideo")

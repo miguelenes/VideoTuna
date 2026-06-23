@@ -63,7 +63,9 @@ def test_auto_backend_cuda_uses_flash_when_available():
 
 def test_sdpa_context_rocm_excludes_flash_kernel():
     with mock.patch.object(attention, "gpu_is_available", return_value=True):
-        with mock.patch.object(attention, "detect_compute_backend", return_value="rocm"):
+        with mock.patch.object(
+            attention, "detect_compute_backend", return_value="rocm"
+        ):
             with mock.patch("torch.nn.attention.sdpa_kernel") as mock_sdpa:
                 mock_sdpa.return_value.__enter__ = mock.Mock(return_value=None)
                 mock_sdpa.return_value.__exit__ = mock.Mock(return_value=False)

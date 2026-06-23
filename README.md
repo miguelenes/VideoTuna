@@ -1,67 +1,115 @@
 # PrivTune
 
-**PrivTune** is a private-domain LoRA training platform for still-image and short-video generation — Flux T2I style training, Wan 2.1 T2V LoRA training, and Wan 2.2 Diffusers validation inference.
-
-The Python package directory remains `videotuna/` for compatibility; Poetry project name is `privtune`.
+**PrivTune** is a private-domain LoRA training platform for still-image and short-video generation.
 
 Canonical runbook: [`docs/runbooks/domain-adult-finetune.md`](docs/runbooks/domain-adult-finetune.md)
 
-## Pipeline
+The Python package directory remains `videotuna/` for compatibility; Poetry project name is `privtune`.
 
-| Phase | Model | Data | Train | Validate |
-|-------|-------|------|-------|----------|
-| 1 — T2I | FLUX.1-dev LoRA | `data/t2i/domain/` | `poetry run train-flux-lora` | `poetry run inference-flux-lora` |
-| 2 — T2V | Wan 2.1 T2V LoRA | `data/t2v/domain/` | `poetry run train-wan2-1-t2v-lora` | `inference_new` + `wan_domain_lora_smoke` |
-| 3 — Production | Wan 2.2 Diffusers | trained LoRA ckpt | — | `poetry run inference-wan2.2-t2v-720p` |
+## What PrivTune does
 
-QA is **training callbacks + LoRA smoke inference** — no VBench eval group.
+| Phase | Model | Role |
+|-------|-------|------|
+| 1 — T2I | FLUX.1-dev LoRA | Train domain still-image style |
+| 2 — T2V | Wan 2.1 T2V LoRA | Train domain short-video motion |
+| 3 — Validate | Wan 2.2 Diffusers | Production domain LoRA validation via `validate-domain-t2v` (see [domain-adult-finetune.md](docs/runbooks/domain-adult-finetune.md)); general 720p inference profile in [wan2.2-inference-profile.md](docs/runbooks/wan2.2-inference-profile.md) |
 
-## Removed legacy commands
+QA uses **training ImageLogger callbacks** and **LoRA smoke inference** on held-out prompts — not generic T2V benchmarking (VBench removed).
 
-Legacy inference and training commands for VideoCrafter, DynamiCrafter, Open-Sora, StepVideo, Hunyuan, CogVideoX, Mochi, LTX, and ModelScope V2V are no longer available. VBench evaluation (`eval/`, `poetry install --with eval`) is removed. Use the domain pipeline in [`docs/runbooks/domain-adult-finetune.md`](docs/runbooks/domain-adult-finetune.md): `train-flux-lora`, `train-wan2-1-t2v-lora`, `inference-flux-lora`, and `inference-wan2.2-t2v-720p`.
+## Legal and data requirements
 
-## Get started
+- Use only **rights-cleared, consented** training data.
+- Never commit `data/`, checkpoints, `results/`, or `outputs/` to git.
 
-### Install
+## Install (default = training)
 
 PrivTune supports **Poetry** (default) and **[uv](https://docs.astral.sh/uv/)**.
-
-| Use case | Poetry | uv |
-|----------|--------|-----|
-| Inference NVIDIA (default) | `poetry install -E cuda` | `uv sync` |
-| Inference AMD ROCm | `poetry install -E rocm` then `poetry run install-rocm` | see [install-rocm.md](docs/install-rocm.md) |
-| CPU dev / CI | `poetry install -E cpu` then `poetry run install-cpu-torch` | see [install-cpu.md](docs/install-cpu.md) |
-| + Training (Flux + Wan LoRA) | `poetry install -E cuda --with training` | `uv sync --group training` |
-| + Dev (pytest, ruff) | `poetry install --with dev` | `uv sync --group dev` |
 
 ```shell
 conda create -n privtune python=3.11 -y
 conda activate privtune
 pip install poetry
 poetry install -E cuda --with training
-poetry run install-deepspeed   # required for Wan LoRA
+poetry run install-deepspeed   # required for Wan LoRA (DeepSpeed ZeRO-3)
 ```
+
+| Use case | Poetry | uv |
+|----------|--------|-----|
+| **Default (CUDA + training)** | `poetry install -E cuda --with training` | `uv sync --group training` |
+| Inference AMD ROCm | `poetry install -E rocm --with training` then `poetry run install-rocm` | Wan training requires CUDA; ROCm is inference + Flux training only — see [install-rocm.md](docs/install-rocm.md) |
+| CPU dev / CI | `poetry install -E cpu --with dev --with training` then `poetry run install-cpu-torch` | see [install-cpu.md](docs/install-cpu.md) |
+| + Dev (pytest, ruff) | add `--with dev` | `uv sync --group dev` |
+
+### Docker (optional)
+
+For containerized dev (e.g. Mac arm64), use the Compose image **`privtune`** (`privtune:latest` or `privtune:${TAG}`):
+
+```shell
+export HOST_UID=$(id -u) HOST_GID=$(id -g)
+docker compose build privtune
+docker compose run --rm privtune bash
+# inside container: poetry install -E cuda --with training
+```
+
+The legacy **`videotune`** Compose service and `videotune:latest` image tag remain as a backward-compatible alias (deprecated). A separate legacy all-in-one RunPod image lives under [`docker/Dockerfile`](docker/Dockerfile) and is not the recommended training path.
 
 See [`docs/vendor-policy.md`](docs/vendor-policy.md) for vendored upstream policy.
 
-### Phase 1 — Flux T2I LoRA
+## Data preparation
+
+**Phase 1 — still images** (`data/t2i/domain/`):
+
+```
+data/t2i/domain/
+  0001.jpg
+  0001.txt          # e.g. "sks_style, portrait, studio lighting"
+```
+
+Use a consistent trigger token (default: `sks_style`) in every `.txt` caption file.
+
+**Phase 2 — short video** (`data/t2v/domain/`):
+
+```
+data/t2v/domain/
+  metadata.csv
+  videos/
+    clip001.mp4
+```
+
+See the runbook for CSV format and ffmpeg re-encode notes.
+
+## Train
 
 ```bash
-poetry run train-flux-lora \
-  --config_path configs/006_flux/domain_adult_t2i.json \
-  --data_config_path configs/006_flux/domain_adult_t2i_data.json
+# Phase 1 — Flux T2I domain LoRA
+poetry run train-domain-t2i
 
-poetry run inference-flux-lora \
+# Phase 2 — Wan 2.1 T2V domain LoRA
+poetry run train-domain-t2v
+```
+
+Configs: [`configs/domain/flux_t2i.json`](configs/domain/flux_t2i.json), [`configs/domain/flux_t2i_data.json`](configs/domain/flux_t2i_data.json), [`configs/domain/wan_t2v_lora.yaml`](configs/domain/wan_t2v_lora.yaml).
+
+Legacy aliases `train-flux-lora` and `train-wan2-1-t2v-lora` remain available.
+
+Outputs:
+
+- Phase 1: `results/train/flux-domain-adult/checkpoint-*/`
+- Phase 2: `results/train/train_wan_domain_t2v_lora_*/`
+
+## Validate
+
+**Phase 1 (this milestone):**
+
+```bash
+poetry run inference-domain-t2i \
   --lorackpt results/train/flux-domain-adult/checkpoint-2000 \
   --prompt "sks_style, portrait, soft lighting"
 ```
 
-### Phase 2 — Wan 2.1 T2V LoRA
+**Phase 2 interim (Wan 2.1 native smoke):**
 
 ```bash
-poetry run train-wan2-1-t2v-lora \
-  --base configs/008_wanvideo/wan2_1_t2v_14B_lora_domain.yaml
-
 poetry run python scripts/inference_new.py \
   --config configs/inference/presets/wan_domain_lora_smoke.yaml \
   --ckpt_path checkpoints/wan/Wan2.1-T2V-14B \
@@ -69,29 +117,34 @@ poetry run python scripts/inference_new.py \
   --prompt "sks_style, slow camera push-in"
 ```
 
-### Phase 3 — Wan 2.2 validation inference
+**Phase 2 production (Wan 2.2 domain LoRA validation):**
 
 ```bash
-poetry run inference-wan2.2-t2v-720p \
-  --config configs/inference/presets/balanced_wan2_2_720p.yaml \
+poetry run validate-domain-t2v \
   --trained_ckpt results/train/.../denoiser-000-000000025.ckpt \
-  --prompt "sks_style, cinematic lighting"
+  --prompt_file inputs/t2v/domain_prompt.txt
 ```
 
-See [`docs/runbooks/wan2.2-inference-profile.md`](docs/runbooks/wan2.2-inference-profile.md).
+See [`docs/runbooks/domain-adult-finetune.md`](docs/runbooks/domain-adult-finetune.md) for VRAM presets and known bridge limitations. For general Wan 2.2 720p inference (non-domain), see [`docs/runbooks/wan2.2-inference-profile.md`](docs/runbooks/wan2.2-inference-profile.md).
 
-### Cloud GPU training
+## VRAM and hardware
 
-Rented GPU provisioning (Vast.ai): [`docs/runbooks/cloud-gpu-training.md`](docs/runbooks/cloud-gpu-training.md)
+| Phase | Model | Peak VRAM | Notes |
+|-------|-------|-----------|-------|
+| 1 — T2I | Flux LoRA @ 512px | ~24–40 GB | 1 GPU |
+| 2 — T2V | Wan 2.1 LoRA @ 480×832×81 | ~38 GB | 1 GPU + DeepSpeed ZeRO-3 offload |
 
-### CPU dev (no weights)
+## CPU dev / CI gates
 
 ```bash
-poetry install -E cpu --with dev
+poetry install -E cpu --with dev --with training
 poetry run install-cpu-torch
+poetry run lint
+poetry run format-check
+poetry run test tests/test_import_smoke.py -q
 poetry run test tests/test_domain_finetune_configs.py -q
 poetry run test tests/test_flux_lora_train_smoke.py -q
-poetry run test tests/test_import_smoke.py -q
+poetry run test tests/test_poetry_scripts.py -q
 ```
 
 ## Environment variables
@@ -104,26 +157,22 @@ poetry run test tests/test_import_smoke.py -q
 | `VIDEOTUNA_COMPUTE_BACKEND` | `auto`, `cuda`, `rocm`, `cpu` |
 | `HF_TOKEN` | Gated models (FLUX.1-dev) |
 
-## Verification
-
-```bash
-poetry run lint
-poetry run test tests/test_import_smoke.py -q
-```
-
 ## Project layout
 
 ```
 videotuna/
-  flow/          # wanvideo (train), diffusers_video (Flux + Wan 2.2 infer)
-  models/wan/    # Wan 2.1 native training stack
-  training/      # flux_lora trainer
-  utils/         # device, attention, inference CLI
-scripts/         # inference_new.py, train_new.py, train_flux_lora.py
-configs/         # 006_flux (domain T2I), 008_wanvideo (domain T2V)
-cloud/vast/      # GPU provisioning scripts
-docs/runbooks/   # domain-adult-finetune, wan2.2-inference-profile
+  training/flux_lora/   # Phase 1 trainer
+  models/wan/           # Phase 2 native stack
+  flow/                 # wanvideo (train), diffusers_video (infer)
+configs/domain/         # flux_t2i*.json, wan_t2v_lora.yaml, cloud smoke variants
+configs/inference/presets/  # smoke + Wan 2.2 inference presets
+cloud/vast/             # rented GPU provisioning
+docs/runbooks/          # domain-adult-finetune, wan2.2-inference-profile
 ```
+
+## Cloud GPU training
+
+Rented GPU provisioning (Vast.ai): [`docs/runbooks/cloud-gpu-training.md`](docs/runbooks/cloud-gpu-training.md)
 
 ## Related docs
 
@@ -132,7 +181,8 @@ docs/runbooks/   # domain-adult-finetune, wan2.2-inference-profile
 | [domain-adult-finetune.md](docs/runbooks/domain-adult-finetune.md) | Full domain training runbook |
 | [checkpoints.md](docs/checkpoints.md) | Weight download layout |
 | [MODEL_VERSIONS.md](docs/MODEL_VERSIONS.md) | FLUX.1 + Wan 2.1/2.2 pins |
-| [capability-matrix.md](docs/capability-matrix.md) | Supported models matrix |
+| [cloud-gpu-training.md](docs/runbooks/cloud-gpu-training.md) | Vast.ai provisioning |
+| [vendor-policy.md](docs/vendor-policy.md) | Vendored upstream policy |
 
 ## License
 

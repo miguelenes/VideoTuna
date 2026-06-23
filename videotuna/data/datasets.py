@@ -10,6 +10,7 @@ import pandas as pd
 import torch
 from torchvision.datasets.folder import pil_loader
 from torchvision.transforms import Compose
+from torchvision.transforms.functional import pil_to_tensor
 
 from videotuna.data.datasets_utils import (
     is_image,
@@ -89,10 +90,12 @@ class DatasetFromCSV(torch.utils.data.Dataset):
         if "video_length" in kwargs:
             num_frames = kwargs.pop("video_length")
         self.csv_path = csv_path
-        if isinstance(csv_path, str):
-            csv_path = [csv_path]
-        if data_root is None or isinstance(data_root, str):
-            data_root = [data_root]
+        if isinstance(csv_path, (str, os.PathLike)):
+            csv_path = [str(csv_path)]
+        if data_root is None:
+            data_root = [None]
+        elif isinstance(data_root, (str, os.PathLike)):
+            data_root = [str(data_root)]
 
         if len(data_root) == 1:
             data_root = data_root * len(csv_path)
@@ -149,11 +152,21 @@ class DatasetFromCSV(torch.utils.data.Dataset):
         self.data_list = []
         for i, path in enumerate(csv_path):
             df = pd.read_csv(path)
-            self.check_df(df, path)
+            self._validate_csv_schema(df, path)
+            pair_mode = (
+                "video_path" in df.columns
+                and "image_path" in df.columns
+                and "path" not in df.columns
+            )
             for _, row in df.iterrows():
-                video_path = row.get(
-                    "path", row.get("video_path", row.get("image_path"))
-                )
+                if pair_mode:
+                    video_path = row["video_path"]
+                    image_path = row["image_path"]
+                else:
+                    video_path = row.get(
+                        "path", row.get("video_path", row.get("image_path"))
+                    )
+                    image_path = row.get("image_path", None)
                 caption = row["caption"]
 
                 if not self._is_valid_data(row):
@@ -161,7 +174,11 @@ class DatasetFromCSV(torch.utils.data.Dataset):
 
                 if data_root[i]:
                     video_path = os.path.join(data_root[i], video_path)
+                    if image_path is not None:
+                        image_path = os.path.join(data_root[i], image_path)
                 data_dict = {"path": video_path, "caption": caption}
+                if image_path is not None:
+                    data_dict["image_path"] = image_path
                 data_dict["fps"] = (
                     row.get("fps") / self.frame_interval
                     if row.get("fps", None)
@@ -173,9 +190,10 @@ class DatasetFromCSV(torch.utils.data.Dataset):
 
                 self.data_list.append(data_dict)
 
-    def getitem(self, index):
+    def getitem(self, index):  # noqa: C901
         data = copy.deepcopy(self.data_list[index])
         path = data.pop("path")
+        image_path = data.pop("image_path", None)
         if is_video(path):
             total_frames = get_video_frame_count(path)
             if total_frames < self.frame_limit:
@@ -224,7 +242,26 @@ class DatasetFromCSV(torch.utils.data.Dataset):
 
         if self.image_to_video:
             data["image"] = data["video"][:, :1, :, :].clone()  # CTHW (3，1，H, W)
+        elif image_path is not None:
+            data["image"] = self._load_conditioning_image(image_path)
         return data
+
+    def _load_conditioning_image(self, image_path: str) -> torch.Tensor:
+        if not is_image(image_path):
+            raise ValueError(f"Unsupported conditioning image format: {image_path}")
+        frame = pil_to_tensor(pil_loader(image_path)).unsqueeze(0)
+        if "video" in self.transform:
+            spatial = [
+                t
+                for t in self.transform["video"].transforms
+                if t.__class__.__name__ != "TemporalRandomCrop"
+            ]
+            frame = Compose(spatial)(frame)
+        else:
+            frame = self.transform["image"](pil_loader(image_path))
+            if frame.dim() == 4:
+                frame = frame.unsqueeze(0)
+        return frame.permute(1, 0, 2, 3)
 
     def __getitem__(self, index):
         cnt = 100
@@ -270,17 +307,64 @@ class DatasetFromCSV(torch.utils.data.Dataset):
 
         return True
 
-    @staticmethod
-    def check_df(df, df_path):
-        if (
-            "path" not in df.columns
-            and "video_path" not in df.columns
-            and "image_path" not in df.columns
-        ):
-            raise ValueError(f"The csv file {df_path} must have a column named 'path'.")
-        elif "caption" not in df.columns:
+    def _validate_csv_schema(self, df, df_path):
+        columns = set(df.columns)
+        has_path = "path" in columns
+        has_video_path = "video_path" in columns
+        has_image_path = "image_path" in columns
+        pair_mode = has_video_path and has_image_path and not has_path
+
+        if not (has_path or has_video_path or has_image_path):
+            raise ValueError(
+                f"The csv file {df_path} must have a column named 'path', "
+                "'video_path', or 'image_path'."
+            )
+        if "caption" not in columns:
             raise ValueError(
                 f"The csv file {df_path} must have a column named 'caption'."
+            )
+
+        if self.image_to_video:
+            if pair_mode:
+                raise ValueError(
+                    f"The csv file {df_path} uses image_path+video_path pair columns, "
+                    "but image_to_video=true expects first-frame mode with a 'path' "
+                    "column only — set image_to_video: false in config for pair mode "
+                    "(see docs/runbooks/domain-adult-finetune.md)."
+                )
+            if not has_path:
+                raise ValueError(
+                    f"The csv file {df_path} must have a 'path' column when "
+                    "image_to_video=true (first-frame conditioning mode)."
+                )
+            return
+
+        if has_video_path and not has_image_path:
+            raise ValueError(
+                f"The csv file {df_path} pair mode requires an 'image_path' column."
+            )
+        if has_image_path and not has_video_path and not has_path:
+            raise ValueError(
+                f"The csv file {df_path} with image_path requires 'video_path' or "
+                "'path' when image_to_video=false."
+            )
+
+    @staticmethod
+    def check_df(df, df_path):
+        """Backward-compatible CSV validation without image_to_video context."""
+        columns = set(df.columns)
+        has_path = "path" in columns
+        has_video_path = "video_path" in columns
+        has_image_path = "image_path" in columns
+        if not (has_path or has_video_path or has_image_path):
+            raise ValueError(f"The csv file {df_path} must have a column named 'path'.")
+        if "caption" not in columns:
+            raise ValueError(
+                f"The csv file {df_path} must have a column named 'caption'."
+            )
+        if has_video_path and not has_image_path:
+            raise ValueError(
+                f"The csv file {df_path} pair mode requires an 'image_path' column."
             )
 
 

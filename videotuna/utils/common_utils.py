@@ -15,6 +15,7 @@ from colorama import Fore, Style
 from loguru import logger
 from omegaconf import DictConfig, OmegaConf
 
+from videotuna.settings import get_settings
 from videotuna.utils.attention import (
     get_attn_backend_requested,
     get_resolved_attn_backend,
@@ -26,6 +27,7 @@ from videotuna.utils.device_utils import (
     synchronize_accelerator,
 )
 from videotuna.utils.inference_cli import resolve_offload_mode
+from videotuna.utils.lora_utils import parameter_matches_lora_target
 
 precision_to_dtype = {
     "float32": torch.float32,
@@ -70,11 +72,7 @@ def check_istarget(name, para_list):
     name: full name of source para
     para_list: partial name of target para
     """
-    istarget = False
-    for para in para_list:
-        if para in name:
-            return True
-    return istarget
+    return parameter_matches_lora_target(name, para_list)
 
 
 def get_dtype_from_str(dtype_str):
@@ -109,13 +107,10 @@ def instantiate_from_config(config, resolve=False) -> Any:
         raise KeyError("Expected key `target` to instantiate.")
     target = config["target"]
     is_videotuna_diffusers_flow = target.endswith("DiffusersVideoFlow")
-    if (
-        not is_videotuna_diffusers_flow
-        and (
-            "diffusers" in target
-            or target.startswith("transformers")
-            or config.get("use_from_pretrained", False)
-        )
+    if not is_videotuna_diffusers_flow and (
+        "diffusers" in target
+        or target.startswith("transformers")
+        or config.get("use_from_pretrained", False)
     ):
         params = get_params(config, resolve)
         if isinstance(params.get("pretrained_model_name_or_path"), str):
@@ -271,15 +266,17 @@ def monitor_resources(
                 sample["attention_backend_requested"] = get_attn_backend_requested()
                 sample["attention_backend_resolved"] = get_resolved_attn_backend()
                 sample["compute_backend"] = detect_compute_backend()
-                compile_on = os.environ.get("VIDEOTUNA_TORCH_COMPILE", "0") == "1"
+                compile_on = get_settings().torch_compile
                 sample["torch_compile"] = compile_on
-                sample["compile_mode"] = get_torch_compile_mode() if compile_on else None
+                sample["compile_mode"] = (
+                    get_torch_compile_mode() if compile_on else None
+                )
                 sample["result"] = result
                 if dev_idx is not None and gpu_is_available():
                     sample["gpu_index"] = dev_idx
                     sample["gpu_name"] = torch.cuda.get_device_name(dev_idx)
                 if inference_config is not None:
-                    sample["offload_mode"] = _offload_mode_from_config(inference_config)
+                    sample["offload_mode"] = resolve_offload_mode(inference_config)
                     sample["dtype"] = getattr(inference_config, "dtype", None)
                     sample["memory_preset"] = getattr(
                         inference_config, "memory_preset", None
@@ -293,14 +290,6 @@ def monitor_resources(
         return wrapper
 
     return decorator
-
-
-def _offload_mode_from_config(config: Any) -> str:
-    if getattr(config, "enable_sequential_cpu_offload", False):
-        return "sequential"
-    if getattr(config, "enable_model_cpu_offload", False):
-        return "model"
-    return "none"
 
 
 def save_metrics(
@@ -343,7 +332,7 @@ def save_metrics(
             "attention_backend": get_resolved_attn_backend(),
             "attention_backend_requested": get_attn_backend_requested(),
             "attention_backend_resolved": get_resolved_attn_backend(),
-            "torch_compile": os.environ.get("VIDEOTUNA_TORCH_COMPILE", "0") == "1",
+            "torch_compile": get_settings().torch_compile,
         }
         if config is not None:
             metrics["offload_mode"] = resolve_offload_mode(config)

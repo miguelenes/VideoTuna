@@ -2,12 +2,17 @@
 # Set: PROVISIONING_MANIFEST=https://raw.githubusercontent.com/miguelenes/VideoTuna/main/cloud/vast/provisioning.yaml
 version: 1
 
+# settings.retry — per-download backoff for manifest phases (apt, git, conditional_downloads).
+# post_commands (bootstrap.sh) are fail-fast at the provisioner; bootstrap uses provision_retry.py
+# with the same backoff for poetry install / hf download. See docs/runbooks/cloud-gpu-training.md.
 settings:
   retry:
     max_attempts: 5
     initial_delay: 2
     backoff_multiplier: 2
 
+# on_failure — whole-pipeline retry when any phase exits non-zero (including bootstrap.sh).
+# action: continue keeps the instance up after retries are exhausted. Override via PROVISIONER_* env.
 on_failure:
   action: continue
   max_retries: 3
@@ -33,6 +38,8 @@ git_repos:
     ref: main
     pull_if_exists: true
 
+# Manifest-phase HF pulls honor instance env HF_XET_HIGH_PERFORMANCE=1.
+# Set VIDEOTUNA_FAST_HF_DOWNLOAD=1 at rent time (bootstrap maps it for post_commands + .env).
 conditional_downloads:
   - when: hf_token_valid
     downloads:
@@ -40,6 +47,8 @@ conditional_downloads:
         dest: /workspace/checkpoints/flux/FLUX.1-dev
       - url: https://huggingface.co/Wan-AI/Wan2.1-T2V-14B
         dest: /workspace/checkpoints/wan/Wan2.1-T2V-14B
+      - url: https://huggingface.co/Wan-AI/Wan2.1-I2V-14B-480P
+        dest: /workspace/checkpoints/wan/Wan2.1-I2V-14B-480P
 
 post_commands:
   - bash /workspace/VideoTuna/cloud/vast/bootstrap.sh

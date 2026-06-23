@@ -20,6 +20,7 @@ from abc import ABC, abstractmethod
 
 import torch
 import torch.nn as nn
+
 from llava.constants import (
     DEFAULT_IM_END_TOKEN,
     DEFAULT_IM_START_TOKEN,
@@ -36,7 +37,6 @@ from .multimodal_resampler.builder import build_vision_resampler
 
 
 class LlavaMetaModel:
-
     def __init__(self, config):
         super(LlavaMetaModel, self).__init__(config)
 
@@ -190,7 +190,6 @@ def unpad_image(tensor, original_size):
 
 
 class LlavaMetaForCausalLM(ABC):
-
     @abstractmethod
     def get_model(self):
         pass

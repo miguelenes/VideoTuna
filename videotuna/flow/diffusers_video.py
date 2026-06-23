@@ -1,4 +1,4 @@
-"""Unified Diffusers pipeline flow for Flux T2I and Wan 2.2 T2V."""
+"""Unified Diffusers pipeline flow for Flux T2I and Wan 2.2 T2V / I2V."""
 
 from __future__ import annotations
 
@@ -7,18 +7,25 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
-from diffusers import FluxPipeline, WanPipeline
+from diffusers import FluxPipeline, WanImageToVideoPipeline, WanPipeline
 from diffusers.utils import export_to_video
-from loguru import logger
 from omegaconf import DictConfig
 
 from videotuna.base.generation_base import GenerationBase
+from videotuna.settings import get_settings
 from videotuna.utils.common_utils import monitor_resources
 from videotuna.utils.device_utils import resolve_inference_device
 from videotuna.utils.diffusers_optimizations import (
     apply_diffusers_optimizations,
     transformer_cache_context,
 )
+from videotuna.utils.diffusers_quantization import (
+    build_pipeline_quantization_config,
+    normalize_quant_backend,
+    normalize_transformer_quant,
+    resolve_quant_components,
+)
+from videotuna.utils.logging_config import bound_logger, resolve_device_label
 from videotuna.utils.wan_lora_bridge import (
     apply_native_wan_lora_to_pipeline,
     is_native_wan_lora_ckpt,
@@ -45,6 +52,11 @@ WAN_T2V_VARIANTS = {
     "2.2": "Wan-AI/Wan2.2-T2V-A14B-Diffusers",
 }
 
+WAN_I2V_VARIANTS = {
+    "2.1": "Wan-AI/Wan2.1-I2V-14B-480P-Diffusers",
+    "2.2": "Wan-AI/Wan2.2-I2V-A14B-Diffusers",
+}
+
 MODEL_REGISTRY: Dict[Tuple[str, str], Dict[str, Any]] = {
     ("flux", "t2i"): {
         "pipeline_cls": FluxPipeline,
@@ -55,6 +67,13 @@ MODEL_REGISTRY: Dict[Tuple[str, str], Dict[str, Any]] = {
         "pipeline_cls": WanPipeline,
         "default_id": "Wan-AI/Wan2.2-T2V-A14B-Diffusers",
         "variants": WAN_T2V_VARIANTS,
+        "export_fps": 16,
+        "negative_prompt": WAN_DEFAULT_NEGATIVE_PROMPT,
+    },
+    ("wan", "i2v"): {
+        "pipeline_cls": WanImageToVideoPipeline,
+        "default_id": "Wan-AI/Wan2.2-I2V-A14B-Diffusers",
+        "variants": WAN_I2V_VARIANTS,
         "export_fps": 16,
         "negative_prompt": WAN_DEFAULT_NEGATIVE_PROMPT,
     },
@@ -86,7 +105,7 @@ def resolve_torch_dtype(dtype_flag: Optional[str]) -> torch.dtype:
 
 
 class DiffusersVideoFlow(GenerationBase):
-    """Diffusers-native inference for Flux T2I and Wan 2.2 T2V."""
+    """Diffusers-native inference for Flux T2I and Wan 2.2 T2V / I2V."""
 
     def __init__(
         self,
@@ -114,6 +133,9 @@ class DiffusersVideoFlow(GenerationBase):
         self._lora_path: Optional[str] = None
         self._dtype = torch.bfloat16
         self._inference_device: Optional[str] = None
+        self._transformer_quant = "none"
+        self._quant_backend = "torchao"
+        self._log = bound_logger(phase=self.mode, flow="diffusers_video")
 
     def from_pretrained(
         self,
@@ -136,7 +158,7 @@ class DiffusersVideoFlow(GenerationBase):
         elif denoiser_ckpt_path is not None and self.model_family == "wan":
             self._lora_path = str(denoiser_ckpt_path)
         self._inference_device = device
-        logger.info(
+        self._log.info(
             "DiffusersVideoFlow: model_id={} family={} mode={} lora={}",
             self._model_id,
             self.model_family,
@@ -160,7 +182,22 @@ class DiffusersVideoFlow(GenerationBase):
         key = (self.model_family, self.mode)
         entry = MODEL_REGISTRY[key]
         pipeline_cls = entry["pipeline_cls"]
-        self.pipeline = pipeline_cls.from_pretrained(self._model_id, torch_dtype=dtype)
+        load_kwargs: Dict[str, Any] = {"torch_dtype": dtype}
+        quant = normalize_transformer_quant(self._transformer_quant)
+        if quant != "none":
+            components = resolve_quant_components(
+                self.model_family,
+                self.model_variant,
+                self.mode,
+            )
+            quant_config = build_pipeline_quantization_config(
+                transformer_quant=quant,
+                quant_backend=normalize_quant_backend(self._quant_backend),
+                components=components,
+            )
+            if quant_config is not None:
+                load_kwargs["quantization_config"] = quant_config
+        self.pipeline = pipeline_cls.from_pretrained(self._model_id, **load_kwargs)
         self._load_lora_weights()
 
     def _load_lora_weights(self) -> None:
@@ -169,17 +206,30 @@ class DiffusersVideoFlow(GenerationBase):
         pipeline = self._require_pipeline()
         if self.model_family == "flux":
             pipeline.load_lora_weights(self._lora_path)
-            logger.info("Loaded Flux LoRA weights from {}", self._lora_path)
+            self._log.info("Loaded Flux LoRA weights from {}", self._lora_path)
             return
         if self.model_family == "wan":
             if is_native_wan_lora_ckpt(self._lora_path):
-                apply_native_wan_lora_to_pipeline(pipeline, self._lora_path)
-                logger.info(
-                    "Applied native Wan 2.1 LoRA bridge from {}", self._lora_path
+                if self.mode == "i2v":
+                    from videotuna.utils.wan_lora_bridge import (
+                        apply_native_wan_lora_to_i2v_pipeline,
+                    )
+
+                    reports = apply_native_wan_lora_to_i2v_pipeline(
+                        pipeline, self._lora_path
+                    )
+                else:
+                    reports = apply_native_wan_lora_to_pipeline(
+                        pipeline, self._lora_path
+                    )
+                self._log.info(
+                    "Applied native Wan 2.1 LoRA bridge from {} ({})",
+                    self._lora_path,
+                    [r.as_dict() for r in reports],
                 )
                 return
             pipeline.load_lora_weights(self._lora_path)
-            logger.info("Loaded Wan Diffusers LoRA from {}", self._lora_path)
+            self._log.info("Loaded Wan Diffusers LoRA from {}", self._lora_path)
 
     def _resolve_inputs(
         self, args: DictConfig
@@ -187,6 +237,14 @@ class DiffusersVideoFlow(GenerationBase):
         if self.mode in ("t2v", "t2i"):
             prompts = self.load_inference_inputs(args.prompt_file, "t2v")
             return prompts, [None] * len(prompts)
+        if self.mode == "i2v":
+            prompt_dir = getattr(args, "prompt_dir", None)
+            if not prompt_dir:
+                raise ValueError(
+                    "I2V inference requires --prompt_dir with paired images"
+                )
+            prompts, image_paths = self.load_inference_inputs(prompt_dir, "i2v")
+            return prompts, image_paths
         raise ValueError(f"Unsupported mode: {self.mode}")
 
     @torch.inference_mode()
@@ -198,7 +256,17 @@ class DiffusersVideoFlow(GenerationBase):
             self._lora_path = args.lorackpt
         if getattr(args, "trained_ckpt", None) and self.model_family == "wan":
             self._lora_path = args.trained_ckpt
+        self._transformer_quant = normalize_transformer_quant(
+            getattr(args, "transformer_quant", None)
+        )
+        self._quant_backend = normalize_quant_backend(
+            getattr(args, "quant_backend", None)
+        )
         self._dtype = resolve_torch_dtype(getattr(args, "dtype", None))
+        inference_device = resolve_inference_device(
+            getattr(args, "device", None) or self._inference_device
+        )
+        self._log = self._log.bind(device=resolve_device_label(inference_device))
         if self.pipeline is None:
             self._load_pipeline(self._dtype)
         pipeline = self._require_pipeline()
@@ -213,9 +281,7 @@ class DiffusersVideoFlow(GenerationBase):
             args,
             model_family=self.model_family,
             disable_progress_bar=False,
-            device=resolve_inference_device(
-                getattr(args, "device", None) or self._inference_device
-            ),
+            device=inference_device,
         )
 
         prompts, media_paths = self._resolve_inputs(args)
@@ -239,7 +305,7 @@ class DiffusersVideoFlow(GenerationBase):
         gpu_metrics: List[float] = []
         time_metrics: List[float] = []
 
-        for idx, (prompt, _media_path) in enumerate(zip(prompts, media_paths)):
+        for idx, (prompt, media_path) in enumerate(zip(prompts, media_paths)):
             for sample_idx in range(n_samples):
                 sample_seed = seed + idx * n_samples + sample_idx
                 result = self._generate_sample(
@@ -251,6 +317,7 @@ class DiffusersVideoFlow(GenerationBase):
                     height=height,
                     width=width,
                     args=args,
+                    image_path=media_path,
                 )
                 per_sample.append(result)
                 gpu_metrics.append(result.get("peak_vram_gb", -1.0))
@@ -263,7 +330,7 @@ class DiffusersVideoFlow(GenerationBase):
                     sample_idx,
                 )
 
-        if os.environ.get("VIDEOTUNA_METRICS_OWNER", "script") == "flow":
+        if get_settings().metrics_owner == "flow":
             self.save_metrics(
                 gpu=gpu_metrics,
                 time=time_metrics,
@@ -284,7 +351,10 @@ class DiffusersVideoFlow(GenerationBase):
         height: Optional[int],
         width: Optional[int],
         args: DictConfig,
+        image_path: Optional[str] = None,
     ) -> Any:
+        from PIL import Image
+
         generator = torch.Generator().manual_seed(seed)
         pipe_kwargs: Dict[str, Any] = {
             "prompt": prompt,
@@ -318,6 +388,10 @@ class DiffusersVideoFlow(GenerationBase):
                 )
                 if neg:
                     pipe_kwargs["negative_prompt"] = neg
+                if self.mode == "i2v":
+                    if not image_path:
+                        raise ValueError("I2V generation requires an image path")
+                    pipe_kwargs["image"] = Image.open(image_path).convert("RGB")
                 output = pipeline(**pipe_kwargs).frames[0]
             else:
                 raise ValueError(f"Unknown model family: {self.model_family}")

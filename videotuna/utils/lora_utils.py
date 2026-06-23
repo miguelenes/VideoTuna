@@ -29,6 +29,22 @@ def resolve_lora_target_modules(
     raise TypeError(f"Unsupported target_modules type: {type(target_modules)}")
 
 
+def _module_path_from_param_name(param_name: str) -> str:
+    for suffix in (".weight", ".bias"):
+        if param_name.endswith(suffix):
+            return param_name[: -len(suffix)]
+    return param_name
+
+
+def parameter_matches_lora_target(param_name: str, target_modules: list[str]) -> bool:
+    """Return True when a parameter name matches a LoRA target module token."""
+    module_path = _module_path_from_param_name(param_name)
+    for target in target_modules:
+        if module_path == target or module_path.endswith(f".{target}"):
+            return True
+    return False
+
+
 def _kappa_targets(model: nn.Module) -> List[str]:
     try:
         from peft.helpers import find_kappa_target_modules
@@ -46,6 +62,4 @@ def _kappa_targets(model: nn.Module) -> List[str]:
 
 def collect_lora_parameter_names(model: nn.Module) -> set[str]:
     """Return parameter names that belong to LoRA adapters."""
-    return {
-        name for name, _ in model.named_parameters() if "lora" in name.lower()
-    }
+    return {name for name, _ in model.named_parameters() if "lora" in name.lower()}

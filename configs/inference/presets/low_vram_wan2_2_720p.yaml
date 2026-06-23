@@ -25,3 +25,8 @@ inference:
   enable_vae_tiling: true
   dtype: fp16
   min_vram_gb: 10
+  # Optional transformer quant (CUDA only):
+  #   int8_wo — low_vram_wan2_2_720p_int8.yaml (sm >= 8.0)
+  #   fp8_wo  — low_vram_wan2_2_720p_fp8.yaml (Ada/Hopper sm >= 8.9)
+  # transformer_quant: int8_wo
+  # quant_backend: torchao
