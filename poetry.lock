@@ -4496,6 +4496,30 @@ files = [
 dev = ["bitsandbytes", "blobfile", "diskcache", "expecttest", "fire", "hypothesis", "importlib_metadata", "lm_eval", "matplotlib", "ninja", "packaging", "pandas", "parameterized", "pre-commit", "pycocotools", "pytest (==7.4.0)", "ruff (==0.6.8)", "sentencepiece", "tabulate", "tiktoken", "tqdm", "transformers", "unittest-xml-reporting"]
 
 [[package]]
+name = "torchcodec"
+version = "0.2.1"
+description = "A video decoder for PyTorch"
+optional = true
+python-versions = ">=3.8"
+groups = ["main"]
+markers = "extra == \"video-fast\""
+files = [
+    {file = "TorchCodec-0.2.1-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:939d6ab021d3d43c2b5d439f3e5b69ef5a061cbaccffc7f4a2c9d2eedd026087"},
+    {file = "TorchCodec-0.2.1-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:5c2d42f923701f54d642e44442d77b70f19ade53b92381264213ec6036da8fae"},
+    {file = "TorchCodec-0.2.1-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:3621786b6eb1e9129c08012a2be32ded828e9c71614a267b874c9932f75874d8"},
+    {file = "TorchCodec-0.2.1-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:540fa2acfcd0411b7925d95b9cb179f4eb9a08f0547fc4fb2f17f596dd834321"},
+    {file = "TorchCodec-0.2.1-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:d4b194bfd3f8cc77986e327c8a13d4eb86ef1eba860096e81117cd6b9cc64960"},
+    {file = "TorchCodec-0.2.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:0735917480efe7c7b7ce3f1a7ccc9832faf43d085cce75cdd031fd7f8f14cbb9"},
+    {file = "TorchCodec-0.2.1-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:c3a001722d1e9f11d867a4ebf7e428efbb0f1f699909c22f99f91a5faba35e9f"},
+    {file = "TorchCodec-0.2.1-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:deba4158f7be4744cfb9bd2b178230f20c45a5901c2c2b2fd08d0b2a180d3b65"},
+    {file = "TorchCodec-0.2.1-cp39-cp39-macosx_11_0_arm64.whl", hash = "sha256:7e9700bbe8d5cf479676e7c86ba1d391882d5038cea8cff9be5f2eb3e6061a28"},
+    {file = "TorchCodec-0.2.1-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:3e566a61f9f2158c0e7bd7d7e7607053befa62664fb8ba967ca5ecdf38cb4783"},
+]
+
+[package.extras]
+dev = ["numpy", "pillow", "pytest"]
+
+[[package]]
 name = "torchmetrics"
 version = "1.9.0"
 description = "PyTorch native Metrics"
@@ -5182,8 +5206,9 @@ cuda = ["bitsandbytes", "nvidia-cublas-cu12", "nvidia-cuda-cupti-cu12", "nvidia-
 cuda124 = []
 cuda126 = []
 rocm = []
+video-fast = ["torchcodec"]
 
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.11"
-content-hash = "f8a13c224295db4f94b8f938b4aa1d65367460467fe859a80139e4a1a686491f"
+content-hash = "8455f55429847072dd9d680d883f3b6dde943e484ef300585d3c049d2b86de0d"

@@ -1,7 +1,13 @@
-"""Video frame sampling and decoding with PyAV / torchcodec fallbacks."""
+"""Video frame sampling and decoding with PyAV / torchcodec fallbacks.
+
+Install torchcodec via the optional ``video-fast`` extra::
+
+    poetry install -E cuda --with training -E video-fast
+"""
 
 from __future__ import annotations
 
+import importlib.util
 import random
 from typing import Literal, Optional, Sequence, Union
 
@@ -158,6 +164,16 @@ def _read_av(
     return torch.stack([frames[i] for i in idx_list])
 
 
+def _torchcodec_available() -> bool:
+    return importlib.util.find_spec("torchcodec") is not None
+
+
+def _resolve_auto_backends() -> list[str]:
+    if _torchcodec_available():
+        return ["torchcodec", "av"]
+    return ["av"]
+
+
 def _read_torchcodec(video_path: str, indices: Sequence[int]) -> torch.Tensor:
     from torchcodec.decoders import VideoDecoder
 
@@ -180,7 +196,7 @@ def read_video_frames(
     """Decode selected frames as TCHW uint8 tensor."""
     backends: list[str]
     if backend == "auto":
-        backends = ["av", "torchcodec"]
+        backends = _resolve_auto_backends()
     else:
         backends = [backend]
 

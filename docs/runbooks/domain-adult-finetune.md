@@ -14,6 +14,9 @@ huggingface-cli login   # FLUX.1-dev is gated on Hugging Face
 poetry install -E cuda --with training
 poetry run install-deepspeed   # required for Wan LoRA (ZeRO-3 offload)
 
+# Optional: faster video frame decode for Wan T2V/I2V dataloading (PyAV fallback when omitted)
+# poetry install -E cuda --with training -E video-fast
+
 # AMD ROCm (Phase 1 Flux training + Phase 3 inference only)
 # poetry install -E rocm --with training
 # poetry run install-rocm

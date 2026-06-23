@@ -11,7 +11,7 @@ Never commit datasets, weights, API keys, or `results/` to git.
 | Flux LoRA @ 512px | ~24–40 GB | RTX 4090 24GB, A100 40GB | No DeepSpeed required |
 | Wan 2.1 T2V LoRA @ 480×832×81 | ~38 GB | A100 40GB, H100 | Requires DeepSpeed ZeRO-3 offload |
 
-**CUDA:** Template should ship NVIDIA driver + CUDA 12.x compatible with PrivTune's cu126 PyTorch wheels (`poetry install -E cuda --with training`).
+**CUDA:** Template should ship NVIDIA driver + CUDA 12.x compatible with PrivTune's cu126 PyTorch wheels (`poetry install -E cuda --with training`). For faster Wan video dataloading, add `-E video-fast` (optional `torchcodec` extra; PyAV remains the fallback).
 
 **Disk:** Base weights are large (Wan 14B ≈ tens of GB; full train + validate bundle ≈ 200 GB+). Use **≥200 GB** volume. Pre-download via manifest when `HF_TOKEN` is set:
 
