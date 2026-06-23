@@ -6,7 +6,7 @@
 #     --trained_ckpt results/train/train_wan_domain_t2v_lora_<ts>/checkpoints/only_trained_model/denoiser-000-000000025.ckpt \
 #     --prompt "sks_style, slow camera push-in, soft lighting"
 flow:
-  target: videotuna.flow.wanvideo.WanVideoModelFlow
+  flow_type: wan
   params:
     task: "t2v-14B"
     ckpt_path: checkpoints/wan/Wan2.1-T2V-14B

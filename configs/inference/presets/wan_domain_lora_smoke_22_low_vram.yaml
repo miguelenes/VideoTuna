@@ -4,7 +4,7 @@
 #     --config configs/inference/presets/wan_domain_lora_smoke_22_low_vram.yaml \
 #     --trained_ckpt <denoiser.ckpt>
 flow:
-  target: videotuna.flow.diffusers_video.DiffusersVideoFlow
+  flow_type: diffusers
   params:
     model_family: wan
     mode: t2v

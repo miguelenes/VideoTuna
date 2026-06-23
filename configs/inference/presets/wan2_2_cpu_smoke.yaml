@@ -3,7 +3,7 @@
 #   poetry run inference-wan2.2-t2v-720p \
 #     --config configs/inference/presets/wan2_2_cpu_smoke.yaml --cpu-smoke
 flow:
-  target: videotuna.flow.diffusers_video.DiffusersVideoFlow
+  flow_type: diffusers
   params:
     model_family: wan
     mode: t2v

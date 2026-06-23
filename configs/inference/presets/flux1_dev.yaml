@@ -1,5 +1,5 @@
 flow:
-  target: videotuna.flow.diffusers_video.DiffusersVideoFlow
+  flow_type: diffusers
   params:
     model_family: flux
     mode: t2i

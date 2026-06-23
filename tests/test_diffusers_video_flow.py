@@ -112,9 +112,9 @@ def test_inference_t2v_saves_video(mock_generate, mock_export):
 
 
 def test_yaml_wan22_instantiates_flow():
-    from videotuna.utils.common_utils import instantiate_from_config
+    from videotuna.flow.factories import build_flow
 
     cfg = OmegaConf.load("configs/inference/presets/balanced_wan2_2_720p.yaml")
-    flow = instantiate_from_config(cfg.flow, resolve=True)
+    flow = build_flow(cfg.flow)
     assert isinstance(flow, DiffusersVideoFlow)
     assert flow.model_variant == "2.2"

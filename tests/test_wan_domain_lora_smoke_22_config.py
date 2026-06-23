@@ -20,7 +20,7 @@ WAN_DOMAIN_SMOKE_22_LOW_VRAM = (
 
 def test_wan_domain_lora_smoke_22_yaml():
     cfg = yaml.safe_load(WAN_DOMAIN_SMOKE_22.read_text(encoding="utf-8"))
-    assert cfg["flow"]["target"] == "videotuna.flow.diffusers_video.DiffusersVideoFlow"
+    assert cfg["flow"]["flow_type"] == "diffusers"
     assert cfg["flow"]["params"]["model_variant"] == "2.2"
     inf = cfg["inference"]
     assert inf["height"] == 720

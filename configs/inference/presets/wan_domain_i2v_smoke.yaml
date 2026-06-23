@@ -6,7 +6,7 @@
 #     --trained_ckpt results/train/train_wan_domain_i2v_lora_<ts>/checkpoints/only_trained_model/denoiser-000-000000025.ckpt \
 #     --prompt_dir inputs/i2v/domain_smoke
 flow:
-  target: videotuna.flow.wanvideo.WanVideoModelFlow
+  flow_type: wan
   params:
     task: "i2v-14B"
     ckpt_path: checkpoints/wan/Wan2.1-I2V-14B-480P

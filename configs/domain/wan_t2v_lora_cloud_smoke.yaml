@@ -1,5 +1,5 @@
 flow:
-  target: videotuna.flow.wanvideo.WanVideoModelFlow
+  flow_type: wan
   params:
     task: "t2v-14B"
     ckpt_path: "checkpoints/wan/Wan2.1-T2V-14B"

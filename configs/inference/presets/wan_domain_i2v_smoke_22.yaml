@@ -4,7 +4,7 @@
 #     --trained_ckpt results/train/train_wan_domain_i2v_lora_<ts>/checkpoints/only_trained_model/denoiser-000-000000025.ckpt \
 #     --prompt_dir inputs/i2v/domain_smoke
 flow:
-  target: videotuna.flow.diffusers_video.DiffusersVideoFlow
+  flow_type: diffusers
   params:
     model_family: wan
     mode: i2v

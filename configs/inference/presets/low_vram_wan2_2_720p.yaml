@@ -1,7 +1,7 @@
 # Low VRAM preset for Wan 2.2 Diffusers 720p
 # Usage: poetry run inference-wan2.2-t2v-720p --config configs/inference/presets/low_vram_wan2_2_720p.yaml
 flow:
-  target: videotuna.flow.diffusers_video.DiffusersVideoFlow
+  flow_type: diffusers
   params:
     model_family: wan
     mode: t2v
