@@ -1,5 +1,7 @@
 # PrivTune — Agent Instructions
 
+> **Quick-start context files:** [`CONTEXT.md`](CONTEXT.md) (overview), [`ARCHITECTURE.md`](ARCHITECTURE.md) (design), [`DEVELOPMENT.md`](DEVELOPMENT.md) (commands), [`CONTRIBUTING.md`](CONTRIBUTING.md) (conventions), [`AGENT_NOTES.md`](AGENT_NOTES.md) (pitfalls). These companion files complement this canonical agent guide.
+
 ## Project overview
 
 **PrivTune** (`privtune` in Poetry; Python import path `videotuna/`) is a **training platform ONLY** for private-domain LoRA:
@@ -129,6 +131,7 @@ docs/runbooks/
 | [domain-adult-finetune.md](docs/runbooks/domain-adult-finetune.md) | Domain training runbook |
 | [wan2.2-inference-profile.md](docs/runbooks/wan2.2-inference-profile.md) | Wan 2.2 rental GPU presets (Phase 3) |
 | [checkpoints.md](docs/checkpoints.md) | Weight layout |
+| [MODEL_VERSIONS.md](docs/MODEL_VERSIONS.md) | Model pins |
 
 ## Cursor Cloud specific instructions
 
@@ -139,8 +142,4 @@ The Cloud VM is **CPU-only (no GPU/CUDA driver)** and runs Python 3.12 (satisfie
 - **The `poetry run test <path>` script appends args to `pytest tests`**, so it always collects the whole suite regardless of the path you pass. To run a single file, call `poetry run pytest <path>` directly.
 - **Full suite + the `test_import_smoke.py` gate need the `training` group** (`pytorch_lightning`, `pandas`); without it ~5 modules fail to import. Install with `--with dev --with training`.
 - **Known pre-existing baseline failures (not environment issues):** `poetry run lint` reports ~1000 ruff errors; `poetry run pytest tests` shows ~6 failures (`tests/datasets/test_dataset_from_csv.py` hits a `PosixPath` bug in `videotuna/data/datasets.py`, and `test_wan_checkpoint.py::test_wan_from_pretrained_missing_dir` depends on diffusers/network behavior). The rest (~129) pass.
-- **GPU training/inference and real FLUX/Wan weights are not runnable here.** `inference-wan2.2-t2v-720p` and the CPU smoke preset download a 14B Wan 2.2 model. Validate core behavior via the CPU test gates in [capability-matrix.md](docs/capability-matrix.md) and small LoRA training-step smokes instead.
-=======
-| [MODEL_VERSIONS.md](docs/MODEL_VERSIONS.md) | Model pins |
-
-Removed: `capability-matrix.md`, `finetune_flux.md`, `finetune_wan.md`, `evaluation.md` (superseded by runbook + smoke inference).
+- **GPU training/inference and real FLUX/Wan weights are not runnable here.** `inference-wan2.2-t2v-720p` and the CPU smoke preset download a 14B Wan 2.2 model. Validate core behavior via CPU test gates and small LoRA training-step smokes instead.

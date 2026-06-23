@@ -1,5 +1,7 @@
 # PrivTune — Windsurf Rules
 
+> **See also:** [`CONTEXT.md`](CONTEXT.md), [`ARCHITECTURE.md`](ARCHITECTURE.md), [`DEVELOPMENT.md`](DEVELOPMENT.md), [`CONTRIBUTING.md`](CONTRIBUTING.md), [`AGENT_NOTES.md`](AGENT_NOTES.md).
+
 ## Project Purpose
 
 **PrivTune** is a private-domain LoRA training platform (not a general inference service). It trains LoRA adapters for FLUX T2I (images) and Wan 2.1 T2V/I2V (videos), then validates with Wan 2.2 Diffusers.

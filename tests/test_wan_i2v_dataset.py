@@ -220,3 +220,49 @@ def test_i2v_config_rejects_extra_dataset_params():
     payload["train"]["data"]["params"]["train"]["params"]["unknown_key"] = 42
     with pytest.raises(ValueError, match="Invalid train.data.params.train.params"):
         WanLoraTrainConfig.model_validate(payload)
+
+
+def test_i2v_config_rejects_first_frame_csv_when_image_to_video_false(tmp_path):
+    """Config validation rejects path,caption CSV when image_to_video=false."""
+    csv_path = tmp_path / "firstframe.csv"
+    csv_path.write_text("path,caption\nvid.mp4,test caption\n", encoding="utf-8")
+
+    cfg = load_wan_lora_config(WAN_I2V_CONFIG)
+    payload = cfg.model_dump(mode="json")
+    payload["train"]["data"]["params"]["train"]["params"]["csv_path"] = str(csv_path)
+    payload["train"]["data"]["params"]["train"]["params"]["image_to_video"] = False
+
+    with pytest.raises(ValueError, match="image_to_video=false.*pair-mode"):
+        WanLoraTrainConfig.model_validate(payload)
+
+
+def test_i2v_config_rejects_pair_csv_when_image_to_video_true(tmp_path):
+    """Config validation rejects image_path,video_path,caption CSV when
+    image_to_video=true."""
+    csv_path = tmp_path / "pair.csv"
+    csv_path.write_text(
+        "image_path,video_path,caption\nimg.jpg,vid.mp4,test\n",
+        encoding="utf-8",
+    )
+
+    cfg = load_wan_lora_config(WAN_I2V_CONFIG)
+    payload = cfg.model_dump(mode="json")
+    payload["train"]["data"]["params"]["train"]["params"]["csv_path"] = str(csv_path)
+    payload["train"]["data"]["params"]["train"]["params"]["image_to_video"] = True
+
+    with pytest.raises(ValueError, match="image_to_video=true.*first-frame"):
+        WanLoraTrainConfig.model_validate(payload)
+
+
+def test_i2v_config_rejects_video_only_csv_when_image_to_video_false(tmp_path):
+    """Config validation rejects video_path,caption CSV when image_to_video=false."""
+    csv_path = tmp_path / "videoonly.csv"
+    csv_path.write_text("video_path,caption\nvid.mp4,test\n", encoding="utf-8")
+
+    cfg = load_wan_lora_config(WAN_I2V_CONFIG)
+    payload = cfg.model_dump(mode="json")
+    payload["train"]["data"]["params"]["train"]["params"]["csv_path"] = str(csv_path)
+    payload["train"]["data"]["params"]["train"]["params"]["image_to_video"] = False
+
+    with pytest.raises(ValueError, match="image_to_video=false.*pair-mode"):
+        WanLoraTrainConfig.model_validate(payload)

@@ -4,6 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with th
 
 **Canonical agent instructions:** [`AGENTS.md`](./AGENTS.md) — read that first. This file adds Claude-specific detail.
 
+**Companion context files:** [`CONTEXT.md`](CONTEXT.md), [`ARCHITECTURE.md`](ARCHITECTURE.md), [`DEVELOPMENT.md`](DEVELOPMENT.md), [`CONTRIBUTING.md`](CONTRIBUTING.md), [`AGENT_NOTES.md`](AGENT_NOTES.md).
+
 ## Architecture deep-dive
 
 ### Two inference flows

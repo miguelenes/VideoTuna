@@ -1,6 +1,7 @@
 # PrivTune — GitHub Copilot Instructions
 
 Canonical agent instructions: [`AGENTS.md`](../AGENTS.md) at the repo root.
+Companion context: [`CONTEXT.md`](../CONTEXT.md), [`ARCHITECTURE.md`](../ARCHITECTURE.md), [`DEVELOPMENT.md`](../DEVELOPMENT.md), [`CONTRIBUTING.md`](../CONTRIBUTING.md), [`AGENT_NOTES.md`](../AGENT_NOTES.md).
 
 ## Tech stack
 

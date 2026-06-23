@@ -43,6 +43,57 @@ class DatasetFromCSVParams(BaseModel):
     train: bool = True
     i2v_mode: bool = False
 
+    @model_validator(mode="after")
+    def validate_i2v_csv_columns(self) -> Self:
+        if not self.i2v_mode:
+            return self
+
+        import pandas as pd
+
+        try:
+            df = pd.read_csv(self.csv_path)
+        except (FileNotFoundError, OSError):
+            return self
+
+        columns = set(df.columns)
+        has_path = "path" in columns
+        has_video = "video_path" in columns
+        has_image = "image_path" in columns
+        has_caption = "caption" in columns
+
+        if not has_caption:
+            return self
+
+        pair_mode = has_video and has_image and not has_path
+        first_frame = has_path and not has_video and not has_image
+
+        doc = "docs/runbooks/domain-adult-finetune.md (Phase 2.5)"
+        layouts = (
+            "  - image_to_video: true  ->  path,caption\n"
+            "  - image_to_video: false ->  image_path,video_path,caption"
+        )
+
+        if self.image_to_video:
+            if not first_frame:
+                raise ValueError(
+                    f"CSV column mismatch: {self.csv_path!r} has columns "
+                    f"{sorted(columns)} but image_to_video=true requires "
+                    f"first-frame layout with path,caption columns. "
+                    f"See {doc} for the two supported Wan I2V layouts:\n"
+                    f"{layouts}"
+                )
+        else:
+            if not pair_mode:
+                raise ValueError(
+                    f"CSV column mismatch: {self.csv_path!r} has columns "
+                    f"{sorted(columns)} but image_to_video=false requires "
+                    f"pair-mode layout with image_path,video_path,caption "
+                    f"columns. See {doc} for the two supported Wan I2V "
+                    f"layouts:\n{layouts}"
+                )
+
+        return self
+
 
 class WanLoraFlowParams(BaseModel):
     model_config = ConfigDict(extra="forbid")

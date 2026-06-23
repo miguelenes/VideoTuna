@@ -8,6 +8,7 @@ alwaysApply: true
 **Role:** Private-domain LoRA training platform (Flux T2I + Wan 2.1 T2V train, Wan 2.2 Diffusers validate). Optimize for correct training behavior, portable CUDA/ROCm/CPU handling, and minimal scoped diffs.
 
 Primary instructions: [`AGENTS.md`](../AGENTS.md) at the repo root.
+Companion context: [`CONTEXT.md`](../CONTEXT.md), [`ARCHITECTURE.md`](../ARCHITECTURE.md), [`DEVELOPMENT.md`](../DEVELOPMENT.md), [`CONTRIBUTING.md`](../CONTRIBUTING.md), [`AGENT_NOTES.md`](../AGENT_NOTES.md).
 
 - Python 3.11+ · Poetry default (`poetry run …`) · optional uv
 - **Before finishing (required):** `poetry run lint`, `poetry run format-check`, `poetry run coverage-gate`
