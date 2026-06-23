@@ -1,4 +1,4 @@
-"""Tests for inference CLI, metrics, and FP8 validation."""
+"""Tests for inference CLI, metrics, and optimization."""
 
 import argparse
 import json
@@ -13,11 +13,6 @@ from videotuna.cli.inference_options import (
     inference_options_to_namespace,
 )
 from videotuna.utils.common_utils import monitor_resources, save_metrics
-from videotuna.utils.fp8_utils import (
-    fp8_map_path,
-    precision_from_dtype_flag,
-    validate_fp8_inference,
-)
 from videotuna.utils.inference_cli import (
     apply_compile_env,
     prepare_cli_inference_args,
@@ -181,40 +176,6 @@ def test_apply_compile_env():
     assert os.environ["VIDEOTUNA_TORCH_COMPILE"] == "1"
     apply_compile_env(False)
     assert os.environ["VIDEOTUNA_TORCH_COMPILE"] == "0"
-
-
-def test_fp8_map_path():
-    assert fp8_map_path("model.pt").endswith("model_map.pt")
-
-
-def test_precision_from_dtype_flag():
-    assert precision_from_dtype_flag("fp16") == "fp16"
-    assert precision_from_dtype_flag(None, default="bf16") == "bf16"
-
-
-def test_validate_fp8_inference_rejected_on_cpu():
-    with mock.patch(
-        "videotuna.utils.fp8_utils.detect_compute_backend", return_value="cpu"
-    ):
-        with pytest.raises(RuntimeError, match="not supported on CPU"):
-            validate_fp8_inference("model.pt")
-
-
-def test_validate_fp8_inference_missing_map():
-    with tempfile.NamedTemporaryFile(suffix=".pt") as tmp:
-        with mock.patch(
-            "videotuna.utils.fp8_utils.detect_compute_backend", return_value="cuda"
-        ):
-            with mock.patch(
-                "videotuna.utils.fp8_utils.gpu_is_available", return_value=False
-            ):
-                with mock.patch(
-                    "videotuna.utils.fp8_utils.fp8_dtype_available", return_value=True
-                ):
-                    mock_torchao = mock.MagicMock()
-                    with mock.patch.dict("sys.modules", {"torchao": mock_torchao}):
-                        with pytest.raises(FileNotFoundError):
-                            validate_fp8_inference(tmp.name)
 
 
 @mock.patch.dict(os.environ, {"VIDEOTUNA_ATTN_BACKEND": "eager"})

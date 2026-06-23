@@ -30,12 +30,9 @@ from videotuna.utils.device_utils import (
 )
 from videotuna.utils.diffusers_optimizations import apply_flow_memory_config
 from videotuna.utils.diffusers_quantization import (
-    is_hunyuan_fp8_flow,
     maybe_adjust_offload_for_quant,
-    reject_enable_fp8_for_non_hunyuan,
     validate_transformer_quant,
 )
-from videotuna.utils.fp8_utils import validate_fp8_inference
 from videotuna.utils.inference_cli import (
     apply_compile_env,
     apply_cpu_smoke_limits,
@@ -56,23 +53,11 @@ def run_inference(args, gpu_num=1, rank=0, **kwargs):
         raise exc
 
 
-def _prepare_inference_quant_and_fp8(
+def _prepare_inference_quant(
     args,
     inference_config,
-    flow_target: str,
 ) -> None:
-    """Validate FP8 and transformer quant settings before model load."""
-    enable_fp8 = bool(getattr(inference_config, "enable_fp8", False)) or bool(
-        getattr(args, "enable_fp8", False)
-    )
-    if enable_fp8:
-        reject_enable_fp8_for_non_hunyuan(str(flow_target), inference_config)
-    if enable_fp8 and is_hunyuan_fp8_flow(str(flow_target), inference_config):
-        dit_weight = getattr(inference_config, "dit_weight", None) or getattr(
-            inference_config, "trained_ckpt", None
-        )
-        validate_fp8_inference(str(dit_weight) if dit_weight else "")
-
+    """Validate transformer quant settings before model load."""
     has_lora = bool(
         getattr(inference_config, "trained_ckpt", None)
         or getattr(inference_config, "lorackpt", None)
@@ -120,7 +105,7 @@ def _run_inference_impl(args, gpu_num=1, rank=0, **kwargs):
     logger.info("Compute environment: {}", describe_compute_environment())
 
     apply_compile_env(bool(getattr(args, "compile", False)))
-    _prepare_inference_quant_and_fp8(args, inference_config, flow_target)
+    _prepare_inference_quant(args, inference_config)
 
     require_accelerator_for_flow(
         flow_target,

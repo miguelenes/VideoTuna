@@ -8,7 +8,6 @@ from videotuna.utils.diffusers_quantization import (
     build_pipeline_quantization_config,
     normalize_quant_backend,
     normalize_transformer_quant,
-    reject_enable_fp8_for_non_hunyuan,
     resolve_quant_components,
     validate_transformer_quant,
 )
@@ -140,16 +139,6 @@ def test_validate_transformer_quant_quanto_import_guard():
                     quant_backend="quanto",
                     offload_mode="model",
                 )
-
-
-def test_reject_enable_fp8_for_diffusers_flow():
-    from types import SimpleNamespace
-
-    with pytest.raises(RuntimeError, match="transformer-quant fp8_wo"):
-        reject_enable_fp8_for_non_hunyuan(
-            "videotuna.flow.diffusers_video.DiffusersVideoFlow",
-            SimpleNamespace(),
-        )
 
 
 def test_maybe_adjust_offload_for_quant():

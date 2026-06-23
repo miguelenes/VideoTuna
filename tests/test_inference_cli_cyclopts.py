@@ -54,6 +54,19 @@ def test_inference_help_lists_shared_flags(command: list[str]) -> None:
         assert flag in help_text
 
 
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["inference-domain-t2i", "--help"],
+        ["validate-domain-t2v", "--help"],
+    ],
+)
+def test_inference_help_omits_legacy_hunyuan_fp8(command: list[str]) -> None:
+    help_text = _help_text(command).lower()
+    for forbidden in ("enable_fp8", "enable-fp8", "dit-weight", "hunyuan"):
+        assert forbidden not in help_text
+
+
 def test_flag_parity_across_presets() -> None:
     run = InferenceRunOptions(lorackpt="/tmp/lora", num_inference_steps=8)
     standard = StandardInferenceOptions(memory_preset="balanced", device="cuda:0")

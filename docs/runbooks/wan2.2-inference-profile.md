@@ -54,7 +54,7 @@ Or add to any preset / CLI:
 | `int4_wo` | Further weight savings | NVIDIA CUDA | Same as int8 |
 | `fp8_wo` | Best speed/memory on Ada+ | sm ≥ 8.9 (RTX 4090, Hopper) | Same as int8 |
 
-**Not the same as legacy `--enable_fp8`:** Hunyuan native FP8 used pre-quantized `.pt` + `*_map.pt` scale files. Wan 2.2 Diffusers uses **torchao dynamic weight-only FP8** via `--transformer-quant fp8_wo`. The Hunyuan `--enable_fp8` flag is removed from inference CLI.
+**FP8 on Wan 2.2 Diffusers:** use `--transformer-quant fp8_wo` (torchao dynamic weight-only; Ada/Hopper+). Legacy native checkpoint FP8 is not supported in PrivTune.
 
 **optimum-quanto:** evaluated via `tools/spike_wan_quant_compare.py` on rental GPU; not added as a default dependency. Use `--quant-backend quanto` only after installing `optimum-quanto>=0.2.6` manually if torchao is insufficient.
 

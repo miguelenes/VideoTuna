@@ -43,7 +43,16 @@ class StandardInferenceOptions:
     compile: Annotated[bool | None, Parameter(name="compile")] = None
     fuse_qkv: bool | None = None
     enable_attention_cache: bool | None = None
-    transformer_quant: Annotated[str | None, Parameter(name="transformer-quant")] = None
+    transformer_quant: Annotated[
+        str | None,
+        Parameter(
+            name="transformer-quant",
+            help=(
+                "Diffusers transformer weight-only quant: "
+                "none, int8_wo, int4_wo, fp8_wo (CUDA; fp8_wo needs Ada/Hopper+)."
+            ),
+        ),
+    ] = None
     quant_backend: Annotated[str | None, Parameter(name="quant-backend")] = None
 
 
@@ -82,7 +91,6 @@ class InferenceRunOptions:
     savefps: str | None = None
     time_shift: float | None = None
     num_inference_steps: int | None = None
-    dit_weight: str | None = None
     i2v_resolution: str | None = None
     lora_rank: int | None = None
 

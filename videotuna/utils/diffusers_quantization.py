@@ -15,13 +15,6 @@ QuantBackend = Literal["torchao", "quanto"]
 TRANSFORMER_QUANT_CHOICES = ("none", "int8_wo", "int4_wo", "fp8_wo")
 QUANT_BACKEND_CHOICES = ("torchao", "quanto")
 
-# Flow targets that may use legacy Hunyuan FP8 checkpoint validation (--enable_fp8).
-HUNYUAN_FLOW_TARGETS = frozenset(
-    {
-        # Reserved for future native Hunyuan flows; empty while no Hunyuan flow ships.
-    }
-)
-
 _FP8_MIN_COMPUTE_CAPABILITY = (8, 9)
 
 
@@ -235,33 +228,3 @@ def build_pipeline_quantization_config(
         list(quant_mapping.keys()),
     )
     return PipelineQuantizationConfig(quant_mapping=quant_mapping)
-
-
-def is_hunyuan_fp8_flow(flow_target: str, inference_config: Any) -> bool:
-    """True when legacy Hunyuan FP8 checkpoint validation should run."""
-    if flow_target in HUNYUAN_FLOW_TARGETS:
-        return True
-    if bool(getattr(inference_config, "fp8_checkpoint", False)):
-        return True
-    return False
-
-
-def reject_enable_fp8_for_non_hunyuan(flow_target: str, inference_config: Any) -> None:
-    """Raise when --enable_fp8 is used on flows that do not support Hunyuan FP8."""
-    if is_hunyuan_fp8_flow(flow_target, inference_config):
-        return
-    if (
-        "DiffusersVideoFlow" in flow_target
-        or "diffusers_video" in flow_target.lower()
-        or "WanVideoModelFlow" in flow_target
-        or "wanvideo" in flow_target.lower()
-    ):
-        raise RuntimeError(
-            "--enable_fp8 is for legacy Hunyuan native checkpoints only. "
-            "For Wan 2.2 Diffusers FP8 weight-only quantization use "
-            "--transformer-quant fp8_wo (torchao dynamic FP8, not Hunyuan scale maps)."
-        )
-    raise RuntimeError(
-        "--enable_fp8 is not supported for this inference flow. "
-        "Use --transformer-quant fp8_wo for Diffusers torchao FP8 instead."
-    )
