@@ -52,32 +52,36 @@ def test_standard_inference_options_to_config():
 
 
 def test_resolve_inference_profile():
-    args = argparse.Namespace(
+    from videotuna.cli.inference_options import InferenceRunConfig
+
+    run_config = InferenceRunConfig(
+        config="configs/inference/presets/flux_domain_lora_smoke.yaml",
         memory_preset="low_vram",
         enable_model_cpu_offload=False,
         enable_sequential_cpu_offload=False,
         enable_vae_tiling=False,
         dtype=None,
     )
-    profile = resolve_inference_profile(args)
+    profile = resolve_inference_profile(run_config)
     assert profile.offload_mode == "sequential"
     assert profile.enable_sequential_cpu_offload is True
     assert profile.enable_model_cpu_offload is False
     assert profile.enable_vae_tiling is True
     assert profile.dtype == "fp16"
     assert profile.memory_preset == "low_vram"
-    assert args.enable_sequential_cpu_offload is True
-    assert args.enable_vae_tiling is True
-    assert args.dtype == "fp16"
+    assert run_config.enable_sequential_cpu_offload is True
+    assert run_config.enable_vae_tiling is True
+    assert run_config.dtype == "fp16"
 
-    args = argparse.Namespace(
+    run_config = InferenceRunConfig(
+        config="configs/inference/presets/flux_domain_lora_smoke.yaml",
         memory_preset=None,
         enable_model_cpu_offload=True,
         enable_sequential_cpu_offload=False,
         enable_vae_tiling=False,
         dtype="bf16",
     )
-    profile = resolve_inference_profile(args, apply_preset=False)
+    profile = resolve_inference_profile(run_config, apply_preset=False)
     assert profile.offload_mode == "model"
     assert profile.dtype == "bf16"
 
@@ -96,9 +100,11 @@ def test_prepare_cli_inference_config_validates_parallel():
 
 
 def test_validate_cpu_offload_rejected_on_cpu_smoke():
+    from videotuna.cli.inference_options import InferenceRunConfig
     from videotuna.utils.inference_cli import validate_cpu_offload_flags
 
-    args = argparse.Namespace(
+    run_config = InferenceRunConfig(
+        config="configs/inference/presets/flux_domain_lora_smoke.yaml",
         cpu_smoke=True,
         device=None,
         enable_sequential_cpu_offload=True,
@@ -106,13 +112,15 @@ def test_validate_cpu_offload_rejected_on_cpu_smoke():
         memory_preset=None,
     )
     with pytest.raises(RuntimeError, match="CPU offload flags"):
-        validate_cpu_offload_flags(args)
+        validate_cpu_offload_flags(run_config)
 
 
 def test_validate_cpu_offload_both_flags_sequential_wins():
+    from videotuna.cli.inference_options import InferenceRunConfig
     from videotuna.utils.inference_cli import validate_cpu_offload_flags
 
-    args = argparse.Namespace(
+    run_config = InferenceRunConfig(
+        config="configs/inference/presets/flux_domain_lora_smoke.yaml",
         cpu_smoke=False,
         device="cuda:0",
         enable_sequential_cpu_offload=True,
@@ -127,13 +135,13 @@ def test_validate_cpu_offload_both_flags_sequential_wins():
         mock.patch("videotuna.utils.device_utils.resolve_cpu_mode", return_value="off"),
         mock.patch("videotuna.utils.inference_cli.logger.warning") as warn,
     ):
-        validate_cpu_offload_flags(args)
+        validate_cpu_offload_flags(run_config)
 
-    assert args.enable_sequential_cpu_offload is True
-    assert args.enable_model_cpu_offload is False
+    assert run_config.enable_sequential_cpu_offload is True
+    assert run_config.enable_model_cpu_offload is False
     warn.assert_called_once()
     assert "sequential" in warn.call_args[0][0].lower()
-    profile = resolve_inference_profile(args, apply_preset=False)
+    profile = resolve_inference_profile(run_config, apply_preset=False)
     assert profile.offload_mode == "sequential"
 
 
@@ -145,17 +153,6 @@ def test_cpu_smoke_session_sets_eager_attn_backend():
         assert get_settings().attn_backend == "eager"
         assert get_settings().torch_compile is False
         assert get_attn_backend() == "eager"
-
-
-def test_apply_cpu_smoke_env_deprecated_noop():
-    from videotuna.cli.inference_options import InferenceRunConfig
-    from videotuna.utils.inference_cli import apply_cpu_smoke_env
-
-    run_config = InferenceRunConfig(
-        config="configs/inference/presets/flux_domain_lora_smoke.yaml",
-        cpu_smoke=True,
-    )
-    apply_cpu_smoke_env(run_config)
 
 
 @mock.patch.dict(

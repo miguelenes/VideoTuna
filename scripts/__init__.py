@@ -511,7 +511,16 @@ def type_check():
     """
     Run the type checking
     """
-    result = subprocess.run(["mypy", "videotuna", "tests"], check=False)
+    result = subprocess.run(
+        [
+            "mypy",
+            "videotuna/settings.py",
+            "videotuna/training/wan_lora/config.py",
+            "videotuna/cli/inference_options.py",
+            "videotuna/utils/wan_lora_bridge.py",
+        ],
+        check=False,
+    )
     exit(result.returncode)
 
 

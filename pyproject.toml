@@ -223,8 +223,19 @@ markers = [
 ]
 
 [[tool.mypy.overrides]]
-module = []
-ignore_missing_imports = true
+module = [
+    "videotuna.settings",
+    "videotuna.cli.inference_options",
+]
+disallow_untyped_defs = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = [
+    "videotuna.training.wan_lora.config",
+    "videotuna.utils.wan_lora_bridge",
+]
+warn_unused_ignores = true
 
 [tool.mypy]
 mypy_path = "typings"

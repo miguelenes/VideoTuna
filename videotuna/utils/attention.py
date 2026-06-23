@@ -17,7 +17,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 from loguru import logger
 
-from videotuna.settings import ENV_ATTN_BACKEND, get_settings
+from videotuna.settings import (
+    ENV_ATTN_BACKEND,
+    ENV_DIFFUSERS_ATTN_BACKEND,
+    get_settings,
+)
 from videotuna.utils.device_utils import detect_compute_backend, gpu_is_available
 
 AttnBackend = Literal["flash", "sdpa", "eager"]
@@ -334,7 +338,16 @@ _DIFFUSERS_BACKEND_MAP = {
 
 
 def apply_diffusers_attention_backend(model) -> None:
-    """Map resolved attention backend to diffusers ``set_attention_backend``."""
+    """Map resolved attention backend to diffusers ``set_attention_backend``.
+
+    When the model lacks ``set_attention_backend``, the resolved backend is
+    projected into the ``DIFFUSERS_ATTN_BACKEND`` env var as a fallback for
+    diffusers' module-level backend resolution. This write is session-scoped:
+    it is saved/restored by ``videotuna.settings.settings_session`` (and by
+    extension ``inference_settings_session``) so it does not leak beyond the
+    inference session. The source of truth is
+    ``PrivTuneSettings.attn_backend``.
+    """
     backend = get_attn_backend()
     diffusers_backend = _DIFFUSERS_BACKEND_MAP[backend]
     if backend == "flash" and detect_compute_backend() == "rocm":
@@ -350,7 +363,7 @@ def apply_diffusers_attention_backend(model) -> None:
                 return
             raise
 
-    os.environ["DIFFUSERS_ATTN_BACKEND"] = diffusers_backend
+    os.environ[ENV_DIFFUSERS_ATTN_BACKEND] = diffusers_backend
 
 
 _COMPILE_WARNED_ROCM = False

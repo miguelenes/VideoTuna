@@ -1,7 +1,6 @@
 import argparse
 import os
 import time
-import warnings
 from enum import Enum
 from pathlib import Path
 
@@ -110,6 +109,12 @@ def prepare_inference_config(
 
     prepare_cli_inference_config(run_config)
 
+    # Resolve memory-preset side effects and validate offload flags BEFORE
+    # dumping run_config into the YAML inference_config, so preset-derived
+    # dtype / offload / vae_tiling values propagate into the merged config.
+    resolve_inference_profile(run_config)
+    validate_cpu_offload_flags(run_config)
+
     inference_config = config.pop("inference", OmegaConf.create())
     cli_values = run_config.model_dump(exclude_none=True)
     for key, value in cli_values.items():
@@ -117,9 +122,6 @@ def prepare_inference_config(
             inference_config[key] = value
         elif value is not None:
             inference_config[key] = value
-
-    resolve_inference_profile(run_config)
-    validate_cpu_offload_flags(run_config)
 
     check_args(inference_config)
     inference_config.savedir = process_savedir(inference_config.savedir)
@@ -146,24 +148,6 @@ def _resolve_dtype(dtype_str):
         "torch.bfloat16": torch.bfloat16,
     }
     return mapping.get(dtype_str)
-
-
-def prepare_inference_args(args: argparse.Namespace, config: DictConfig) -> DictConfig:
-    """
-    Deprecated: use :func:`prepare_inference_config` with :class:`InferenceRunConfig`.
-
-    Prepare the arguments by updating the config with the command line arguments.
-    """
-    warnings.warn(
-        "prepare_inference_args is deprecated; use prepare_inference_config with "
-        "InferenceRunConfig",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    if isinstance(args, InferenceRunConfig):
-        return prepare_inference_config(args, config)
-    run_config = InferenceRunConfig.model_validate(vars(args))
-    return prepare_inference_config(run_config, config)
 
 
 def check_args(inference_config: DictConfig):

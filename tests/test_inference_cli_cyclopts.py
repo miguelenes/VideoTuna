@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import importlib
+import inspect
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -142,3 +145,117 @@ def test_inference_run_config_round_trip() -> None:
     )
     assert round_tripped.config == run_config.config
     assert round_tripped.enable_model_cpu_offload == run_config.enable_model_cpu_offload
+
+
+# ---------------------------------------------------------------------------
+# End-to-end typed inference path — no argparse.Namespace bridge
+# ---------------------------------------------------------------------------
+
+
+_REMOVED_BRIDGE = [
+    ("videotuna.cli.inference_options", "inference_options_to_namespace"),
+    ("videotuna.utils.args_utils", "prepare_inference_args"),
+    ("videotuna.utils.inference_cli", "prepare_cli_inference_args"),
+    ("videotuna.utils.inference_cli", "apply_compile_env"),
+    ("videotuna.utils.inference_cli", "apply_cpu_smoke_env"),
+]
+
+
+@pytest.mark.parametrize(("module_name", "attr"), _REMOVED_BRIDGE)
+def test_removed_bridge_functions_are_gone(module_name: str, attr: str) -> None:
+    """Guard against reintroducing the deprecated Namespace bridge."""
+    mod = importlib.import_module(module_name)
+    assert not hasattr(mod, attr), f"{module_name}.{attr} should have been removed"
+
+
+def test_inference_new_has_no_namespace() -> None:
+    """scripts/inference_new.py must not import argparse or use Namespace."""
+    source = (Path(__file__).resolve().parents[1] / "scripts" / "inference_new.py").read_text(
+        encoding="utf-8"
+    )
+    assert "import argparse" not in source
+    assert "argparse.Namespace" not in source
+
+
+def test_run_inference_consumes_run_config() -> None:
+    """run_inference's first parameter must be annotated InferenceRunConfig."""
+    from scripts.inference_new import run_inference
+
+    sig = inspect.signature(run_inference)
+    first_param = next(iter(sig.parameters.values()))
+    assert first_param.annotation is InferenceRunConfig
+
+
+def test_prepare_inference_config_propagates_preset_side_effects() -> None:
+    """Regression: preset side effects (low_vram → dtype=fp16, sequential offload)
+    must propagate into the merged YAML inference_config, not be lost."""
+    from unittest import mock
+
+    from omegaconf import OmegaConf
+
+    from videotuna.utils.args_utils import prepare_inference_config
+
+    run_config = InferenceRunConfig(
+        config="configs/inference/presets/flux_domain_lora_smoke.yaml",
+        memory_preset="low_vram",
+        savedir="/tmp/videotuna-test-preset",
+    )
+    yaml_config = OmegaConf.load(run_config.config)
+
+    with (
+        mock.patch(
+            "videotuna.utils.device_utils.gpu_is_available", return_value=True
+        ),
+        mock.patch(
+            "videotuna.utils.device_utils.detect_compute_backend", return_value="cuda"
+        ),
+        mock.patch(
+            "videotuna.utils.device_utils.resolve_cpu_mode", return_value="off"
+        ),
+        mock.patch("videotuna.utils.args_utils.process_savedir", side_effect=lambda d: d),
+    ):
+        merged = prepare_inference_config(run_config, yaml_config)
+
+    inference = merged.inference
+    assert inference.dtype == "fp16"
+    assert inference.enable_sequential_cpu_offload is True
+    assert inference.enable_model_cpu_offload is False
+
+
+def test_typed_end_to_end_merge() -> None:
+    """inference_options_to_config → prepare_inference_config produces a DictConfig
+    whose inference section reflects CLI overrides."""
+    from unittest import mock
+
+    from omegaconf import OmegaConf
+
+    from videotuna.utils.args_utils import prepare_inference_config
+
+    run_config = inference_options_to_config(
+        run=InferenceRunOptions(
+            lorackpt="/tmp/lora",
+            num_inference_steps=4,
+            seed=123,
+        ),
+        preset=PRESET_DOMAIN_T2I,
+    )
+    yaml_config = OmegaConf.load(run_config.config)
+
+    with (
+        mock.patch(
+            "videotuna.utils.device_utils.gpu_is_available", return_value=True
+        ),
+        mock.patch(
+            "videotuna.utils.device_utils.detect_compute_backend", return_value="cuda"
+        ),
+        mock.patch(
+            "videotuna.utils.device_utils.resolve_cpu_mode", return_value="off"
+        ),
+        mock.patch("videotuna.utils.args_utils.process_savedir", side_effect=lambda d: d),
+    ):
+        merged = prepare_inference_config(run_config, yaml_config)
+
+    inference = merged.inference
+    assert inference.lorackpt == "/tmp/lora"
+    assert int(inference.num_inference_steps) == 4
+    assert int(inference.seed) == 123

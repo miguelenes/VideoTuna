@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Literal, Self, Sequence
+from typing import Any, Literal, Self, Sequence, cast
 
 import torch
 from omegaconf import DictConfig, OmegaConf
@@ -225,7 +225,7 @@ def _merge_and_resolve(
     resolved = OmegaConf.to_container(merged, resolve=True)
     if not isinstance(resolved, dict):
         raise TypeError("Wan LoRA config must resolve to a mapping")
-    return resolved
+    return cast(dict[str, Any], resolved)
 
 
 def load_wan_lora_config(

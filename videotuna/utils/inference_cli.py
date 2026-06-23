@@ -8,23 +8,7 @@ from loguru import logger
 from omegaconf import DictConfig, OmegaConf
 
 from videotuna.cli.inference_options import InferenceRunConfig
-from videotuna.settings import get_settings
 from videotuna.utils.inference_profile import resolve_inference_profile
-
-
-def apply_compile_env(compile_flag: bool) -> None:
-    """Deprecated: use :func:`inference_settings_session` instead."""
-    if get_settings().cpu_mode == "smoke":
-        return
-    from videotuna.settings import settings_session
-
-    with settings_session(torch_compile=compile_flag):
-        pass
-
-
-def apply_cpu_smoke_env(run_config: InferenceRunConfig | Any) -> None:
-    """Deprecated: use :func:`videotuna.settings.inference_settings_session`."""
-    _ = run_config
 
 
 def validate_cpu_offload_flags(run_config: InferenceRunConfig | Any) -> None:
@@ -122,24 +106,8 @@ def prepare_cli_inference_config(
     return run_config
 
 
-def prepare_cli_inference_args(args: Any) -> Any:
-    """Deprecated: use :func:`prepare_cli_inference_config`."""
-    if isinstance(args, InferenceRunConfig):
-        return prepare_cli_inference_config(args)
-    ulysses = getattr(args, "ulysses_degree", None)
-    ring = getattr(args, "ring_degree", None)
-    if ulysses is not None or ring is not None:
-        from videotuna.utils.device_utils import validate_sequence_parallel_degrees
-
-        validate_sequence_parallel_degrees(ulysses, ring)
-    return args
-
-
 __all__ = [
-    "apply_compile_env",
-    "apply_cpu_smoke_env",
     "apply_cpu_smoke_limits",
-    "prepare_cli_inference_args",
     "prepare_cli_inference_config",
     "resolve_offload_mode",
     "validate_cpu_offload_flags",

@@ -33,6 +33,10 @@ ENV_TRACKIO_PROJECT = f"{ENV_PREFIX}TRACKIO_PROJECT"
 ENV_LOG_LEVEL = f"{ENV_PREFIX}LOG_LEVEL"
 ENV_BENCH_MODEL = f"{ENV_PREFIX}BENCH_MODEL"
 
+# Non-VIDEOTUNA env vars projected from settings during a session.
+# These are saved/restored by settings_session alongside VIDEOTUNA_* vars.
+ENV_DIFFUSERS_ATTN_BACKEND = "DIFFUSERS_ATTN_BACKEND"
+
 _VALID_COMPILE_MODES = ("reduce-overhead", "max-autotune")
 
 
@@ -175,6 +179,11 @@ _SETTINGS_ENV_MAP: dict[str, str] = {
     "bench_model": ENV_BENCH_MODEL,
 }
 
+# Non-VIDEOTUNA env vars that are projected from settings (e.g. diffusers
+# internal vars derived from attn_backend). These are saved/restored by
+# settings_session so writes within a session don't leak to the parent scope.
+_PROJECTED_ENV_KEYS: tuple[str, ...] = (ENV_DIFFUSERS_ATTN_BACKEND,)
+
 
 def _settings_value_to_env(value: object) -> str:
     if isinstance(value, bool):
@@ -220,6 +229,11 @@ def settings_session(**overrides: Any) -> Iterator[PrivTuneSettings]:
     base = _SESSION_SETTINGS.get() or PrivTuneSettings()
     merged = base.model_copy(update=overrides)
     saved_env = _sync_env_from_settings(merged)
+    # Save projected (non-VIDEOTUNA) env vars so writes within the session
+    # (e.g. DIFFUSERS_ATTN_BACKEND set by apply_diffusers_attention_backend)
+    # are restored on exit.
+    for key in _PROJECTED_ENV_KEYS:
+        saved_env.setdefault(key, os.environ.get(key))
     token = _SESSION_SETTINGS.set(merged)
     try:
         yield merged

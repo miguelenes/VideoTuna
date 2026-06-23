@@ -75,3 +75,44 @@ def test_sdpa_context_rocm_excludes_flash_kernel():
                 backend_names = [b.name for b in backends]
                 assert "FLASH_ATTENTION" not in backend_names
                 assert "EFFICIENT_ATTENTION" in backend_names
+
+
+def test_diffusers_attn_backend_session_scoped():
+    """--cpu-smoke projects eager → DIFFUSERS_ATTN_BACKEND, restored on exit."""
+    from unittest.mock import MagicMock
+
+    from videotuna.settings import (
+        ENV_DIFFUSERS_ATTN_BACKEND,
+        inference_settings_session,
+    )
+
+    os.environ.pop(ENV_DIFFUSERS_ATTN_BACKEND, None)
+    model = MagicMock(spec=[])  # no set_attention_backend attr
+
+    with inference_settings_session(cpu_smoke=True):
+        assert attention.get_attn_backend() == "eager"
+        attention.apply_diffusers_attention_backend(model)
+        assert os.environ[ENV_DIFFUSERS_ATTN_BACKEND] == "_native_math"
+
+    assert ENV_DIFFUSERS_ATTN_BACKEND not in os.environ
+
+
+def test_diffusers_attn_backend_session_restores_prior_value():
+    """DIFFUSERS_ATTN_BACKEND prior value is restored after the session."""
+    from unittest.mock import MagicMock
+
+    from videotuna.settings import (
+        ENV_DIFFUSERS_ATTN_BACKEND,
+        inference_settings_session,
+    )
+
+    os.environ[ENV_DIFFUSERS_ATTN_BACKEND] = "flash"
+    model = MagicMock(spec=[])
+
+    try:
+        with inference_settings_session(cpu_smoke=True):
+            attention.apply_diffusers_attention_backend(model)
+            assert os.environ[ENV_DIFFUSERS_ATTN_BACKEND] == "_native_math"
+        assert os.environ[ENV_DIFFUSERS_ATTN_BACKEND] == "flash"
+    finally:
+        os.environ.pop(ENV_DIFFUSERS_ATTN_BACKEND, None)

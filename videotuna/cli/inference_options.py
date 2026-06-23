@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
-import warnings
 from dataclasses import dataclass, fields
 from typing import Annotated, Any, Literal
 
@@ -208,22 +206,6 @@ def inference_options_to_config(
     merged.setdefault("cpu_smoke", False)
 
     return InferenceRunConfig.model_validate(merged)
-
-
-def inference_options_to_namespace(
-    *,
-    run: InferenceRunOptions | None = None,
-    standard: StandardInferenceOptions | None = None,
-    preset: InferencePreset | None = None,
-) -> argparse.Namespace:
-    """Deprecated: use :func:`inference_options_to_config` instead."""
-    warnings.warn(
-        "inference_options_to_namespace is deprecated; use inference_options_to_config",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    config = inference_options_to_config(run=run, standard=standard, preset=preset)
-    return argparse.Namespace(**config.model_dump())
 
 
 def validate_preset_requirements(
