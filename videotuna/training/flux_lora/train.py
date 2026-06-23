@@ -15,6 +15,7 @@ from diffusers.optimization import get_scheduler
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
+from videotuna.settings import get_settings
 from videotuna.training.flux_lora.checkpoint import (
     checkpoint_step,
     find_latest_checkpoint,
@@ -36,6 +37,14 @@ from videotuna.training.flux_lora.dataset import (
 from videotuna.training.flux_lora.model_utils import load_flux_training_models
 from videotuna.training.flux_lora.text_embed_cache import build_or_load_cache
 from videotuna.utils.logging_config import bound_logger, resolve_device_label
+from videotuna.utils.training_metrics import (
+    DEFAULT_FLUX_TRACKIO_PROJECT,
+    build_trackio_init_kwargs,
+    describe_metrics_backend,
+    log_validation_image_to_trackio,
+    resolve_accelerate_log_with,
+    trackio_enabled,
+)
 
 logger = bound_logger(phase="t2i", flow="flux_lora")
 
@@ -47,8 +56,11 @@ def create_flux_accelerator(
     *,
     mixed_precision: str,
     gradient_accumulation_steps: int = 1,
+    metrics_backend: str | None = None,
 ) -> Accelerator:
-    """Build an Accelerate instance with local TensorBoard experiment tracking."""
+    """Build an Accelerate instance with TensorBoard (and optional Trackio) tracking."""
+    if metrics_backend is None:
+        metrics_backend = get_settings().metrics_backend
     project_config = ProjectConfiguration(
         project_dir=str(output_dir),
         logging_dir=str(output_dir / "tensorboard"),
@@ -56,7 +68,7 @@ def create_flux_accelerator(
     return Accelerator(
         gradient_accumulation_steps=gradient_accumulation_steps,
         mixed_precision=mixed_precision,
-        log_with="tensorboard",
+        log_with=resolve_accelerate_log_with(metrics_backend),
         project_config=project_config,
     )
 
@@ -231,6 +243,8 @@ def _run_validation(
     accelerator: Accelerator,
     weight_dtype: torch.dtype,
     log,
+    *,
+    metrics_backend: str,
 ) -> None:
     if not config.validation_prompt or not config.validation_steps:
         return
@@ -273,6 +287,9 @@ def _run_validation(
             global_step,
             dataformats="CHW",
         )
+
+    if trackio_enabled(metrics_backend):
+        log_validation_image_to_trackio(image, global_step)
 
 
 def _build_dataloader(
@@ -338,6 +355,7 @@ def _run_training_loop(
     global_step: int,
     max_train_steps: int,
     log,
+    metrics_backend: str,
 ) -> None:
     progress = tqdm(
         range(global_step, max_train_steps),
@@ -383,6 +401,7 @@ def _run_training_loop(
                 accelerator,
                 weight_dtype,
                 log,
+                metrics_backend=metrics_backend,
             )
             if (
                 global_step % config.checkpointing_steps == 0
@@ -404,14 +423,19 @@ def train(config: FluxLoraTrainConfig, data_config: FluxLoraDataConfig) -> None:
     output_dir = Path(config.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    settings = get_settings()
+    metrics_backend = settings.metrics_backend
+
     accelerator = create_flux_accelerator(
         output_dir,
         mixed_precision=config.mixed_precision,
         gradient_accumulation_steps=config.gradient_accumulation_steps,
+        metrics_backend=metrics_backend,
     )
     log = logger.bind(device=resolve_device_label(accelerator.device))
     if accelerator.is_main_process:
         log.info("Training Flux LoRA → {}", output_dir)
+        log.info("Metrics backend: {}", describe_metrics_backend(metrics_backend))
 
     components = load_flux_training_models(
         config.pretrained_model_name_or_path,
@@ -484,7 +508,13 @@ def train(config: FluxLoraTrainConfig, data_config: FluxLoraDataConfig) -> None:
             "Advanced LR scheduler to step {} (optimizer state not restored)",
             global_step,
         )
-    accelerator.init_trackers("flux-domain-lora", config=_flux_tracker_config(config))
+    trackio_project = settings.trackio_project or DEFAULT_FLUX_TRACKIO_PROJECT
+    trackio_init_kwargs = build_trackio_init_kwargs(space_id=settings.trackio_space_id)
+    accelerator.init_trackers(
+        trackio_project,
+        config=_flux_tracker_config(config),
+        init_kwargs=trackio_init_kwargs,
+    )
 
     _run_training_loop(
         config=config,
@@ -499,6 +529,7 @@ def train(config: FluxLoraTrainConfig, data_config: FluxLoraDataConfig) -> None:
         global_step=global_step,
         max_train_steps=max_train_steps,
         log=log,
+        metrics_backend=metrics_backend,
     )
 
     accelerator.end_training()
