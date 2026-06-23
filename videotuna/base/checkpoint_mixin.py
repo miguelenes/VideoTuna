@@ -6,8 +6,6 @@ import torch
 import torch.nn as nn
 from loguru import logger
 
-from videotuna.utils.common_utils import print_green, print_yellow
-
 
 class CheckpointMixin:
     def load_first_stage(
@@ -17,9 +15,9 @@ class CheckpointMixin:
         if os.path.exists(path):
             assert self.first_stage_model is not None
             self.first_stage_model = self.load_model(self.first_stage_model, path)
-            print_green("Successfully loaded first_stage_model from checkpoint.")
+            logger.success("Successfully loaded first_stage_model from checkpoint.")
         elif ignore_missing_ckpts:
-            print_yellow("Checkpoint of first_stage_model file not found. Ignoring.")
+            logger.warning("Checkpoint of first_stage_model file not found. Ignoring.")
         else:
             raise FileNotFoundError("Checkpoint of first_stage_model file not found.")
 
@@ -30,9 +28,9 @@ class CheckpointMixin:
         if os.path.exists(path):
             assert self.cond_stage_model is not None
             self.cond_stage_model = self.load_model(self.cond_stage_model, path)
-            print_green("Successfully loaded cond_stage_model from checkpoint.")
+            logger.success("Successfully loaded cond_stage_model from checkpoint.")
         elif ignore_missing_ckpts:
-            print_yellow("Checkpoint of cond_stage_model file not found. Ignoring.")
+            logger.warning("Checkpoint of cond_stage_model file not found. Ignoring.")
         else:
             raise FileNotFoundError("Checkpoint of cond_stage_model file not found.")
 
@@ -45,9 +43,9 @@ class CheckpointMixin:
         path = os.path.join(str(ckpt_path), self.cond_stage_2_model_path)
         if os.path.exists(path):
             self.cond_stage_2_model = self.load_model(self.cond_stage_2_model, path)
-            print_green("Successfully loaded cond_stage_2_model from checkpoint.")
+            logger.success("Successfully loaded cond_stage_2_model from checkpoint.")
         elif ignore_missing_ckpts:
-            print_yellow("Checkpoint of cond_stage_2_model file not found. Ignoring.")
+            logger.warning("Checkpoint of cond_stage_2_model file not found. Ignoring.")
         else:
             raise FileNotFoundError("Checkpoint of cond_stage_2_model file not found.")
 
@@ -66,9 +64,9 @@ class CheckpointMixin:
         if os.path.exists(path):
             assert self.denoiser is not None
             self.denoiser = self.load_model(self.denoiser, path)
-            print_green("Successfully loaded denoiser from checkpoint.")
+            logger.success("Successfully loaded denoiser from checkpoint.")
         elif ignore_missing_ckpts:
-            print_yellow("Checkpoint of denoiser file not found. Ignoring.")
+            logger.warning("Checkpoint of denoiser file not found. Ignoring.")
         else:
             raise FileNotFoundError("Checkpoint of denoiser file not found.")
 
@@ -87,9 +85,9 @@ class CheckpointMixin:
         if lora_path is not None and os.path.exists(lora_path):
             assert self.denoiser is not None
             self.load_model(self.denoiser, lora_path, strict=False)
-            print_green("Successfully loaded denoiser from checkpoint.")
+            logger.success("Successfully loaded denoiser from checkpoint.")
         elif ignore_missing_ckpts:
-            print_yellow("Checkpoint of denoiser file not found. Ignoring.")
+            logger.warning("Checkpoint of denoiser file not found. Ignoring.")
         else:
             raise FileNotFoundError("Checkpoint of denoiser file not found.")
 

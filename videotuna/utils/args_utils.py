@@ -3,10 +3,8 @@ import os
 import time
 from enum import Enum
 from pathlib import Path
-from typing import Union
 
 import torch
-from colorama import Fore, Style
 from loguru import logger
 from omegaconf import DictConfig, OmegaConf
 from pytorch_lightning import Trainer
@@ -15,6 +13,7 @@ from videotuna.training.wan_lora.config import (
     WanLoraTrainConfig,
     validated_config_to_dictconfig,
 )
+from videotuna.utils.cli_console import render_inference_config_panel
 from videotuna.utils.config_mapping import apply_config_mappings
 from videotuna.utils.lightning_utils import add_trainer_args_to_parser
 
@@ -190,40 +189,4 @@ def print_inference_config(inference_config: DictConfig):
 
     :param inference_config: The inference config.
     """
-    # Color definitions
-    HEADER = Fore.CYAN
-    KEY = Fore.GREEN
-    VALUE = Fore.WHITE
-    BORDER = Fore.BLUE
-    RESET = Style.RESET_ALL
-
-    # Header
-    border = f"{BORDER}{'=' * 60}{RESET}"
-    title = f"{HEADER}Inference Configuration{RESET}"
-
-    print(border)
-    print(f"{title:^60}")
-    print(border)
-
-    # Config items
-    def print_item(key: str, value: Union[int, str, float, None]):
-        if value is not None:
-            print(f"{KEY}{key:<18}{RESET}: {VALUE}{value}{RESET}")
-
-    config_items = {
-        "Mode": inference_config.mode,
-        "Save Directory": inference_config.savedir,
-        "Height": inference_config.height,
-        "Width": inference_config.width,
-        "Frames": inference_config.frames,
-        "FPS": inference_config.fps,
-        "Seed": inference_config.seed,
-        "Sample Batch Size": inference_config.bs,
-        "Samples per Prompt": inference_config.n_samples_prompt,
-    }
-
-    for key, value in config_items.items():
-        print_item(key, value)
-
-    # Footer
-    print(border)
+    render_inference_config_panel(inference_config)

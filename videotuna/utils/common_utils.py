@@ -11,7 +11,6 @@ import numpy as np
 import psutil
 import torch
 import torch.distributed as dist
-from colorama import Fore, Style
 from loguru import logger
 from omegaconf import DictConfig, OmegaConf
 
@@ -167,18 +166,6 @@ def setup_dist(args):
         torch.distributed.init_process_group("nccl", init_method="env://")
     else:
         torch.distributed.init_process_group("gloo", init_method="env://")
-
-
-def print_green(text):
-    print(Fore.GREEN + text + Style.RESET_ALL)
-
-
-def print_red(text):
-    print(Fore.RED + text + Style.RESET_ALL)
-
-
-def print_yellow(text):
-    print(Fore.YELLOW + text + Style.RESET_ALL)
 
 
 def _build_sample_metrics(
