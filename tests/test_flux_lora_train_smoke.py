@@ -26,14 +26,16 @@ def tiny_image_dataset(tmp_path):
 
 
 def test_dataset_loads_local_images(tiny_image_dataset):
-    dataset = FluxLoraImageDataset(tiny_image_dataset)
+    dataset = FluxLoraImageDataset(tiny_image_dataset, seed=0)
     assert len(dataset) == 1
     sample = dataset[0]
     assert sample["caption"] == "a photo of sample"
-    assert sample["pixel_values"].shape == (3, 64, 64)
+    assert sample["pixel_values"].shape[0] == 3
+    assert sample["pixel_values"].shape[1] % 64 == 0
+    assert sample["pixel_values"].shape[2] % 64 == 0
 
 
-def test_config_ignores_text_embeds_backend(tmp_path):
+def test_text_embeds_backend_requires_cache_dir(tmp_path):
     data_path = tmp_path / "backends.json"
     data_path.write_text(
         '[{"type":"local","instance_data_dir":"data","caption_strategy":"filename"},'
@@ -47,9 +49,29 @@ def test_config_ignores_text_embeds_backend(tmp_path):
         '"--max_train_steps":10}',
         encoding="utf-8",
     )
+    with pytest.raises(ValueError, match="cache_dir"):
+        load_train_config(config_path, data_path)
+
+
+def test_text_embeds_backend_parses_with_cache_dir(tmp_path):
+    data_path = tmp_path / "backends.json"
+    data_path.write_text(
+        '[{"type":"local","instance_data_dir":"data","caption_strategy":"filename"},'
+        '{"type":"local","dataset_type":"text_embeds","cache_dir":"cache/text",'
+        '"disabled":false}]',
+        encoding="utf-8",
+    )
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        '{"--pretrained_model_name_or_path":"black-forest-labs/FLUX.1-dev",'
+        '"--output_dir":"results/train/test",'
+        '"--max_train_steps":10}',
+        encoding="utf-8",
+    )
     train_cfg, data_cfg = load_train_config(config_path, data_path)
     assert train_cfg.max_train_steps == 10
-    assert data_cfg.caption_strategy == "filename"
+    assert data_cfg.text_embeds is not None
+    assert data_cfg.text_embeds.cache_dir == "cache/text"
 
 
 def test_load_train_config_from_repo_defaults():
@@ -57,6 +79,8 @@ def test_load_train_config_from_repo_defaults():
     assert train_cfg.pretrained_model_name_or_path == "black-forest-labs/FLUX.1-dev"
     assert data_cfg.resolution == 512
     assert train_cfg.num_workers == 0
+    assert train_cfg.gradient_checkpointing is True
+    assert train_cfg.validation_steps == 40
 
 
 def test_load_train_config_num_workers_from_json(tmp_path):

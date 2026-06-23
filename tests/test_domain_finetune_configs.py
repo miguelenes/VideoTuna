@@ -37,9 +37,12 @@ def test_flux_domain_train_config_loads():
     assert train_cfg.max_train_steps == 2000
     assert train_cfg.checkpointing_steps == 250
     assert train_cfg.validation_prompt is not None
+    assert train_cfg.validation_steps == 40
+    assert train_cfg.gradient_checkpointing is True
     assert "sks_style" in train_cfg.validation_prompt
     assert data_cfg.instance_data_dir == "data/t2i/domain"
     assert data_cfg.caption_strategy == "filename"
+    assert data_cfg.text_embeds is not None
 
 
 def test_flux_domain_data_backend_json():

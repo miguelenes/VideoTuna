@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import math
 from pathlib import Path
 from typing import Any
 
@@ -16,17 +15,31 @@ from diffusers.optimization import get_scheduler
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
-from videotuna.training.flux_lora.checkpoint import save_lora_checkpoint
+from videotuna.training.flux_lora.checkpoint import (
+    checkpoint_step,
+    find_latest_checkpoint,
+    load_lora_checkpoint,
+    prune_checkpoints,
+    save_lora_checkpoint,
+)
 from videotuna.training.flux_lora.config import (
+    FluxLoraDataConfig,
     FluxLoraTrainConfig,
     load_train_config,
     stamp_output_dir,
 )
-from videotuna.training.flux_lora.dataset import FluxLoraImageDataset
+from videotuna.training.flux_lora.dataset import (
+    FluxBucketBatchSampler,
+    FluxLoraImageDataset,
+    _load_caption,
+)
 from videotuna.training.flux_lora.model_utils import load_flux_training_models
+from videotuna.training.flux_lora.text_embed_cache import build_or_load_cache
 from videotuna.utils.logging_config import bound_logger, resolve_device_label
 
 logger = bound_logger(phase="t2i", flow="flux_lora")
+
+_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 
 
 def create_flux_accelerator(
@@ -58,6 +71,77 @@ def _flux_tracker_config(config: FluxLoraTrainConfig) -> dict[str, Any]:
     }
 
 
+def _apply_runtime_flags(config: FluxLoraTrainConfig) -> None:
+    if config.disable_tf32:
+        torch.backends.cuda.matmul.allow_tf32 = False
+        torch.backends.cudnn.allow_tf32 = False
+    torch.backends.cudnn.benchmark = not config.disable_benchmark
+
+
+def _parse_validation_resolution(value: str) -> tuple[int, int]:
+    if "x" in value.lower():
+        width_str, height_str = value.lower().split("x", 1)
+        return int(width_str), int(height_str)
+    size = int(value)
+    return size, size
+
+
+def _collect_captions(data_config: FluxLoraDataConfig) -> list[str]:
+    data_dir = Path(data_config.instance_data_dir)
+    captions: list[str] = []
+    for path in sorted(data_dir.iterdir()):
+        if path.suffix.lower() not in _IMAGE_EXTENSIONS:
+            continue
+        captions.append(
+            _load_caption(
+                path,
+                data_config.caption_strategy,
+                data_config.default_caption,
+            )
+        )
+    return captions
+
+
+def _resolve_resume_checkpoint(
+    config: FluxLoraTrainConfig, output_dir: Path
+) -> Path | None:
+    if not config.resume_from_checkpoint:
+        return None
+    if config.resume_from_checkpoint == "latest":
+        return find_latest_checkpoint(output_dir)
+    candidate = Path(config.resume_from_checkpoint)
+    if not candidate.is_absolute():
+        candidate = output_dir / candidate
+    return candidate if candidate.is_dir() else None
+
+
+def _create_optimizer(transformer, config: FluxLoraTrainConfig) -> torch.optim.AdamW:
+    if config.optimizer not in {"adamw", "adamw_bf16"}:
+        raise ValueError(f"Unsupported optimizer: {config.optimizer}")
+    return torch.optim.AdamW(
+        transformer.parameters(),
+        lr=config.learning_rate,
+        betas=(0.9, 0.999),
+        weight_decay=1e-4,
+        eps=1e-8,
+    )
+
+
+def _collate_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:
+    pixel_values = torch.stack([item["pixel_values"] for item in batch])
+    captions = [item["caption"] for item in batch]
+    collated: dict[str, Any] = {"pixel_values": pixel_values, "caption": captions}
+    if batch and "prompt_embeds" in batch[0]:
+        collated["prompt_embeds"] = torch.cat(
+            [item["prompt_embeds"] for item in batch], dim=0
+        )
+        collated["pooled_prompt_embeds"] = torch.cat(
+            [item["pooled_prompt_embeds"] for item in batch], dim=0
+        )
+        collated["text_ids"] = torch.cat([item["text_ids"] for item in batch], dim=0)
+    return collated
+
+
 def _prepare_batch_latents(vae, pixel_values, weight_dtype):
     pixel_values = pixel_values.to(dtype=weight_dtype)
     latents = vae.encode(pixel_values).latent_dist.sample()
@@ -82,13 +166,18 @@ def _compute_loss(
         captions = [captions]
 
     with torch.no_grad():
-        prompt_embeds, pooled_prompt_embeds, text_ids = pipeline.encode_prompt(
-            prompt=captions,
-            prompt_2=captions,
-            device=accelerator.device,
-            num_images_per_prompt=1,
-            max_sequence_length=512,
-        )
+        if "prompt_embeds" in batch:
+            prompt_embeds = batch["prompt_embeds"].to(accelerator.device)
+            pooled_prompt_embeds = batch["pooled_prompt_embeds"].to(accelerator.device)
+            text_ids = batch["text_ids"].to(accelerator.device)
+        else:
+            prompt_embeds, pooled_prompt_embeds, text_ids = pipeline.encode_prompt(
+                prompt=captions,
+                prompt_2=captions,
+                device=accelerator.device,
+                num_images_per_prompt=1,
+                max_sequence_length=512,
+            )
         model_input, latent_height, latent_width = _prepare_batch_latents(
             pipeline.vae, pixel_values, weight_dtype
         )
@@ -126,8 +215,184 @@ def _compute_loss(
     return F.mse_loss(model_pred.float(), target.float(), reduction="mean")
 
 
-def train(config: FluxLoraTrainConfig, data_config) -> None:
+def _run_validation(
+    pipeline: FluxPipeline,
+    config: FluxLoraTrainConfig,
+    output_dir: Path,
+    global_step: int,
+    accelerator: Accelerator,
+    weight_dtype: torch.dtype,
+    log,
+) -> None:
+    if not config.validation_prompt or not config.validation_steps:
+        return
+    if global_step % config.validation_steps != 0:
+        return
+    if not accelerator.is_main_process:
+        return
+
+    width, height = _parse_validation_resolution(config.validation_resolution)
+    validation_dir = output_dir / "validation"
+    validation_dir.mkdir(parents=True, exist_ok=True)
+
+    generator = torch.Generator(device=accelerator.device).manual_seed(
+        config.validation_seed
+    )
+    pipeline.transformer.eval()
+    with torch.inference_mode():
+        result = pipeline(
+            prompt=config.validation_prompt,
+            height=height,
+            width=width,
+            num_inference_steps=config.validation_num_inference_steps,
+            guidance_scale=config.validation_guidance,
+            generator=generator,
+        )
+    pipeline.transformer.train()
+    image = result.images[0]
+    image_path = validation_dir / f"step-{global_step:06d}.png"
+    image.save(image_path)
+    log.info("Saved validation image to {}", image_path)
+
+    tracker = accelerator.trackers[0] if accelerator.trackers else None
+    if tracker is not None and hasattr(tracker, "writer"):
+        import numpy as np
+
+        array = np.array(image.convert("RGB")).transpose(2, 0, 1)
+        tracker.writer.add_image(
+            "validation/sample",
+            array,
+            global_step,
+            dataformats="CHW",
+        )
+
+
+def _build_dataloader(
+    dataset: FluxLoraImageDataset,
+    config: FluxLoraTrainConfig,
+) -> DataLoader:
+    if config.train_batch_size > 1:
+        batch_sampler = FluxBucketBatchSampler(
+            dataset.bucket_ids,
+            config.train_batch_size,
+            shuffle=True,
+            seed=config.seed,
+        )
+        return DataLoader(
+            dataset,
+            batch_sampler=batch_sampler,
+            num_workers=config.num_workers,
+            pin_memory=torch.cuda.is_available(),
+            collate_fn=_collate_batch,
+        )
+    return DataLoader(
+        dataset,
+        batch_size=config.train_batch_size,
+        shuffle=True,
+        num_workers=config.num_workers,
+        pin_memory=torch.cuda.is_available(),
+        collate_fn=_collate_batch,
+    )
+
+
+def _build_embed_lookup(
+    pipeline: FluxPipeline,
+    data_config: FluxLoraDataConfig,
+    config: FluxLoraTrainConfig,
+    device: torch.device,
+) -> dict[str, dict[str, torch.Tensor]]:
+    if not data_config.text_embeds or data_config.text_embeds.disabled:
+        return {}
+    captions = _collect_captions(data_config)
+    write_batch_size = (
+        data_config.text_embeds.write_batch_size or config.write_batch_size
+    )
+    return build_or_load_cache(
+        pipeline,
+        captions,
+        data_config.text_embeds.cache_dir,
+        write_batch_size,
+        device,
+    )
+
+
+def _run_training_loop(
+    *,
+    config: FluxLoraTrainConfig,
+    output_dir: Path,
+    pipeline: FluxPipeline,
+    transformer,
+    dataloader: DataLoader,
+    optimizer,
+    lr_scheduler,
+    accelerator: Accelerator,
+    weight_dtype: torch.dtype,
+    global_step: int,
+    max_train_steps: int,
+    log,
+) -> None:
+    progress = tqdm(
+        range(global_step, max_train_steps),
+        disable=not accelerator.is_main_process,
+        desc="Flux LoRA",
+        initial=global_step,
+        total=max_train_steps,
+    )
+
+    while global_step < max_train_steps:
+        for batch in dataloader:
+            with accelerator.accumulate(transformer):
+                loss = _compute_loss(
+                    pipeline,
+                    transformer,
+                    batch,
+                    weight_dtype,
+                    accelerator,
+                )
+                accelerator.backward(loss)
+                optimizer.step()
+                lr_scheduler.step()
+                optimizer.zero_grad(set_to_none=True)
+
+            if not accelerator.sync_gradients:
+                continue
+
+            global_step += 1
+            progress.update(1)
+            progress.set_postfix(loss=f"{loss.item():.4f}", step=global_step)
+            accelerator.log(
+                {
+                    "train/loss": loss.item(),
+                    "train/lr": lr_scheduler.get_last_lr()[0],
+                },
+                step=global_step,
+            )
+            _run_validation(
+                pipeline,
+                config,
+                output_dir,
+                global_step,
+                accelerator,
+                weight_dtype,
+                log,
+            )
+            if (
+                global_step % config.checkpointing_steps == 0
+                or global_step == max_train_steps
+            ) and accelerator.is_main_process:
+                unwrapped = accelerator.unwrap_model(transformer)
+                ckpt = save_lora_checkpoint(unwrapped, output_dir, global_step)
+                prune_checkpoints(output_dir, config.checkpoints_total_limit)
+                log.info("Saved LoRA checkpoint to {}", ckpt)
+            if global_step >= max_train_steps:
+                break
+
+    progress.close()
+
+
+def train(config: FluxLoraTrainConfig, data_config: FluxLoraDataConfig) -> None:
     set_seed(config.seed)
+    _apply_runtime_flags(config)
     output_dir = Path(config.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -139,15 +404,6 @@ def train(config: FluxLoraTrainConfig, data_config) -> None:
     if accelerator.is_main_process:
         log.info("Training Flux LoRA → {}", output_dir)
 
-    dataset = FluxLoraImageDataset(data_config)
-    dataloader = DataLoader(
-        dataset,
-        batch_size=config.train_batch_size,
-        shuffle=True,
-        num_workers=config.num_workers,
-        pin_memory=torch.cuda.is_available(),
-    )
-
     components = load_flux_training_models(
         config.pretrained_model_name_or_path,
         lora_rank=config.lora_rank,
@@ -156,6 +412,19 @@ def train(config: FluxLoraTrainConfig, data_config) -> None:
     )
     weight_dtype = components["weight_dtype"]
     transformer = components["transformer"]
+
+    global_step = 0
+    resume_path = _resolve_resume_checkpoint(config, output_dir)
+    if resume_path is not None:
+        load_lora_checkpoint(transformer, resume_path)
+        global_step = checkpoint_step(resume_path)
+        log.info("Resumed LoRA weights from {} (step {})", resume_path, global_step)
+    elif config.resume_from_checkpoint:
+        log.info(
+            "No checkpoint found for resume_from_checkpoint={!r}; "
+            "starting from step 0",
+            config.resume_from_checkpoint,
+        )
 
     pipeline = FluxPipeline.from_pretrained(
         config.pretrained_model_name_or_path,
@@ -175,15 +444,17 @@ def train(config: FluxLoraTrainConfig, data_config) -> None:
     pipeline.text_encoder.to(accelerator.device)
     pipeline.text_encoder_2.to(accelerator.device)
 
-    optimizer = torch.optim.AdamW(
-        transformer.parameters(),
-        lr=config.learning_rate,
-        betas=(0.9, 0.999),
-        weight_decay=1e-4,
-        eps=1e-8,
+    embed_lookup = _build_embed_lookup(
+        pipeline, data_config, config, accelerator.device
     )
+    dataset = FluxLoraImageDataset(
+        data_config,
+        embed_lookup=embed_lookup,
+        seed=config.seed,
+    )
+    dataloader = _build_dataloader(dataset, config)
 
-    num_update_steps_per_epoch = math.ceil(len(dataloader) / config.train_batch_size)
+    optimizer = _create_optimizer(transformer, config)
     max_train_steps = config.max_train_steps
     lr_scheduler = get_scheduler(
         config.lr_scheduler,
@@ -198,59 +469,28 @@ def train(config: FluxLoraTrainConfig, data_config) -> None:
     pipeline.transformer = accelerator.unwrap_model(transformer)
     accelerator.init_trackers("flux-domain-lora", config=_flux_tracker_config(config))
 
-    progress = tqdm(
-        range(max_train_steps),
-        disable=not accelerator.is_main_process,
-        desc="Flux LoRA",
+    _run_training_loop(
+        config=config,
+        output_dir=output_dir,
+        pipeline=pipeline,
+        transformer=transformer,
+        dataloader=dataloader,
+        optimizer=optimizer,
+        lr_scheduler=lr_scheduler,
+        accelerator=accelerator,
+        weight_dtype=weight_dtype,
+        global_step=global_step,
+        max_train_steps=max_train_steps,
+        log=log,
     )
-    global_step = 0
-    epoch = 0
-    while global_step < max_train_steps:
-        epoch += 1
-        for batch in dataloader:
-            with accelerator.accumulate(transformer):
-                loss = _compute_loss(
-                    pipeline,
-                    transformer,
-                    batch,
-                    weight_dtype,
-                    accelerator,
-                )
-                accelerator.backward(loss)
-                optimizer.step()
-                lr_scheduler.step()
-                optimizer.zero_grad(set_to_none=True)
-
-            if accelerator.sync_gradients:
-                global_step += 1
-                progress.update(1)
-                progress.set_postfix(loss=f"{loss.item():.4f}", step=global_step)
-                accelerator.log(
-                    {
-                        "train/loss": loss.item(),
-                        "train/lr": lr_scheduler.get_last_lr()[0],
-                    },
-                    step=global_step,
-                )
-
-                if (
-                    global_step % config.checkpointing_steps == 0
-                    or global_step == max_train_steps
-                ):
-                    if accelerator.is_main_process:
-                        unwrapped = accelerator.unwrap_model(transformer)
-                        ckpt = save_lora_checkpoint(unwrapped, output_dir, global_step)
-                        log.info("Saved LoRA checkpoint to {}", ckpt)
-
-                if global_step >= max_train_steps:
-                    break
 
     accelerator.end_training()
     if accelerator.is_main_process:
+        model_path = config.pretrained_model_name_or_path
         with open(output_dir / "training_config.json", "w") as f:
             json.dump(
                 {
-                    "pretrained_model_name_or_path": config.pretrained_model_name_or_path,
+                    "pretrained_model_name_or_path": model_path,
                     "lora_rank": config.lora_rank,
                     "max_train_steps": config.max_train_steps,
                     "resolution": config.resolution,
