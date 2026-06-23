@@ -90,7 +90,7 @@ Debug inventory: `poetry run python tools/spike_wan_lora_bridge.py --synthetic /
 
 ## Wan training stack pins (DeepSpeed + PyTorch Lightning audit)
 
-See [ADR-001](decisions/0001-dual-training-stacks.md) for rationale; pins below.
+Evaluated 2026-06-23 on branch `cursor/deepspeed-pl-upgrade-eval-eaa8`. **Decision: stay pinned** — see [ADR-002](decisions/0002-wan-training-stack-version-pins.md). Stack rationale: [ADR-001](decisions/0001-dual-training-stacks.md).
 
 | Phase | Stack | Entry point |
 |-------|-------|-------------|
@@ -103,8 +103,8 @@ Pinned in `[tool.poetry.group.training]` / `uv` `training` group (`poetry instal
 
 | Package | Pin | Rationale |
 |---------|-----|-----------|
-| `deepspeed` | **0.19.2** | ZeRO-3 CPU offload for 14B LoRA on ~40 GB GPUs; `poetry run install-deepspeed` rebuilds against the active torch/CUDA build. |
-| `pytorch-lightning` | **2.4.0** | Native Wan training path (callbacks, `VideoTunaModelCheckpoint`, DeepSpeed strategy registry). Flux stays on Accelerate — no Lightning upgrade required for Phase 1. |
+| `deepspeed` | **0.19.2** | Latest PyPI (2026-06-16); ZeRO-3 CPU offload for 14B LoRA on ~40 GB GPUs; `poetry run install-deepspeed` rebuilds against the active torch/CUDA build. |
+| `pytorch-lightning` | **2.4.0** | Native Wan training path (callbacks, `VideoTunaModelCheckpoint`, DeepSpeed strategy registry). Flux stays on Accelerate — no Lightning upgrade required for Phase 1. Future cap: **≤ 2.6.1** (never 2.6.2+; [GHSA-w37p-236h-pfx3](https://github.com/Lightning-AI/pytorch-lightning/security/advisories/GHSA-w37p-236h-pfx3)). |
 | `torch` | **^2.6** (cu126) | Shared base; DeepSpeed ops JIT-built against installed torch. |
 
 ### Breaking-change notes (0.19.2 + 2.4.0)
@@ -119,7 +119,7 @@ PrivTune mitigates by passing `autocast_adapter_dtype=False` to `get_peft_model(
 
 - String strategy `deepspeed_stage_3_offload` maps to `DeepSpeedStrategy` (stage 3, CPU optimizer + param offload).
 - `DeepSpeedOptimizer` import path fix landed in PL 2.3.x; compatible with DeepSpeed ≥ 0.14.1.
-- PL 2.5.x adds `exclude_frozen_parameters` on `DeepSpeedStrategy` (useful for LoRA) but is **not required** for current configs. Defer upgrade; avoid PL 2.6.2+ (upstream supply-chain advisory). Torch 2.6 is ahead of PL 2.4’s original test matrix but works in practice with these pins.
+- PL 2.5.5+ adds `exclude_frozen_parameters` on `DeepSpeedStrategy` (useful for LoRA) but is **not required** for current configs — PrivTune exports LoRA-only via `VideoTunaModelCheckpoint` + `zero_to_fp32`. Defer upgrade; **never pin PL 2.6.2+** ([CVE-2026-44484](https://nvd.nist.gov/vuln/detail/CVE-2026-44484)). Torch 2.6 is ahead of PL 2.4’s original test matrix but works in practice with these pins.
 
 **ZeRO-3 gradients:** use `deepspeed.utils.safe_get_full_grad(param)` if reading partitioned grads in custom code (not used in default Wan loss path).
 
@@ -127,11 +127,20 @@ PrivTune mitigates by passing `autocast_adapter_dtype=False` to `get_peft_model(
 
 Requires NVIDIA GPU (~40 GB for Wan cloud smoke), Wan 14B weights under `checkpoints/wan/Wan2.1-T2V-14B`, and `data/t2v/domain/metadata.csv` + videos.
 
+**2026-06-23 evaluation:** CPU gate passed on current pins (`coverage-gate`: 73 passed). GPU smoke **not run** in the evaluation agent (no GPU / weights / dataset). Re-run on cloud GPU before the next pin review.
+
 ```bash
 poetry install -E cuda --with training
 poetry run install-deepspeed
 
-# Short cloud smoke preset (1 epoch, checkpoint every 5 steps)
+# Minimal 1-step smoke (fastest ZeRO-3 validation)
+poetry run train-domain-t2v \
+  --base configs/domain/wan_t2v_lora_cloud_smoke.yaml \
+  --devices 0, \
+  --limit_train_batches 1 \
+  --train.lightning.callbacks.model_checkpoint.params.every_n_train_steps 1
+
+# Full cloud smoke preset (1 epoch, checkpoint every 5 steps)
 poetry run train-domain-t2v \
   --base configs/domain/wan_t2v_lora_cloud_smoke.yaml \
   --devices 0,
@@ -139,7 +148,7 @@ poetry run train-domain-t2v \
 
 On Vast.ai after provisioning: `TRAIN_PROFILE=wan-t2v-lora ./cloud/vast/run-smoke-train.sh` (see [cloud-gpu-training.md](runbooks/cloud-gpu-training.md)).
 
-Success: trainer reports `DeepSpeedStrategy`, completes ≥5 steps, writes `results/train/.../checkpoints/only_trained_model/denoiser-*.ckpt`.
+Success: log shows `DeepSpeedStrategy` and `deepspeed needs autocast`; completes requested steps without dtype/allgather error; writes `results/train/.../checkpoints/only_trained_model/denoiser-*.ckpt`.
 
 Local dev without GPU: CPU CI covers config YAML and flow-matching helpers only (`tests/test_domain_finetune_configs.py`, `tests/test_wan_training_step.py`); ZeRO-3 behavior is not exercised in CI.
 

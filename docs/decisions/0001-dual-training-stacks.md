@@ -99,10 +99,11 @@ Wan 2.2 Diffusers is the **validation** target, not the 2.1 training stack. Doma
 ### Governance
 
 - **Do not** refactor one phase to match the other's stack without superseding this ADR.
-- Version pins and breaking-change notes stay in [MODEL_VERSIONS.md](../MODEL_VERSIONS.md); this ADR links there instead of duplicating version tables.
+- Version pins and breaking-change notes stay in [MODEL_VERSIONS.md](../MODEL_VERSIONS.md); upgrade evaluation outcome in [ADR-002](0002-wan-training-stack-version-pins.md).
 
 ## Related docs
 
 - [MODEL_VERSIONS.md](../MODEL_VERSIONS.md) — stack pins and upgrade audit
+- [ADR-002: Wan training stack version pins](0002-wan-training-stack-version-pins.md) — DeepSpeed / Lightning pin evaluation
 - [vendor-policy.md](../vendor-policy.md) — vendored Wan vs first-party Flux layout
 - [domain-adult-finetune.md](../runbooks/domain-adult-finetune.md) — VRAM and training runbook

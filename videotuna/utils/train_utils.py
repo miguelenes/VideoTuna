@@ -271,9 +271,11 @@ def get_autoresume_path(logdir):
         mainlogger.info(f"[INFO] resume from: {ckpt}")
     else:
         resume_checkpt_path = None
-        checkpoint_dir = os.path.join(logdir, "checkpoints")
+        cursor/deepspeed-pl-upgrade-eval-eaa8
+        ckpt_dir = os.path.join(logdir, "checkpoints")
         mainlogger.info(
-            "[INFO] no checkpoint found in current workspace: {}", checkpoint_dir
+            f"[INFO] no checkpoint found in current workspace: {ckpt_dir}"
+        main
         )
 
     return resume_checkpt_path
