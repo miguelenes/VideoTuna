@@ -917,3 +917,75 @@ class TestDeviceUtilsIntegration:
                         match="VIDEOTUNA_COMPUTE_BACKEND=cuda but PyTorch reports HIP",
                     ):
                         detect_compute_backend()
+
+
+class TestInferenceSettingsSession:
+    """Test inference_settings_session() context manager."""
+
+    def test_cpu_smoke_sets_eager_backend(self):
+        from videotuna.settings import inference_settings_session
+
+        with inference_settings_session(cpu_smoke=True) as settings:
+            assert settings.attn_backend == "eager"
+            assert settings.torch_compile is False
+            assert settings.cpu_mode == "smoke"
+
+    def test_inference_settings_session_compile_flag(self):
+        from videotuna.settings import inference_settings_session
+
+        with inference_settings_session(compile_flag=True) as settings:
+            assert settings.torch_compile is True
+
+    def test_inference_settings_session_neither_flag(self):
+        from videotuna.settings import inference_settings_session
+
+        with inference_settings_session() as settings:
+            assert settings.torch_compile is False
+
+
+class TestProjectedEnvKeys:
+    """Test that projected (non-VIDEOTUNA) env vars are saved/restored by session."""
+
+    def test_diffsers_attn_backend_restored_on_session_exit(self):
+        from videotuna.settings import (
+            ENV_DIFFUSERS_ATTN_BACKEND,
+            settings_session,
+        )
+
+        os.environ.pop(ENV_DIFFUSERS_ATTN_BACKEND, None)
+
+        with settings_session(attn_backend="flash"):
+            os.environ[ENV_DIFFUSERS_ATTN_BACKEND] = "flash"
+
+        assert ENV_DIFFUSERS_ATTN_BACKEND not in os.environ
+
+    def test_diffsers_attn_backend_prior_value_restored(self):
+        from videotuna.settings import (
+            ENV_DIFFUSERS_ATTN_BACKEND,
+            settings_session,
+        )
+
+        os.environ[ENV_DIFFUSERS_ATTN_BACKEND] = "prior_value"
+        try:
+            with settings_session(attn_backend="sdpa"):
+                os.environ[ENV_DIFFUSERS_ATTN_BACKEND] = "native"
+
+            assert os.environ[ENV_DIFFUSERS_ATTN_BACKEND] == "prior_value"
+        finally:
+            os.environ.pop(ENV_DIFFUSERS_ATTN_BACKEND, None)
+
+    def test_apply_diffusers_attention_backend_env_fallback(self):
+        """apply_diffusers_attention_backend writes DIFFUSERS_ATTN_BACKEND when
+        the model lacks set_attention_backend."""
+        from videotuna.settings import (
+            ENV_DIFFUSERS_ATTN_BACKEND,
+            inference_settings_session,
+        )
+        from videotuna.utils.attention import apply_diffusers_attention_backend
+
+        with inference_settings_session(cpu_smoke=True):
+            os.environ.pop(ENV_DIFFUSERS_ATTN_BACKEND, None)
+            apply_diffusers_attention_backend(object())
+            assert os.environ[ENV_DIFFUSERS_ATTN_BACKEND] == "_native_math"
+
+        assert ENV_DIFFUSERS_ATTN_BACKEND not in os.environ

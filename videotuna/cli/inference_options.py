@@ -187,14 +187,14 @@ def inference_options_to_config(
         if preset.enable_model_cpu_offload:
             merged["enable_model_cpu_offload"] = True
 
-    for key, value in (run or InferenceRunOptions()).model_dump(
-        exclude_none=True
-    ).items():
+    for key, value in (
+        (run or InferenceRunOptions()).model_dump(exclude_none=True).items()
+    ):
         merged[key] = value
 
-    for key, value in (standard or StandardInferenceOptions()).model_dump(
-        exclude_none=True
-    ).items():
+    for key, value in (
+        (standard or StandardInferenceOptions()).model_dump(exclude_none=True).items()
+    ):
         merged[key] = value
 
     if "config" not in merged:

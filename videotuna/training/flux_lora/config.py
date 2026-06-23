@@ -50,32 +50,36 @@ class FluxLoraDataConfig(BaseModel):
     text_embeds: FluxTextEmbedConfig | None = None
 
 
-_INT_FIELDS: frozenset[str] = frozenset({
-    "lora_rank",
-    "max_train_steps",
-    "checkpointing_steps",
-    "checkpoints_total_limit",
-    "train_batch_size",
-    "write_batch_size",
-    "resolution",
-    "validation_steps",
-    "validation_num_inference_steps",
-    "lr_warmup_steps",
-    "num_train_epochs",
-    "seed",
-    "validation_seed",
-    "num_workers",
-    "aspect_bucket_rounding",
-    "minimum_image_size",
-    "gradient_accumulation_steps",
-})
+_INT_FIELDS: frozenset[str] = frozenset(
+    {
+        "lora_rank",
+        "max_train_steps",
+        "checkpointing_steps",
+        "checkpoints_total_limit",
+        "train_batch_size",
+        "write_batch_size",
+        "resolution",
+        "validation_steps",
+        "validation_num_inference_steps",
+        "lr_warmup_steps",
+        "num_train_epochs",
+        "seed",
+        "validation_seed",
+        "num_workers",
+        "aspect_bucket_rounding",
+        "minimum_image_size",
+        "gradient_accumulation_steps",
+    }
+)
 
-_FLOAT_FIELDS: frozenset[str] = frozenset({
-    "learning_rate",
-    "validation_guidance",
-    "validation_guidance_rescale",
-    "caption_dropout_probability",
-})
+_FLOAT_FIELDS: frozenset[str] = frozenset(
+    {
+        "learning_rate",
+        "validation_guidance",
+        "validation_guidance_rescale",
+        "caption_dropout_probability",
+    }
+)
 
 
 class FluxLoraTrainConfig(BaseModel):
