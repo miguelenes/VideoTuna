@@ -152,7 +152,7 @@ class DatasetFromCSV(torch.utils.data.Dataset):
         self.data_list = []
         for i, path in enumerate(csv_path):
             df = pd.read_csv(path)
-            self.check_df(df, path)
+            self._validate_csv_schema(df, path)
             pair_mode = (
                 "video_path" in df.columns
                 and "image_path" in df.columns
@@ -307,19 +307,62 @@ class DatasetFromCSV(torch.utils.data.Dataset):
 
         return True
 
-    @staticmethod
-    def check_df(df, df_path):
-        if (
-            "path" not in df.columns
-            and "video_path" not in df.columns
-            and "image_path" not in df.columns
-        ):
-            raise ValueError(f"The csv file {df_path} must have a column named 'path'.")
-        if "caption" not in df.columns:
+    def _validate_csv_schema(self, df, df_path):
+        columns = set(df.columns)
+        has_path = "path" in columns
+        has_video_path = "video_path" in columns
+        has_image_path = "image_path" in columns
+        pair_mode = has_video_path and has_image_path and not has_path
+
+        if not (has_path or has_video_path or has_image_path):
+            raise ValueError(
+                f"The csv file {df_path} must have a column named 'path', "
+                "'video_path', or 'image_path'."
+            )
+        if "caption" not in columns:
             raise ValueError(
                 f"The csv file {df_path} must have a column named 'caption'."
             )
-        if "video_path" in df.columns and "image_path" not in df.columns:
+
+        if self.image_to_video:
+            if pair_mode:
+                raise ValueError(
+                    f"The csv file {df_path} uses image_path+video_path pair columns, "
+                    "but image_to_video=true expects first-frame mode with a 'path' "
+                    "column only — set image_to_video: false in config for pair mode "
+                    "(see docs/runbooks/domain-adult-finetune.md)."
+                )
+            if not has_path:
+                raise ValueError(
+                    f"The csv file {df_path} must have a 'path' column when "
+                    "image_to_video=true (first-frame conditioning mode)."
+                )
+            return
+
+        if has_video_path and not has_image_path:
+            raise ValueError(
+                f"The csv file {df_path} pair mode requires an 'image_path' column."
+            )
+        if has_image_path and not has_video_path and not has_path:
+            raise ValueError(
+                f"The csv file {df_path} with image_path requires 'video_path' or "
+                "'path' when image_to_video=false."
+            )
+
+    @staticmethod
+    def check_df(df, df_path):
+        """Backward-compatible CSV validation without image_to_video context."""
+        columns = set(df.columns)
+        has_path = "path" in columns
+        has_video_path = "video_path" in columns
+        has_image_path = "image_path" in columns
+        if not (has_path or has_video_path or has_image_path):
+            raise ValueError(f"The csv file {df_path} must have a column named 'path'.")
+        if "caption" not in columns:
+            raise ValueError(
+                f"The csv file {df_path} must have a column named 'caption'."
+            )
+        if has_video_path and not has_image_path:
             raise ValueError(
                 f"The csv file {df_path} pair mode requires an 'image_path' column."
             )

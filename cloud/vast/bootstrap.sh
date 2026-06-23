@@ -152,6 +152,22 @@ download_weights_if_missing() {
     Wan-AI/Wan2.1-T2V-14B \
     "${WORKSPACE}/checkpoints/wan/Wan2.1-T2V-14B" \
     --repo-root "${REPO}"
+
+  log "Pre-downloading Wan2.1-I2V-14B-480P (with retries)..."
+  python3 "${PROVISION_RETRY}" hf-download \
+    Wan-AI/Wan2.1-I2V-14B-480P \
+    "${WORKSPACE}/checkpoints/wan/Wan2.1-I2V-14B-480P" \
+    --repo-root "${REPO}"
+
+  log "Pre-downloading Wan2.2-T2V-A14B-Diffusers into HF hub cache (with retries)..."
+  python3 "${PROVISION_RETRY}" hf-download-cache \
+    Wan-AI/Wan2.2-T2V-A14B-Diffusers \
+    --repo-root "${REPO}"
+
+  log "Pre-downloading Wan2.2-I2V-A14B-Diffusers into HF hub cache (with retries)..."
+  python3 "${PROVISION_RETRY}" hf-download-cache \
+    Wan-AI/Wan2.2-I2V-A14B-Diffusers \
+    --repo-root "${REPO}"
 }
 
 run_smoke_validation() {

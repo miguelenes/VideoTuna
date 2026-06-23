@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import pytest
+import torch
 from PIL import Image
 
 from videotuna.training.flux_lora.config import FluxLoraDataConfig, load_train_config
@@ -136,6 +137,58 @@ def test_checkpoint_save_with_mock_transformer(tmp_path):
     path = save_lora_checkpoint(transformer, tmp_path, step=1)
     assert path.is_dir()
     assert any(path.iterdir())
+
+
+def test_create_optimizer_adamw_uses_torch(monkeypatch):
+    from unittest import mock
+
+    import torch.nn as nn
+
+    from videotuna.training.flux_lora.config import FluxLoraTrainConfig
+    from videotuna.training.flux_lora.train import _create_optimizer
+
+    model = nn.Linear(4, 4)
+    config = FluxLoraTrainConfig(
+        pretrained_model_name_or_path="black-forest-labs/FLUX.1-dev",
+        output_dir="results/train/test",
+        instance_data_dir="data/t2i/domain",
+        optimizer="adamw",
+    )
+    optimi_mock = mock.MagicMock()
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "optimi",
+        mock.MagicMock(AdamW=optimi_mock),
+    )
+    opt = _create_optimizer(model, config)
+    assert isinstance(opt, torch.optim.AdamW)
+    optimi_mock.assert_not_called()
+
+
+def test_create_optimizer_adamw_bf16_uses_optimi(monkeypatch):
+    from unittest import mock
+
+    import torch.nn as nn
+
+    from videotuna.training.flux_lora.config import FluxLoraTrainConfig
+    from videotuna.training.flux_lora.train import _create_optimizer
+
+    model = nn.Linear(4, 4)
+    config = FluxLoraTrainConfig(
+        pretrained_model_name_or_path="black-forest-labs/FLUX.1-dev",
+        output_dir="results/train/test",
+        instance_data_dir="data/t2i/domain",
+        optimizer="adamw_bf16",
+    )
+    optimi_cls = mock.MagicMock(return_value=mock.MagicMock())
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "optimi",
+        mock.MagicMock(AdamW=optimi_cls),
+    )
+    opt = _create_optimizer(model, config)
+    optimi_cls.assert_called_once()
+    assert opt is optimi_cls.return_value
 
 
 def test_create_flux_accelerator_uses_tensorboard(tmp_path, monkeypatch):

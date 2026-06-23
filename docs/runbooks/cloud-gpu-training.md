@@ -13,7 +13,17 @@ Never commit datasets, weights, API keys, or `results/` to git.
 
 **CUDA:** Template should ship NVIDIA driver + CUDA 12.x compatible with PrivTune's cu126 PyTorch wheels (`poetry install -E cuda --with training`).
 
-**Disk:** Base weights are large (Wan 14B ≈ tens of GB). Use **≥200 GB** volume. Pre-download via manifest when `HF_TOKEN` is set.
+**Disk:** Base weights are large (Wan 14B ≈ tens of GB; full train + validate bundle ≈ 200 GB+). Use **≥200 GB** volume. Pre-download via manifest when `HF_TOKEN` is set:
+
+| Model | When downloaded | Purpose |
+|-------|-----------------|---------|
+| `black-forest-labs/FLUX.1-dev` | Manifest + bootstrap | Flux T2I train |
+| `Wan-AI/Wan2.1-T2V-14B` | Manifest + bootstrap | Wan T2V train |
+| `Wan-AI/Wan2.1-I2V-14B-480P` | Manifest + bootstrap | Wan I2V train (optional) |
+| `Wan-AI/Wan2.2-T2V-A14B-Diffusers` | Bootstrap (`hf-download-cache`) | `validate-domain-t2v` |
+| `Wan-AI/Wan2.2-I2V-A14B-Diffusers` | Bootstrap (`hf-download-cache`) | `validate-domain-i2v` |
+
+Wan 2.2 Diffusers weights populate the Hugging Face hub cache so validation presets (hub IDs) resolve without config changes.
 
 ## B. Launch checklist
 
@@ -29,7 +39,7 @@ Never commit datasets, weights, API keys, or `results/` to git.
 
 ### Fast model downloads (opt-in)
 
-Multi-GB first-boot pulls (FLUX.1-dev, Wan 2.1-T2V-14B) can dominate rental cost on datacenter GPUs with fast network and NVMe storage. PrivTune exposes an **opt-in** cloud knob:
+Multi-GB first-boot pulls (FLUX.1-dev, Wan 2.1 train weights, Wan 2.2 validate weights) can dominate rental cost on datacenter GPUs with fast network and NVMe storage. PrivTune exposes an **opt-in** cloud knob:
 
 | Variable | Value |
 |----------|-------|

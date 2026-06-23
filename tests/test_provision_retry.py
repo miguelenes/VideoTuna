@@ -160,6 +160,38 @@ def test_install_bootstrap_deps_retries_without_tenacity(
     mock_sleep.assert_called_once()
 
 
+@patch("provision_retry.run_command")
+def test_hf_download_hub_cache_skips_when_sentinel_exists(
+    mock_run: MagicMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    repo_id = "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
+    sentinel_dir = (
+        tmp_path / ".privtune_hub_cache" / "Wan-AI--Wan2.2-T2V-A14B-Diffusers"
+    )
+    sentinel_dir.mkdir(parents=True)
+    (sentinel_dir / provision_retry.DOWNLOAD_OK_SENTINEL).write_text(
+        "ok\n", encoding="utf-8"
+    )
+    monkeypatch.setenv("HF_HOME", str(tmp_path))
+    provision_retry.hf_download_hub_cache(repo_id)
+    mock_run.assert_not_called()
+
+
+@patch("provision_retry.run_command")
+def test_hf_download_hub_cache_invokes_hf_without_local_dir(
+    mock_run: MagicMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    repo_id = "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
+    monkeypatch.setenv("HF_HOME", str(tmp_path))
+    with patch("provision_retry.shutil.which", return_value="/usr/bin/hf"):
+        provision_retry.hf_download_hub_cache(repo_id)
+    mock_run.assert_called_once()
+    argv = mock_run.call_args[0][0]
+    assert argv == ["hf", "download", repo_id]
+    sentinel = provision_retry._hub_cache_sentinel_path(repo_id)
+    assert sentinel.is_file()
+
+
 def test_main_run_subcommand_exit_code():
     with patch("provision_retry.run_command") as mock_run:
         code = provision_retry.main(["run", "--", "echo", "hi"])

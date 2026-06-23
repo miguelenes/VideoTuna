@@ -156,6 +156,19 @@ def test_bootstrap_retry_artifacts_exist():
     assert "pyyaml" in reqs
 
 
+def test_provisioning_includes_wan_train_and_validate_hub_ids():
+    combined = ""
+    for path in PROVISIONING_FILES:
+        combined += path.read_text(encoding="utf-8") + "\n"
+    for repo in (
+        "Wan-AI/Wan2.1-T2V-14B",
+        "Wan-AI/Wan2.1-I2V-14B-480P",
+        "Wan-AI/Wan2.2-T2V-A14B-Diffusers",
+        "Wan-AI/Wan2.2-I2V-A14B-Diffusers",
+    ):
+        assert repo in combined, f"expected hub id in cloud bundle: {repo}"
+
+
 def test_provisioning_yaml_documents_retry_layers():
     prov_path = CLOUD_VAST / "provisioning.yaml"
     text = prov_path.read_text(encoding="utf-8")

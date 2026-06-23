@@ -27,6 +27,7 @@ from videotuna.utils.device_utils import (
     synchronize_accelerator,
 )
 from videotuna.utils.inference_cli import resolve_offload_mode
+from videotuna.utils.lora_utils import parameter_matches_lora_target
 
 precision_to_dtype = {
     "float32": torch.float32,
@@ -71,11 +72,7 @@ def check_istarget(name, para_list):
     name: full name of source para
     para_list: partial name of target para
     """
-    istarget = False
-    for para in para_list:
-        if para in name:
-            return True
-    return istarget
+    return parameter_matches_lora_target(name, para_list)
 
 
 def get_dtype_from_str(dtype_str):

@@ -20,6 +20,14 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 PROVISIONING_MANIFEST = SCRIPT_DIR / "provisioning.yaml"
 BOOTSTRAP_REQUIREMENTS = SCRIPT_DIR / "bootstrap-requirements.txt"
 DOWNLOAD_OK_SENTINEL = ".privtune_download_ok"
+HUB_CACHE_SENTINEL_DIR = ".privtune_hub_cache"
+
+
+def _hub_cache_sentinel_path(repo_id: str) -> Path:
+    hf_home = Path(os.environ.get("HF_HOME", Path.home() / ".cache" / "huggingface"))
+    slug = repo_id.replace("/", "--")
+    return hf_home / HUB_CACHE_SENTINEL_DIR / slug / DOWNLOAD_OK_SENTINEL
+
 
 LOG = logging.getLogger("videotuna-provision-retry")
 
@@ -168,6 +176,26 @@ def hf_download(
     LOG.info("Download complete: %s -> %s", repo_id, local_dir)
 
 
+def hf_download_hub_cache(
+    repo_id: str,
+    *,
+    repo_root: Path | None = None,
+    settings: RetrySettings | None = None,
+) -> None:
+    """Download a HF repo into the default hub cache (no --local-dir)."""
+    sentinel = _hub_cache_sentinel_path(repo_id)
+    if sentinel.is_file():
+        LOG.info("Skipping %s (hub cache sentinel %s exists)", repo_id, sentinel)
+        return
+
+    hf_base = _resolve_hf_argv(repo_root)
+    argv = [*hf_base, "download", repo_id]
+    run_command(argv, cwd=repo_root, env=os.environ.copy(), settings=settings)
+    sentinel.parent.mkdir(parents=True, exist_ok=True)
+    sentinel.write_text(f"{repo_id}\n", encoding="utf-8")
+    LOG.info("Hub cache download complete: %s", repo_id)
+
+
 def install_poetry(settings: RetrySettings | None = None) -> None:
     retry_settings = settings or load_retry_settings()
 
@@ -223,6 +251,17 @@ def main(argv: list[str] | None = None) -> int:
         help="VideoTuna repo root for poetry run hf fallback",
     )
 
+    hf_cache_parser = sub.add_parser(
+        "hf-download-cache", help="Download HF repo into hub cache with retries"
+    )
+    hf_cache_parser.add_argument("repo_id", help="Hugging Face repo id (org/name)")
+    hf_cache_parser.add_argument(
+        "--repo-root",
+        type=Path,
+        default=None,
+        help="VideoTuna repo root for poetry run hf fallback",
+    )
+
     sub.add_parser("install-poetry", help="Install Poetry via official installer")
 
     args = parser.parse_args(argv)
@@ -242,6 +281,12 @@ def main(argv: list[str] | None = None) -> int:
             hf_download(
                 args.repo_id,
                 args.local_dir,
+                repo_root=args.repo_root,
+                settings=settings,
+            )
+        elif args.command == "hf-download-cache":
+            hf_download_hub_cache(
+                args.repo_id,
                 repo_root=args.repo_root,
                 settings=settings,
             )

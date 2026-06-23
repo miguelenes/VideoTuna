@@ -103,6 +103,35 @@ def test_pair_csv_requires_image_path_column(tmp_path):
         DatasetFromCSV(str(csv_path), height=480, width=832, num_frames=16)
 
 
+def test_image_to_video_true_rejects_pair_csv(tmp_path):
+    csv_path = tmp_path / "pair.csv"
+    csv_path.write_text(
+        "image_path,video_path,caption\nimg.jpg,vid.mp4,caption\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="image_to_video=true"):
+        DatasetFromCSV(
+            str(csv_path),
+            height=480,
+            width=832,
+            num_frames=16,
+            image_to_video=True,
+        )
+
+
+def test_image_to_video_true_requires_path_column(tmp_path):
+    csv_path = tmp_path / "no_path.csv"
+    csv_path.write_text("video_path,caption\nvid.mp4,caption\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="'path' column"):
+        DatasetFromCSV(
+            str(csv_path),
+            height=480,
+            width=832,
+            num_frames=16,
+            image_to_video=True,
+        )
+
+
 def test_i2v_pair_dataset_integration_with_pyav(tmp_path):
     images_dir = tmp_path / "images"
     videos_dir = tmp_path / "videos"

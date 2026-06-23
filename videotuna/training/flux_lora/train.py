@@ -116,16 +116,23 @@ def _resolve_resume_checkpoint(
     return candidate if candidate.is_dir() else None
 
 
-def _create_optimizer(transformer, config: FluxLoraTrainConfig) -> torch.optim.AdamW:
+def _create_optimizer(
+    transformer, config: FluxLoraTrainConfig
+) -> torch.optim.Optimizer:
     if config.optimizer not in {"adamw", "adamw_bf16"}:
         raise ValueError(f"Unsupported optimizer: {config.optimizer}")
-    return torch.optim.AdamW(
-        transformer.parameters(),
-        lr=config.learning_rate,
-        betas=(0.9, 0.999),
-        weight_decay=1e-4,
-        eps=1e-8,
-    )
+    params = transformer.parameters()
+    kwargs = {
+        "lr": config.learning_rate,
+        "betas": (0.9, 0.999),
+        "weight_decay": 1e-4,
+        "eps": 1e-8,
+    }
+    if config.optimizer == "adamw_bf16":
+        from optimi import AdamW as OptimiAdamW
+
+        return OptimiAdamW(params, **kwargs)
+    return torch.optim.AdamW(params, **kwargs)
 
 
 def _collate_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:

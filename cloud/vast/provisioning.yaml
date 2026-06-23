@@ -47,6 +47,8 @@ conditional_downloads:
         dest: /workspace/checkpoints/flux/FLUX.1-dev
       - url: https://huggingface.co/Wan-AI/Wan2.1-T2V-14B
         dest: /workspace/checkpoints/wan/Wan2.1-T2V-14B
+      - url: https://huggingface.co/Wan-AI/Wan2.1-I2V-14B-480P
+        dest: /workspace/checkpoints/wan/Wan2.1-I2V-14B-480P
 
 post_commands:
   - bash /workspace/VideoTuna/cloud/vast/bootstrap.sh
