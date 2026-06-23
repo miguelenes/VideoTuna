@@ -139,6 +139,8 @@ tensorboard --logdir /workspace/PrivTune/results/train --bind_all --port 6006
 # then open http://<instance-ip>:6006 from your laptop
 ```
 
+**Trackio (Flux, optional):** when `VIDEOTUNA_METRICS_BACKEND=trackio` and the `trackio` extra is installed, metrics sync to a local SQLite database and optional private Hugging Face Space (`VIDEOTUNA_TRACKIO_SPACE_ID`). View with `trackio show` or open the Space URL — no port-forward required. See [domain-adult-finetune.md](domain-adult-finetune.md#optional-trackio-flux-phase-1).
+
 Smoke run logs: `/workspace/results/smoke-train.log`.
 
 ## E. Checkpoint recovery
