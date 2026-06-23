@@ -7,6 +7,7 @@ import inspect
 import subprocess
 import sys
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
@@ -18,6 +19,7 @@ from videotuna.cli.inference_app import (
     PRESET_WAN2_2_T2V_720P,
     _entry_for_preset,
     _make_app,
+    _run_inference_with_options,
     app,
     inference_domain_t2i_entry,
     inference_flux_lora_entry,
@@ -76,10 +78,14 @@ def test_inference_help_lists_shared_flags(command: list[str]) -> None:
         ["validate-domain-t2v", "--help"],
     ],
 )
-def test_inference_help_omits_legacy_hunyuan_fp8(command: list[str]) -> None:
-    help_text = _help_text(command).lower()
+def test_inference_help_exposes_canonical_quant_and_omits_legacy_fp8(
+    command: list[str],
+) -> None:
+    help_text = _help_text(command)
+    for flag in ("--transformer-quant", "--quant-backend"):
+        assert flag in help_text
     for forbidden in ("enable_fp8", "enable-fp8", "dit-weight", "hunyuan"):
-        assert forbidden not in help_text
+        assert forbidden not in help_text.lower()
 
 
 def test_flag_parity_across_presets() -> None:
@@ -255,6 +261,48 @@ def test_shared_app_has_expected_commands() -> None:
     assert expected.issubset(names)
 
 
+class TestInferenceAppRunMocked:
+    """CPU-only wiring tests for _run_inference_with_options with mocked execution."""
+
+    def test_run_inference_with_options_calls_run_inference(self) -> None:
+        with mock.patch("scripts.inference_new.run_inference") as mock_run:
+            run = InferenceRunOptions(lorackpt="/tmp/lora")
+            standard = StandardInferenceOptions(memory_preset="low_vram")
+            _run_inference_with_options(run, standard, preset=PRESET_DOMAIN_T2I)
+            mock_run.assert_called_once()
+            config = mock_run.call_args[0][0]
+            assert isinstance(config, InferenceRunConfig)
+            assert config.config == PRESET_DOMAIN_T2I.config
+            assert config.lorackpt == "/tmp/lora"
+            assert config.memory_preset == "low_vram"
+
+    def test_run_inference_with_options_without_preset(self) -> None:
+        with mock.patch("scripts.inference_new.run_inference") as mock_run:
+            run = InferenceRunOptions(
+                config="configs/inference/presets/flux_domain_lora_smoke.yaml"
+            )
+            _run_inference_with_options(run, None)
+            mock_run.assert_called_once()
+            config = mock_run.call_args[0][0]
+            assert config.config == "configs/inference/presets/flux_domain_lora_smoke.yaml"
+
+    def test_run_inference_with_options_validates_preset(self) -> None:
+        with mock.patch("scripts.inference_new.run_inference") as mock_run:
+            with pytest.raises(SystemExit) as exc:
+                _run_inference_with_options(
+                    InferenceRunOptions(), None, preset=PRESET_VALIDATE_T2V
+                )
+            assert exc.value.code == 2
+            mock_run.assert_not_called()
+
+    def test_preset_command_runs_via_app_mocked(self) -> None:
+        with mock.patch("scripts.inference_new.run_inference") as mock_run:
+            app(["inference-domain-t2i", "--lorackpt", "/tmp/lora"])
+            mock_run.assert_called_once()
+            config = mock_run.call_args[0][0]
+            assert config.config == PRESET_DOMAIN_T2I.config
+
+
 def test_main_function_exists() -> None:
     assert callable(main)
     assert main.__name__ == "main"
@@ -270,6 +318,71 @@ def test_all_public_entries_are_callable() -> None:
     ]
     for entry in entries:
         assert callable(entry)
+
+
+def test_preset_wan22_i2v_720p_fields() -> None:
+    assert PRESET_WAN2_2_I2V_720P.cli_name == "inference-wan2.2-i2v-720p"
+    assert PRESET_WAN2_2_I2V_720P.enable_model_cpu_offload is False
+    assert PRESET_WAN2_2_I2V_720P.require_checkpoint is False
+
+
+def test_make_app_without_preset_uses_custom_name() -> None:
+    custom = _make_app(name="my-app")
+    assert custom.name[0] == "my-app"
+
+
+def test_make_app_without_preset_fallback_name() -> None:
+    fallback = _make_app()
+    assert fallback.name[0] == "privtune-inference"
+
+
+def test_entry_for_preset_all_presets() -> None:
+    presets = [
+        PRESET_DOMAIN_T2I,
+        PRESET_VALIDATE_T2V,
+        PRESET_WAN2_2_T2V_720P,
+        PRESET_VALIDATE_I2V,
+        PRESET_WAN2_2_I2V_720P,
+    ]
+    for preset in presets:
+        entry = _entry_for_preset(preset)
+        assert callable(entry)
+        assert entry.__name__ == preset.cli_name.replace(".", "_").replace("-", "_")
+
+
+def test_make_app_default_command_is_not_none() -> None:
+    app_with_default = _make_app(PRESET_DOMAIN_T2I)
+    assert app_with_default.default_command is not None
+
+
+def test_make_app_custom_name_overrides_preset_cli_name() -> None:
+    custom = _make_app(PRESET_DOMAIN_T2I, name="custom-name")
+    assert custom.name[0] == "custom-name"
+
+
+def test_inference_run_options_default_preset_config() -> None:
+    run_config = inference_options_to_config(preset=PRESET_DOMAIN_T2I)
+    assert run_config.config == "configs/inference/presets/flux_domain_lora_smoke.yaml"
+    assert run_config.enable_model_cpu_offload is True
+
+
+def test_inference_run_options_preset_validate_t2v_config() -> None:
+    run_config = inference_options_to_config(preset=PRESET_VALIDATE_T2V)
+    assert (
+        run_config.config == "configs/inference/presets/wan_domain_lora_smoke_22.yaml"
+    )
+    assert run_config.enable_model_cpu_offload is True
+
+
+def test_inference_run_options_preset_validate_i2v_config() -> None:
+    run_config = inference_options_to_config(preset=PRESET_VALIDATE_I2V)
+    assert run_config.config == "configs/inference/presets/wan_domain_i2v_smoke_22.yaml"
+    assert run_config.enable_model_cpu_offload is True
+
+
+def test_inference_run_options_no_config_raises() -> None:
+    with pytest.raises(ValueError, match="requires a YAML config"):
+        inference_options_to_config()
 
 
 # ---------------------------------------------------------------------------

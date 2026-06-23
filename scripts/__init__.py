@@ -43,11 +43,13 @@ CI_SMOKE_TESTS = [
     "tests/test_poetry_scripts.py",
     "tests/test_train_cli_cyclopts.py",
     "tests/test_diffusers_quantization.py",
+    "tests/test_diffusers_video_flow.py",
+    "tests/test_inference_cli_cyclopts.py",
 ]
 
 # Line-coverage floor for videotuna/training/ + videotuna/utils/ +
 # videotuna/flow/ + videotuna/cli/.
-COVERAGE_GATE_FAIL_UNDER = 35
+COVERAGE_GATE_FAIL_UNDER = 39
 
 
 def _require_cuda_backend(installer_name: str) -> None:

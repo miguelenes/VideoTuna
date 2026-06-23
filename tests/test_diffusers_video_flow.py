@@ -62,10 +62,7 @@ def test_resolve_model_id_unknown_family_raises():
 
 
 def test_resolve_model_id_no_variant_uses_default():
-    assert (
-        resolve_model_id("flux", "t2i", None)
-        == "black-forest-labs/FLUX.1-dev"
-    )
+    assert resolve_model_id("flux", "t2i", None) == "black-forest-labs/FLUX.1-dev"
 
 
 def test_resolve_torch_dtype():
@@ -173,6 +170,102 @@ class TestDiffusersVideoFlowConfig:
         flow = DiffusersVideoFlow(model_family="wan", mode="t2v")
         flow.from_pretrained(device="cuda:0")
         assert flow._inference_device == "cuda:0"
+
+    def test_resolve_model_id_unsupported_raises_value_error(self):
+        with pytest.raises(ValueError, match="Unsupported diffusers model"):
+            resolve_model_id("unknown", "t2v", None)
+
+    def test_resolve_model_id_case_insensitive(self):
+        assert resolve_model_id("Flux", "T2I", "my/model") == "my/model"
+        assert (
+            resolve_model_id("WAN", "T2V", None, model_variant="2.2")
+            == "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
+        )
+
+    def test_resolve_model_id_no_variant_returns_default(self):
+        assert resolve_model_id("flux", "t2i", None) == "black-forest-labs/FLUX.1-dev"
+
+    def test_resolve_model_id_variant_no_variants_entry(self):
+        entry = MODEL_REGISTRY[("wan", "t2v")]
+        saved = entry.pop("variants", None)
+        try:
+            assert (
+                resolve_model_id("wan", "t2v", None, model_variant="2.2")
+                == entry["default_id"]
+            )
+        finally:
+            if saved is not None:
+                entry["variants"] = saved
+
+    def test_init_default_lora_rank_and_weight_name(self):
+        flow = DiffusersVideoFlow(model_family="flux", mode="t2i")
+        assert flow.lora_rank == 128
+        assert flow.lora_weight_name == "pytorch_lora_weights.safetensors"
+
+    def test_init_default_internal_state(self):
+        flow = DiffusersVideoFlow(model_family="wan", mode="t2v")
+        assert flow._dtype == torch.bfloat16
+        assert flow._transformer_quant == "none"
+        assert flow._quant_backend == "torchao"
+        assert flow._model_id is None
+        assert flow._lora_path is None
+        assert flow._inference_device is None
+
+    def test_init_stores_name_or_path_as_none_when_omitted(self):
+        flow = DiffusersVideoFlow(model_family="flux", mode="t2i")
+        assert flow.pretrained_model_name_or_path is None
+
+    def test_init_normalizes_model_family_and_mode(self):
+        flow = DiffusersVideoFlow(model_family="FLUX", mode="T2I")
+        assert flow.model_family == "flux"
+        assert flow.mode == "t2i"
+
+    def test_from_pretrained_extra_kwargs_accepted(self):
+        flow = DiffusersVideoFlow(model_family="wan", mode="t2v")
+        flow.from_pretrained(ckpt_path="some/model", extra_flag=True)
+        assert flow._model_id == "some/model"
+
+    def test_from_pretrained_denoiser_not_set_for_non_wan(self):
+        flow = DiffusersVideoFlow(model_family="flux", mode="t2i")
+        flow.from_pretrained(denoiser_ckpt_path="/tmp/denoiser.ckpt")
+        assert flow._lora_path is None
+
+    def test_from_pretrained_pretrained_name_or_path_as_fallback(self):
+        flow = DiffusersVideoFlow(
+            model_family="flux",
+            mode="t2i",
+            pretrained_model_name_or_path="stabilityai/stable-diffusion",
+        )
+        flow.from_pretrained()
+        assert flow._model_id == "stabilityai/stable-diffusion"
+
+
+class TestDiffusersVideoFlowConfigExtra:
+    """Additional CPU-only, state-only config coverage for DiffusersVideoFlow."""
+
+    def test_init_pipeline_only_is_forced_true(self):
+        flow = DiffusersVideoFlow(
+            model_family="flux", mode="t2i", pipeline_only=False
+        )
+        assert flow.pipeline_only is True
+
+    def test_from_pretrained_ignore_missing_ckpts_is_noop(self):
+        flow = DiffusersVideoFlow(model_family="wan", mode="t2v")
+        flow.from_pretrained(ignore_missing_ckpts=True)
+        assert flow._model_id == "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
+        assert flow._lora_path is None
+
+    def test_from_pretrained_denoiser_for_wan_i2v(self):
+        flow = DiffusersVideoFlow(model_family="wan", mode="i2v")
+        flow.from_pretrained(denoiser_ckpt_path="/tmp/denoiser.ckpt")
+        assert flow._lora_path == "/tmp/denoiser.ckpt"
+        assert flow._model_id == "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
+
+    def test_resolve_model_id_wan_i2v_unknown_variant(self):
+        assert (
+            resolve_model_id("wan", "i2v", None, model_variant="unknown")
+            == "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
+        )
 
 
 def test_apply_diffusers_optimizations_mock_pipe():

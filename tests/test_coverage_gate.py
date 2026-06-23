@@ -14,4 +14,4 @@ def test_coverage_gate_entrypoint():
 
 
 def test_coverage_gate_threshold_is_modest():
-    assert 0 < COVERAGE_GATE_FAIL_UNDER < 50
+    assert COVERAGE_GATE_FAIL_UNDER == 39

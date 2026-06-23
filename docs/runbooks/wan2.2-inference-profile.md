@@ -66,7 +66,7 @@ poetry run inference-wan2.2-t2v-720p \
   --min-vram-gb 10
 ```
 
-Or add to any preset / CLI:
+The canonical shared quantization flags for Wan/Flux Diffusers inference are `--transformer-quant` and `--quant-backend`. Add them to any preset / CLI:
 
 ```bash
 --transformer-quant int8_wo --quant-backend torchao
@@ -74,9 +74,9 @@ Or add to any preset / CLI:
 
 | Scheme | VRAM impact | GPU requirement | LoRA |
 |--------|-------------|-----------------|------|
-| `int8_wo` (default quant) | Lower transformer weight memory | NVIDIA CUDA | Attempted; use `none` if PEFT bridge fails |
+| `int8_wo` | Lower transformer weight memory | NVIDIA CUDA | Attempted; use `none` if PEFT bridge fails |
 | `int4_wo` | Further weight savings | NVIDIA CUDA | Same as int8 |
-| `fp8_wo` | Best speed/memory on Ada+ | sm ≥ 8.9 (RTX 4090, Hopper) | Same as int8 |
+| `fp8_wo` | Best speed/memory on Ada+; canonical FP8 path | sm ≥ 8.9 (RTX 4090, Hopper) | Same as int8 |
 
 **FP8 on Wan 2.2 Diffusers:** use `--transformer-quant fp8_wo` (torchao weight-only; Ada/Hopper sm ≥ 8.9). Legacy native checkpoint FP8 is not supported in PrivTune.
 
