@@ -42,16 +42,17 @@ poetry run install-deepspeed   # required for Wan LoRA (DeepSpeed ZeRO-3)
 
 ### Docker (optional)
 
-For containerized dev (e.g. Mac arm64), use the Compose image **`privtune`** (`privtune:latest` or `privtune:${TAG}`):
+For containerized dev (e.g. Mac arm64), use the Compose service **`privtune`** (image `privtune:latest` or `privtune:${TAG}`). The project source is bind-mounted at `/opt/PrivTune` inside the container (see [`docker-compose.yml`](docker-compose.yml)).
 
 ```shell
-export HOST_UID=$(id -u) HOST_GID=$(id -g)
+export HOST_UID=$(id -u)
+export HOST_GID=$(id -g)
 docker compose build privtune
 docker compose run --rm privtune bash
 # inside container: poetry install -E cuda --with training
 ```
 
-The legacy **`videotune`** Compose service and `videotune:latest` image tag remain as a backward-compatible alias (deprecated). A separate legacy all-in-one RunPod image lives under [`docker/Dockerfile`](docker/Dockerfile) and is not the recommended training path.
+The **`videotuna`** Compose service and `videotune:latest` image tag remain as **deprecated backward-compatible aliases** — use `privtune` in all new workflows. A separate legacy all-in-one RunPod image lives under [`docker/Dockerfile`](docker/Dockerfile) and is not the recommended training path.
 
 See [`docs/vendor-policy.md`](docs/vendor-policy.md) for vendored upstream policy.
 
