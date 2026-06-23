@@ -109,7 +109,7 @@ videotuna/
   models/wan/           # Phase 2
   flow/                 # wanvideo, diffusers_video
 configs/domain/         # flux_t2i*.json, wan_t2v_lora.yaml
-configs/inference/      # smoke + Wan 2.2 presets
+configs/inference/presets/  # smoke + Wan 2.2 presets
 cloud/vast/
 docs/runbooks/
 ```

@@ -2,24 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any, TypedDict, cast
+from typing import Any, cast
 
 import torch
 from diffusers import AutoencoderKL, FluxTransformer2DModel
-from peft import LoraConfig, PeftMixedModel, PeftModel, get_peft_model
+from peft import LoraConfig, get_peft_model
 from transformers import CLIPTextModel, CLIPTokenizer, T5EncoderModel, T5TokenizerFast
 
 FLUX_LORA_TARGET_MODULES = ["to_k", "to_q", "to_v", "to_out.0"]
-
-
-class FluxTrainingComponents(TypedDict):
-    tokenizer_one: CLIPTokenizer
-    tokenizer_two: T5TokenizerFast
-    text_encoder_one: CLIPTextModel
-    text_encoder_two: T5EncoderModel
-    vae: AutoencoderKL
-    transformer: PeftModel | PeftMixedModel
-    weight_dtype: torch.dtype
 
 
 def load_flux_training_models(
@@ -27,7 +17,7 @@ def load_flux_training_models(
     lora_rank: int,
     mixed_precision: str = "bf16",
     gradient_checkpointing: bool = True,
-) -> FluxTrainingComponents:
+):
     weight_dtype = torch.bfloat16 if mixed_precision == "bf16" else torch.float16
 
     tokenizer_one = CLIPTokenizer.from_pretrained(
@@ -72,12 +62,12 @@ def load_flux_training_models(
     if gradient_checkpointing:
         transformer.enable_gradient_checkpointing()
 
-    return FluxTrainingComponents(
-        tokenizer_one=tokenizer_one,
-        tokenizer_two=tokenizer_two,
-        text_encoder_one=text_encoder_one,
-        text_encoder_two=text_encoder_two,
-        vae=vae,
-        transformer=transformer,
-        weight_dtype=weight_dtype,
-    )
+    return {
+        "tokenizer_one": tokenizer_one,
+        "tokenizer_two": tokenizer_two,
+        "text_encoder_one": text_encoder_one,
+        "text_encoder_two": text_encoder_two,
+        "vae": vae,
+        "transformer": transformer,
+        "weight_dtype": weight_dtype,
+    }
