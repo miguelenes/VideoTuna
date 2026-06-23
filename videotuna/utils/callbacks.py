@@ -459,13 +459,28 @@ class ImageLogger(Callback):
 
 
 class TrainingMetricsCallback(Callback):
-    """Log per-epoch wall time and peak GPU memory to metrics.json in run dir."""
+    """Log per-epoch and per-step training metrics to TensorBoard and metrics.json.
 
-    def __init__(self, save_dir: Optional[str] = None):
+    Tracks epoch wall time, peak VRAM, step-level loss EMA, learning rate,
+    steps-per-second, and detects training loss divergence.
+    """
+
+    def __init__(
+        self,
+        save_dir: Optional[str] = None,
+        ema_decay: float = 0.99,
+        step_log_interval: int = 10,
+    ):
         self.save_dir = save_dir
+        self.ema_decay = ema_decay
+        self.step_log_interval = step_log_interval
         self._epoch_start: float = 0.0
         self._epoch_peak_gb: float = 0.0
+        self._batch_start_time: float = 0.0
+        self._loss_ema: Optional[float] = None
+        self._loss_min: float = float("inf")
         self.metrics: list[dict[str, float]] = []
+        self._steps: list[dict[str, float]] = []
 
     def _gpu_index(self, trainer: "pl.Trainer") -> int:
         device = trainer.strategy.root_device
@@ -480,6 +495,15 @@ class TrainingMetricsCallback(Callback):
         self._epoch_start = time.time()
         self._epoch_peak_gb = 0.0
 
+    def on_train_batch_start(
+        self,
+        trainer: "pl.Trainer",
+        pl_module: "pl.LightningModule",
+        batch: Any,
+        batch_idx: int,
+    ):
+        self._batch_start_time = time.time()
+
     def on_train_batch_end(
         self,
         trainer: "pl.Trainer",
@@ -488,11 +512,80 @@ class TrainingMetricsCallback(Callback):
         batch: Any,
         batch_idx: int,
     ):
-        if not torch.cuda.is_available():
-            return
-        gpu_index = self._gpu_index(trainer)
-        peak_gb = torch.cuda.max_memory_allocated(gpu_index) / (1024**3)
-        self._epoch_peak_gb = max(self._epoch_peak_gb, peak_gb)
+        elapsed = time.time() - self._batch_start_time
+        steps_per_second = round(1.0 / max(elapsed, 1e-6), 2)
+
+        loss = self._extract_loss(outputs, trainer)
+        if loss is not None:
+            if self._loss_ema is None:
+                self._loss_ema = loss
+            else:
+                self._loss_ema = (
+                    self.ema_decay * self._loss_ema + (1.0 - self.ema_decay) * loss
+                )
+            if self._loss_min < float("inf") and self._loss_ema > 3.0 * self._loss_min:
+                mainlogger.warning(
+                    "Training loss divergence detected: EMA loss {} exceeds "
+                    "3x minimum {}. Consider reducing learning rate.",
+                    round(self._loss_ema, 6),
+                    round(self._loss_min, 6),
+                )
+            self._loss_min = min(self._loss_min, self._loss_ema)
+
+        lr = self._extract_lr(trainer)
+
+        if torch.cuda.is_available():
+            gpu_index = self._gpu_index(trainer)
+            peak_gb = torch.cuda.max_memory_allocated(gpu_index) / (1024**3)
+            self._epoch_peak_gb = max(self._epoch_peak_gb, peak_gb)
+        else:
+            peak_gb = 0.0
+
+        if batch_idx % self.step_log_interval == 0:
+            step_entry: dict[str, float] = {
+                "step": trainer.global_step,
+                "loss": round(loss, 6) if loss is not None else 0.0,
+                "loss_ema": (
+                    round(self._loss_ema, 6) if self._loss_ema is not None else 0.0
+                ),
+                "lr": lr,
+                "steps_per_second": steps_per_second,
+                "peak_vram_gb": round(peak_gb, 4),
+            }
+            self._steps.append(step_entry)
+            if trainer.logger is not None and loss is not None:
+                trainer.logger.log_metrics(
+                    {
+                        "train/loss": round(loss, 6),
+                        "train/loss_ema": round(self._loss_ema, 6),
+                        "train/learning_rate": lr,
+                        "train/steps_per_second": steps_per_second,
+                    },
+                    step=trainer.global_step,
+                )
+            self._write_metrics_file(trainer, pl_module)
+
+    @staticmethod
+    def _extract_loss(outputs: STEP_OUTPUT, trainer: "pl.Trainer") -> Optional[float]:
+        if isinstance(outputs, dict) and "loss" in outputs:
+            val = outputs["loss"]
+        elif isinstance(outputs, torch.Tensor):
+            val = outputs
+        elif isinstance(outputs, (int, float)):
+            val = outputs
+        else:
+            cm = getattr(trainer, "callback_metrics", {})
+            val = cm.get("train/loss") or cm.get("loss")
+        if val is None:
+            return None
+        return float(val.item() if hasattr(val, "item") else val)
+
+    @staticmethod
+    def _extract_lr(trainer: "pl.Trainer") -> float:
+        try:
+            return trainer.optimizers[0].param_groups[0]["lr"]
+        except (IndexError, KeyError, TypeError, AttributeError):
+            return 0.0
 
     def on_train_epoch_end(
         self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
@@ -516,6 +609,11 @@ class TrainingMetricsCallback(Callback):
                 },
                 step=trainer.global_step,
             )
+        self._write_metrics_file(trainer, pl_module)
+
+    def _write_metrics_file(
+        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
+    ):
         save_dir = self.save_dir or getattr(pl_module, "logdir", None)
         if save_dir and trainer.global_rank == 0:
             import json
@@ -523,7 +621,7 @@ class TrainingMetricsCallback(Callback):
             os.makedirs(save_dir, exist_ok=True)
             metrics_path = os.path.join(save_dir, "metrics.json")
             with open(metrics_path, "w") as f:
-                json.dump({"epochs": self.metrics}, f, indent=2)
+                json.dump({"epochs": self.metrics, "steps": self._steps}, f, indent=2)
 
 
 class CUDACallback(Callback):

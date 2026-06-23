@@ -97,7 +97,7 @@ def test_unknown_config_key_raises(tmp_path):
         '"--unknown_key":1}',
         encoding="utf-8",
     )
-    with pytest.raises(ValueError, match="Unsupported Flux training config keys"):
+    with pytest.raises(ValueError, match="Extra inputs are not permitted"):
         load_train_config(config_path, data_path)
 
 
@@ -284,6 +284,7 @@ def test_run_validation_writes_preview(tmp_path):
         accelerator=mock_accelerator,
         weight_dtype=torch.bfloat16,
         log=mock_log,
+        metrics_backend="tensorboard",
     )
 
     image_path = tmp_path / "validation" / "step-000040.png"
@@ -315,6 +316,7 @@ def test_run_validation_skips_when_step_not_divides(tmp_path):
         accelerator=mock_accelerator,
         weight_dtype=torch.bfloat16,
         log=mock.MagicMock(),
+        metrics_backend="tensorboard",
     )
 
     mock_pipeline.assert_not_called()

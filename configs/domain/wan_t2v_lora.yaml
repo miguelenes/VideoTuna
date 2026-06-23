@@ -108,6 +108,11 @@ train:
           to_local: True
           log_images_kwargs:
             unconditional_guidance_scale: 12.0
+      training_metrics:
+        target: videotuna.utils.callbacks.TrainingMetricsCallback
+        params:
+          ema_decay: 0.99
+          step_log_interval: 10
       model_checkpoint:
         target: videotuna.utils.callbacks.VideoTunaModelCheckpoint
         params:

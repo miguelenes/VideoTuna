@@ -40,6 +40,7 @@ CI_SMOKE_TESTS = [
     "tests/test_wan_domain_i2v_smoke_22_config.py",
     "tests/test_wan_i2v_dataset.py",
     "tests/test_wan_training_step.py",
+    "tests/test_training_metrics_callback.py",
     "tests/test_poetry_scripts.py",
     "tests/test_train_cli_cyclopts.py",
     "tests/test_diffusers_quantization.py",
