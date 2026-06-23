@@ -49,6 +49,7 @@ def _coerce_value(key: str, value: Any) -> Any:
         "num_train_epochs",
         "seed",
         "validation_seed",
+        "num_workers",
     }:
         return int(value)
     if key in {"learning_rate"}:
@@ -81,6 +82,7 @@ class FluxLoraTrainConfig:
     lr_warmup_steps: int = 5
     max_train_steps: int = 1000
     train_batch_size: int = 1
+    num_workers: int = 0
     resolution: int = 512
     checkpointing_steps: int = 500
     mixed_precision: str = "bf16"
@@ -165,6 +167,7 @@ def load_train_config(
         lr_warmup_steps=int(normalized.get("lr_warmup_steps", 5)),
         max_train_steps=int(normalized.get("max_train_steps", 1000)),
         train_batch_size=int(normalized.get("train_batch_size", 1)),
+        num_workers=int(normalized.get("num_workers", 0)),
         resolution=resolution,
         checkpointing_steps=int(normalized.get("checkpointing_steps", 500)),
         mixed_precision=normalized.get("mixed_precision", "bf16"),

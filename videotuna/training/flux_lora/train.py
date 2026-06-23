@@ -144,7 +144,7 @@ def train(config: FluxLoraTrainConfig, data_config) -> None:
         dataset,
         batch_size=config.train_batch_size,
         shuffle=True,
-        num_workers=0,
+        num_workers=config.num_workers,
         pin_memory=torch.cuda.is_available(),
     )
 

@@ -56,6 +56,24 @@ def test_load_train_config_from_repo_defaults():
     train_cfg, data_cfg = load_train_config(FLUX_CONFIG, FLUX_DATA)
     assert train_cfg.pretrained_model_name_or_path == "black-forest-labs/FLUX.1-dev"
     assert data_cfg.resolution == 512
+    assert train_cfg.num_workers == 0
+
+
+def test_load_train_config_num_workers_from_json(tmp_path):
+    data_path = tmp_path / "backends.json"
+    data_path.write_text(
+        '[{"type":"local","instance_data_dir":"data","caption_strategy":"filename"}]',
+        encoding="utf-8",
+    )
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        '{"--pretrained_model_name_or_path":"black-forest-labs/FLUX.1-dev",'
+        '"--output_dir":"results/train/test",'
+        '"--num_workers": 4}',
+        encoding="utf-8",
+    )
+    train_cfg, _ = load_train_config(config_path, data_path)
+    assert train_cfg.num_workers == 4
 
 
 def test_flux_lora_target_modules():
