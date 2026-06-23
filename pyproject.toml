@@ -80,7 +80,6 @@ pydantic-settings = "^2.8.0"
 dashscope = "^1.23.0"
 # Wan vendor only — videotuna/models/wan/wan/configs/
 easydict = "^1.13"
-librosa = "^0.11.0"
 
 [tool.poetry.extras]
 cuda = [

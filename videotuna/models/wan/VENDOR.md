@@ -40,12 +40,22 @@ Re-apply after every upstream bump:
 | `wan/configs/__init__.py` | Legacy Wan2.1 task aliases (`t2v-14B`, `i2v-14B`, …) for domain YAMLs |
 | `wan/modules/vae.py` | Shim re-exporting `WanVAE_` from `vae2_1` for YAML targets |
 | `wan/modules/t5.py` | `videotuna.utils.device_utils.resolve_inference_device()` instead of hard-coded CUDA |
-| `wan/animate.py`, `wan/speech2video.py`, `wan/modules/animate/preprocess/process_pipepline.py` | `videotuna.utils.video_io` (PyAV) instead of decord |
+## Pruned variants (not in PrivTune scope)
+
+The following upstream Wan 2.2 variants were **removed** from this snapshot. PrivTune domain training uses **T2V/I2V LoRA only** (`train-domain-t2v`, `train-domain-i2v`).
+
+| Removed path | Upstream variant |
+|--------------|------------------|
+| `wan/speech2video.py`, `wan/modules/s2v/`, `wan/configs/wan_s2v_14B.py` | Speech-to-video (s2v) |
+| `wan/animate.py`, `wan/modules/animate/`, `wan/configs/wan_animate_14B.py` | Character animation |
+| `wan/textimage2video.py`, `wan/configs/wan_ti2v_5B.py`, `wan/modules/vae2_2.py` | Text-image-to-video (ti2v) |
+
+Do **not** restore these paths during upstream resync unless product scope expands. Re-copy from upstream Wan2.2 if needed in the future.
 
 ## Update procedure (in-tree snapshot)
 
 1. Identify upstream commit to pin on [Wan-Video/Wan2.2](https://github.com/Wan-Video/Wan2.2).
-2. Diff and sync `videotuna/models/wan/wan/` from upstream `wan/`.
+2. Diff and sync `videotuna/models/wan/wan/` from upstream `wan/` — **skip pruned variant paths** (table above).
 3. Re-apply local patches (table above).
 4. Update the pinned SHA and sync dates in this file.
 5. Run smoke tests:

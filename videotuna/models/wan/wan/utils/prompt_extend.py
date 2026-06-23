@@ -37,16 +37,6 @@ DEFAULT_SYS_PROMPTS = {
             "en": I2V_A14B_EMPTY_EN_SYS_PROMPT,
         },
     },
-    "ti2v-5B": {
-        "t2v": {
-            "zh": T2V_A14B_ZH_SYS_PROMPT,
-            "en": T2V_A14B_EN_SYS_PROMPT,
-        },
-        "i2v": {
-            "zh": I2V_A14B_ZH_SYS_PROMPT,
-            "en": I2V_A14B_EN_SYS_PROMPT,
-        },
-    },
 }
 
 
@@ -79,11 +69,6 @@ class PromptExpander:
 
     def decide_system_prompt(self, tar_lang="zh", prompt=None):
         assert self.task is not None
-        if "ti2v" in self.task:
-            if self.is_vl:
-                return DEFAULT_SYS_PROMPTS[self.task]["i2v"][tar_lang]
-            else:
-                return DEFAULT_SYS_PROMPTS[self.task]["t2v"][tar_lang]
         if "i2v" in self.task and len(prompt) == 0:
             return DEFAULT_SYS_PROMPTS[self.task]["empty"][tar_lang]
         return DEFAULT_SYS_PROMPTS[self.task][tar_lang]
@@ -442,9 +427,9 @@ if __name__ == "__main__":
     qwen_model_name = None
     qwen_vl_model_name = None
 
-    for task in ["t2v-A14B", "i2v-A14B", "ti2v-5B"]:
+    for task in ["t2v-A14B", "i2v-A14B"]:
         # test prompt extend
-        if "t2v" in task or "ti2v" in task:
+        if "t2v" in task:
             # test dashscope api
             logging.info("-" * 40)
             logging.info(f"Testing {task} dashscope prompt extend")

@@ -55,7 +55,7 @@ Prefer **git submodule** or **pip/git dependency** over copying large trees.
 | Path | Upstream | License | Entrypoints | Vendor deps | Status |
 |------|----------|---------|-------------|-------------|--------|
 | `videotuna/training/flux_lora/` | PrivTune first-party | N/A | `train-flux-lora` | — | **Keep** |
-| `videotuna/models/wan/` | [Wan-Video/Wan2.2](https://github.com/Wan-Video/Wan2.2) (Wan 2.1 hub weights for domain training — see `VENDOR.md`) | Apache-2.0 | `train-domain-t2v`, `train-domain-i2v`, `train-wan2-1-*-lora`, `scripts/train_new.py`, `scripts/inference_new.py` | `easydict` (configs only) | **Keep** — `VENDOR.md` present; submodule migration planned |
+| `videotuna/models/wan/` | [Wan-Video/Wan2.2](https://github.com/Wan-Video/Wan2.2) (Wan 2.1 hub weights for domain training — see `VENDOR.md`) | Apache-2.0 | `train-domain-t2v`, `train-domain-i2v`, `train-wan2-1-*-lora`, `scripts/train_new.py`, `scripts/inference_new.py` | `easydict` (configs only) | **Keep** — T2V/I2V only; s2v/animate/ti2v pruned (see `VENDOR.md`) |
 
 Provenance details: [`videotuna/models/wan/VENDOR.md`](../videotuna/models/wan/VENDOR.md).
 
