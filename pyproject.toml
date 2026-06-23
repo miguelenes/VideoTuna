@@ -180,6 +180,7 @@ install-rocm = 'scripts:install_rocm'
 install-cpu-torch = 'scripts:install_cpu_torch'
 install-flash-attn-rocm = 'scripts:install_flash_attn_rocm'
 coverage-report = 'scripts:coverage_report'
+coverage-gate = 'scripts:coverage_gate'
 format = 'scripts:code_format'
 format-check = 'scripts:code_format_check'
 lint = 'scripts:lint'
@@ -226,6 +227,15 @@ select = ["E", "F", "C90", "I"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["videotuna"]
+
+[tool.coverage.run]
+source = ["videotuna"]
+relative_files = true
+
+[tool.coverage.report]
+precision = 1
+show_missing = true
+skip_empty = true
 
 [tool.pyrefly]
 search-path = ["typings"]

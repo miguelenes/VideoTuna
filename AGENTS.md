@@ -48,17 +48,10 @@ After install for Wan LoRA: `poetry run install-deepspeed`
 ```bash
 poetry run lint
 poetry run format-check
-poetry run test tests/test_import_smoke.py -q
-poetry run test tests/test_domain_finetune_configs.py -q
-poetry run test tests/test_flux_lora_train_smoke.py -q
-poetry run test tests/test_wan_lora_bridge.py -q
-poetry run test tests/test_wan_i2v_lora_bridge.py -q
-poetry run test tests/test_wan_domain_lora_smoke_22_config.py -q
-poetry run test tests/test_wan_domain_i2v_smoke_22_config.py -q
-poetry run test tests/test_wan_i2v_dataset.py -q
-poetry run test tests/test_wan_training_step.py -q
-poetry run test tests/test_poetry_scripts.py -q
+poetry run coverage-gate
 ```
+
+`coverage-gate` runs the CI smoke test list and enforces a **33%** line-coverage floor on `videotuna/training/` + `videotuna/utils/`. For local exploratory reporting without a gate, use `poetry run coverage-report`.
 
 | Change area | Additional tests |
 |-------------|------------------|

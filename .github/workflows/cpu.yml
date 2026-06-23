@@ -33,32 +33,5 @@ jobs:
       - name: Format check
         run: poetry run format-check
 
-      - name: Import smoke
-        run: poetry run test tests/test_import_smoke.py -q
-
-      - name: Domain configs
-        run: poetry run test tests/test_domain_finetune_configs.py -q
-
-      - name: Flux train smoke
-        run: poetry run test tests/test_flux_lora_train_smoke.py -q
-
-      - name: Wan LoRA bridge
-        run: poetry run test tests/test_wan_lora_bridge.py -q
-
-      - name: Wan I2V LoRA bridge
-        run: poetry run test tests/test_wan_i2v_lora_bridge.py -q
-
-      - name: Wan domain T2V 2.2 config
-        run: poetry run test tests/test_wan_domain_lora_smoke_22_config.py -q
-
-      - name: Wan domain I2V 2.2 config
-        run: poetry run test tests/test_wan_domain_i2v_smoke_22_config.py -q
-
-      - name: Wan I2V dataset
-        run: poetry run test tests/test_wan_i2v_dataset.py -q
-
-      - name: Wan training step
-        run: poetry run test tests/test_wan_training_step.py -q
-
-      - name: Poetry scripts
-        run: poetry run test tests/test_poetry_scripts.py -q
+      - name: Smoke tests + coverage gate
+        run: poetry run coverage-gate

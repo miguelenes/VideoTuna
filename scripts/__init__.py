@@ -17,6 +17,24 @@ WAN_T2V_LORA_CONFIG = "configs/domain/wan_t2v_lora.yaml"
 WAN_T2V_LORA_CLOUD_SMOKE = "configs/domain/wan_t2v_lora_cloud_smoke.yaml"
 WAN_I2V_LORA_CONFIG = "configs/domain/wan_i2v_lora.yaml"
 
+# Single source of truth for CPU CI smoke tests (see .github/workflows/cpu.yml).
+CI_SMOKE_TESTS = [
+    "tests/test_import_smoke.py",
+    "tests/test_domain_finetune_configs.py",
+    "tests/test_flux_lora_train_smoke.py",
+    "tests/test_wan_lora_bridge.py",
+    "tests/test_wan_i2v_lora_bridge.py",
+    "tests/test_wan_domain_lora_smoke_22_config.py",
+    "tests/test_wan_domain_i2v_smoke_22_config.py",
+    "tests/test_wan_i2v_dataset.py",
+    "tests/test_wan_training_step.py",
+    "tests/test_poetry_scripts.py",
+]
+
+# Line-coverage floor for videotuna/training/ + videotuna/utils/
+# (CI smoke baseline ~36%).
+COVERAGE_GATE_FAIL_UNDER = 33
+
 
 def _require_cuda_backend(installer_name: str) -> None:
     """Abort when the active PyTorch build is ROCm (CUDA-only installer)."""
@@ -446,6 +464,29 @@ def coverage_report():
         exit(result.returncode)
     result = subprocess.run(["coverage", "report", "-m"], check=False)
     exit(result.returncode)
+
+
+def coverage_gate():
+    """
+    Run CI smoke tests with coverage and enforce a modest floor on core modules.
+    """
+    os.environ["ENV"] = "test"
+    run = subprocess.run(
+        ["coverage", "run", "-m", "pytest", "-q", *CI_SMOKE_TESTS],
+        check=False,
+    )
+    if run.returncode != 0:
+        exit(run.returncode)
+    report = subprocess.run(
+        [
+            "coverage",
+            "report",
+            "--include=videotuna/training/*,videotuna/utils/*",
+            f"--fail-under={COVERAGE_GATE_FAIL_UNDER}",
+        ],
+        check=False,
+    )
+    exit(report.returncode)
 
 
 def type_check():
