@@ -16,9 +16,8 @@ from videotuna.utils.common_utils import monitor_resources, save_metrics
 from videotuna.utils.inference_cli import (
     apply_compile_env,
     prepare_cli_inference_args,
-    resolve_offload_mode,
 )
-from videotuna.utils.memory_presets import apply_memory_preset
+from videotuna.utils.inference_profile import resolve_inference_profile
 
 
 def test_standard_inference_options_to_namespace():
@@ -49,7 +48,7 @@ def test_standard_inference_options_to_namespace():
     assert not hasattr(args, "enable_fp8")
 
 
-def test_apply_memory_preset_low_vram():
+def test_resolve_inference_profile():
     args = argparse.Namespace(
         memory_preset="low_vram",
         enable_model_cpu_offload=False,
@@ -57,23 +56,27 @@ def test_apply_memory_preset_low_vram():
         enable_vae_tiling=False,
         dtype=None,
     )
-    apply_memory_preset(args)
+    profile = resolve_inference_profile(args)
+    assert profile.offload_mode == "sequential"
+    assert profile.enable_sequential_cpu_offload is True
+    assert profile.enable_model_cpu_offload is False
+    assert profile.enable_vae_tiling is True
+    assert profile.dtype == "fp16"
+    assert profile.memory_preset == "low_vram"
     assert args.enable_sequential_cpu_offload is True
     assert args.enable_vae_tiling is True
     assert args.dtype == "fp16"
 
-
-def test_apply_memory_preset_max_speed():
     args = argparse.Namespace(
-        memory_preset="max_speed",
+        memory_preset=None,
         enable_model_cpu_offload=True,
-        enable_sequential_cpu_offload=True,
-        dtype=None,
+        enable_sequential_cpu_offload=False,
+        enable_vae_tiling=False,
+        dtype="bf16",
     )
-    apply_memory_preset(args)
-    assert args.enable_model_cpu_offload is False
-    assert args.enable_sequential_cpu_offload is False
-    assert args.dtype == "bf16"
+    profile = resolve_inference_profile(args, apply_preset=False)
+    assert profile.offload_mode == "model"
+    assert profile.dtype == "bf16"
 
 
 def test_prepare_cli_inference_args_validates_parallel():
@@ -156,19 +159,6 @@ def test_attn_auto_resolves():
         assert backend in ("flash", "sdpa", "eager")
     else:
         assert backend in ("sdpa", "eager")
-
-
-def test_resolve_offload_mode():
-    args = argparse.Namespace(
-        enable_sequential_cpu_offload=True,
-        enable_model_cpu_offload=False,
-    )
-    assert resolve_offload_mode(args) == "sequential"
-    args = argparse.Namespace(
-        enable_sequential_cpu_offload=False,
-        enable_model_cpu_offload=True,
-    )
-    assert resolve_offload_mode(args) == "model"
 
 
 def test_apply_compile_env():

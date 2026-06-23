@@ -8,7 +8,8 @@ from typing import Annotated, Any, Literal
 
 from cyclopts import Parameter
 
-MemoryPreset = Literal["low_vram", "balanced", "max_speed"]
+from videotuna.utils.inference_profile import MemoryPreset
+
 DtypeChoice = Literal["bf16", "fp16", "fp32"]
 DeviceMapChoice = Literal["auto"]
 

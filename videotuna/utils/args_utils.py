@@ -104,7 +104,11 @@ def prepare_inference_args(args: argparse.Namespace, config: DictConfig) -> Dict
     :param config: The config object.
     :return: The updated config object.
     """
-    from videotuna.utils.inference_cli import prepare_cli_inference_args
+    from videotuna.utils.inference_cli import (
+        prepare_cli_inference_args,
+        validate_cpu_offload_flags,
+    )
+    from videotuna.utils.inference_profile import resolve_inference_profile
 
     prepare_cli_inference_args(args)
 
@@ -116,6 +120,9 @@ def prepare_inference_args(args: argparse.Namespace, config: DictConfig) -> Dict
         else:
             if v is not None:
                 inference_config[k] = v
+
+    resolve_inference_profile(inference_config)
+    validate_cpu_offload_flags(inference_config)
 
     check_args(inference_config)
     inference_config.savedir = process_savedir(inference_config.savedir)

@@ -279,7 +279,7 @@ def monitor_resources(
                     sample["gpu_index"] = dev_idx
                     sample["gpu_name"] = torch.cuda.get_device_name(dev_idx)
                 if inference_config is not None:
-                    sample["offload_mode"] = _offload_mode_from_config(inference_config)
+                    sample["offload_mode"] = resolve_offload_mode(inference_config)
                     sample["dtype"] = getattr(inference_config, "dtype", None)
                     sample["memory_preset"] = getattr(
                         inference_config, "memory_preset", None
@@ -293,14 +293,6 @@ def monitor_resources(
         return wrapper
 
     return decorator
-
-
-def _offload_mode_from_config(config: Any) -> str:
-    if getattr(config, "enable_sequential_cpu_offload", False):
-        return "sequential"
-    if getattr(config, "enable_model_cpu_offload", False):
-        return "model"
-    return "none"
 
 
 def save_metrics(

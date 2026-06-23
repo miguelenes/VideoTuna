@@ -14,7 +14,7 @@ from videotuna.settings import (
     ENV_TORCH_COMPILE,
     get_settings,
 )
-from videotuna.utils.memory_presets import apply_memory_preset
+from videotuna.utils.inference_profile import resolve_inference_profile
 
 
 def apply_compile_env(compile_flag: bool) -> None:
@@ -102,18 +102,12 @@ def apply_cpu_smoke_limits(
 
 def resolve_offload_mode(args) -> str:
     """Return offload mode string from parsed args."""
-    if getattr(args, "enable_sequential_cpu_offload", False):
-        return "sequential"
-    if getattr(args, "enable_model_cpu_offload", False):
-        return "model"
-    return "none"
+    return resolve_inference_profile(args, apply_preset=False).offload_mode
 
 
 def prepare_cli_inference_args(args: Any) -> Any:
-    """Apply memory presets and validate parallel degrees before config merge."""
+    """Apply smoke env and validate parallel degrees before config merge."""
     apply_cpu_smoke_env(args)
-    apply_memory_preset(args)
-    validate_cpu_offload_flags(args)
     ulysses = getattr(args, "ulysses_degree", None)
     ring = getattr(args, "ring_degree", None)
     if ulysses is not None or ring is not None:
