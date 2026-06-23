@@ -41,24 +41,50 @@ Offline export: `tools/convert_wan_lora_21_to_22.py`
 
 ## ML stack pins (Wan 2.2 LoRA bridge audit)
 
-Validated against `tests/test_wan_lora_bridge.py` (remap coverage ≥ 90% on production-style fixture keys):
+Audited at commit `a17b6a0` (2026-06-23). Validated against `tests/test_wan_lora_bridge.py` (remap coverage ≥ 90% on production-style fixture keys; 11 CPU tests + optional GPU smoke).
 
 | Package | Constraint | Locked | Notes |
 |---------|------------|--------|-------|
-| diffusers | `^0.38.0` | 0.38.0 | Wan `WanTransformer3DModel` + `set_adapters(adapter_weights=…)` |
-| peft | `^0.17.0` | 0.17.1 | Stays on 0.17.x — 0.18+ requires newer `transformers` than pinned |
-| accelerate | `^1.14.0` | 1.14.0 | Transitive via peft / training |
-| safetensors | `^0.8.0` | 0.8.0 | Required by diffusers 0.38 |
+| diffusers | `^0.38.0` | 0.38.0 | Wan `WanTransformer3DModel` + `WanLoraLoaderMixin`; pipeline `set_adapters(adapter_weights=…)` |
+| peft | `^0.17.0` | 0.17.1 | Runtime bridge uses `get_peft_model` + `set_peft_model_state_dict`; cap at 0.17.x (see matrix) |
+| transformers | `^4.48.0` | 4.57.6 | Shared with Flux training; lock resolves above floor |
+| accelerate | `^1.14.0` | 1.14.0 | peft requires `>=0.21.0`; diffusers 0.38 dev extra recommends `>=0.31.0` |
+| safetensors | `^0.8.0` | 0.8.0 | Required by diffusers 0.38 (`>=0.8.0rc0`) |
 
-Matrix results (ephemeral `pip install --no-deps` where noted):
+### Upstream API alignment (diffusers 0.38 + peft 0.17)
+
+Wan 2.2 T2V/I2V pipelines expose two denoisers: `transformer` (high-noise) and `transformer_2` (low-noise). Diffusers community practice ([PR #12074](https://github.com/huggingface/diffusers/pull/12074)):
+
+- `pipeline.load_lora_weights(..., adapter_name=…)` for high-noise expert
+- `pipeline.load_lora_weights(..., load_into_transformer_2=True)` for low-noise expert
+- `pipeline.set_adapters(["a1", "a2"], adapter_weights=[w1, w2])` to activate both
+
+PrivTune bridge (`videotuna/utils/wan_lora_bridge.py`) mirrors this at runtime without pre-exported safetensors:
+
+| Upstream | PrivTune bridge |
+|----------|-----------------|
+| `load_lora_weights` per expert | `get_peft_model()` + `set_peft_model_state_dict()` on each `WanTransformer3DModel` |
+| Named adapters per expert | `domain_high` / `domain_low` |
+| `set_adapters` with weights | `pipeline.set_adapters(adapters, adapter_weights=scales)` |
+
+Offline export (`tools/convert_wan_lora_21_to_22.py`) writes `high_noise.safetensors` / `low_noise.safetensors` for native `load_lora_weights`; validated in `test_exported_lora_loads_via_diffusers_adapter`.
+
+Production inference (`videotuna/flow/diffusers_video.py`) detects native Wan 2.1 ckpts and calls the bridge; Diffusers-format LoRA dirs fall through to `pipeline.load_lora_weights()`.
+
+### Version matrix
+
+Procedure: swap only `diffusers` + `peft` in the Poetry env (`poetry run pip install --no-deps diffusers==X peft==Y`), run `poetry run test tests/test_wan_lora_bridge.py -q -k "not gpu"` and `poetry run python tools/spike_wan_lora_bridge.py --synthetic /tmp/synthetic-matrix.ckpt`, restore `diffusers==0.38.0 peft==0.17.1`.
 
 | Row | diffusers | peft | Result |
 |-----|-----------|------|--------|
-| A (baseline) | 0.36.0 | 0.17.1 | pass |
-| B | 0.37.1 | 0.17.1 | pass |
+| A (baseline) | 0.36.0 | 0.17.1 | pass — remap 100% |
+| B | 0.37.1 | 0.17.1 | pass — remap 100% |
 | C | 0.38.0 | 0.17.1 | pass — **chosen combo** |
-| D | 0.38.0 | 0.19.1 | fail — `peft` 0.19 needs `transformers` APIs not in `^4.48.0` |
-| E | 0.36.0 | 0.19.1 | fail — same `transformers` / `peft` mismatch |
+| F | 0.38.0 | 0.18.1 | pass — remap 100% |
+| D | 0.38.0 | 0.19.1 | fail — `peft` 0.19.1 requires `torchao>=0.16.0`; project pins `torchao ^0.9.0` |
+| E | 0.36.0 | 0.19.1 | fail — same `torchao` incompatibility in `get_peft_model()` |
+
+**Decision:** keep `diffusers ^0.38.0` + `peft ^0.17.0`. peft 0.18.1 passes bridge tests but offers no benefit over 0.17.1 for this workflow; peft 0.19.x is blocked by the `torchao` pin (used elsewhere for Wan 2.2 quant inference).
 
 Debug inventory: `poetry run python tools/spike_wan_lora_bridge.py --synthetic /tmp/synthetic.ckpt`
 
