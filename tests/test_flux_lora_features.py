@@ -786,3 +786,147 @@ def test_load_lora_checkpoint_roundtrip():
     ):
         load_lora_checkpoint(mock_transformer, "/tmp/checkpoint-100")
     set_state.assert_called_once_with(mock_transformer, lora_state)
+
+
+def test_clip_grad_norm_called_with_configured_max_norm(tmp_path):
+    """accelerator.clip_grad_norm_ is called when max_grad_norm is set."""
+    config = FluxLoraTrainConfig(
+        pretrained_model_name_or_path="black-forest-labs/FLUX.1-dev",
+        output_dir=str(tmp_path),
+        instance_data_dir="data",
+        max_train_steps=1,
+        max_grad_norm=1.0,
+        checkpointing_steps=1,
+        checkpoints_total_limit=None,
+    )
+    mock_accelerator = mock.MagicMock()
+    mock_accelerator.is_main_process = True
+    mock_accelerator.sync_gradients = True
+    mock_accelerator.accumulate.return_value.__enter__ = mock.MagicMock()
+    mock_accelerator.accumulate.return_value.__exit__ = mock.MagicMock(
+        return_value=False
+    )
+    mock_accelerator.device = torch.device("cpu")
+    mock_accelerator.clip_grad_norm_.return_value = 0.5
+    mock_accelerator.unwrap_model.return_value = mock.MagicMock()
+
+    mock_pipeline = mock.MagicMock()
+    mock_transformer = mock.MagicMock()
+    mock_transformer.parameters.return_value = [torch.randn(2, 2)]
+    mock_dataloader = mock.MagicMock()
+    mock_optimizer = mock.MagicMock()
+    mock_lr_scheduler = mock.MagicMock()
+
+    batch = {"pixel_values": torch.zeros(1, 3, 64, 64), "caption": ["test"]}
+    mock_dataloader.__iter__ = mock.MagicMock(return_value=iter([batch]))
+
+    with (
+        mock.patch(
+            "videotuna.training.flux_lora.train._compute_loss",
+            return_value=torch.tensor(1.0, requires_grad=True),
+        ),
+        mock.patch(
+            "videotuna.training.flux_lora.train._run_validation",
+        ),
+        mock.patch(
+            "videotuna.training.flux_lora.train.save_lora_checkpoint",
+            return_value=tmp_path / "checkpoint-1",
+        ),
+        mock.patch(
+            "videotuna.training.flux_lora.train.prune_checkpoints",
+        ),
+    ):
+        _run_training_loop(
+            config=config,
+            output_dir=tmp_path,
+            pipeline=mock_pipeline,
+            transformer=mock_transformer,
+            dataloader=mock_dataloader,
+            optimizer=mock_optimizer,
+            lr_scheduler=mock_lr_scheduler,
+            accelerator=mock_accelerator,
+            weight_dtype=torch.bfloat16,
+            global_step=0,
+            max_train_steps=1,
+            log=mock.MagicMock(),
+            metrics_backend="tensorboard",
+        )
+
+    # clip_grad_norm_ should be called with transformer.parameters() and max_norm=1.0
+    mock_accelerator.clip_grad_norm_.assert_called_once()
+    call_args = mock_accelerator.clip_grad_norm_.call_args
+    assert call_args[1]["max_norm"] == 1.0
+
+    # Verify grad_norm is logged
+    log_call_args = mock_accelerator.log.call_args_list
+    assert any("train/grad_norm" in call[0][0] for call in log_call_args)
+
+
+def test_clip_grad_norm_disabled_when_none(tmp_path):
+    """accelerator.clip_grad_norm_ is not called when max_grad_norm is None."""
+    config = FluxLoraTrainConfig(
+        pretrained_model_name_or_path="black-forest-labs/FLUX.1-dev",
+        output_dir=str(tmp_path),
+        instance_data_dir="data",
+        max_train_steps=1,
+        max_grad_norm=None,
+        checkpointing_steps=1,
+        checkpoints_total_limit=None,
+    )
+    mock_accelerator = mock.MagicMock()
+    mock_accelerator.is_main_process = True
+    mock_accelerator.sync_gradients = True
+    mock_accelerator.accumulate.return_value.__enter__ = mock.MagicMock()
+    mock_accelerator.accumulate.return_value.__exit__ = mock.MagicMock(
+        return_value=False
+    )
+    mock_accelerator.device = torch.device("cpu")
+    mock_accelerator.unwrap_model.return_value = mock.MagicMock()
+
+    mock_pipeline = mock.MagicMock()
+    mock_transformer = mock.MagicMock()
+    mock_dataloader = mock.MagicMock()
+    mock_optimizer = mock.MagicMock()
+    mock_lr_scheduler = mock.MagicMock()
+
+    batch = {"pixel_values": torch.zeros(1, 3, 64, 64), "caption": ["test"]}
+    mock_dataloader.__iter__ = mock.MagicMock(return_value=iter([batch]))
+
+    with (
+        mock.patch(
+            "videotuna.training.flux_lora.train._compute_loss",
+            return_value=torch.tensor(1.0, requires_grad=True),
+        ),
+        mock.patch(
+            "videotuna.training.flux_lora.train._run_validation",
+        ),
+        mock.patch(
+            "videotuna.training.flux_lora.train.save_lora_checkpoint",
+            return_value=tmp_path / "checkpoint-1",
+        ),
+        mock.patch(
+            "videotuna.training.flux_lora.train.prune_checkpoints",
+        ),
+    ):
+        _run_training_loop(
+            config=config,
+            output_dir=tmp_path,
+            pipeline=mock_pipeline,
+            transformer=mock_transformer,
+            dataloader=mock_dataloader,
+            optimizer=mock_optimizer,
+            lr_scheduler=mock_lr_scheduler,
+            accelerator=mock_accelerator,
+            weight_dtype=torch.bfloat16,
+            global_step=0,
+            max_train_steps=1,
+            log=mock.MagicMock(),
+            metrics_backend="tensorboard",
+        )
+
+    # clip_grad_norm_ should not be called
+    mock_accelerator.clip_grad_norm_.assert_not_called()
+
+    # Verify grad_norm is not logged
+    log_call_args = mock_accelerator.log.call_args_list
+    assert not any("train/grad_norm" in str(call[0][0]) for call in log_call_args)

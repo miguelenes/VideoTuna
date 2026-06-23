@@ -90,6 +90,7 @@ class DataModuleFromConfig(pl.LightningDataModule):
         persistent_workers=None,
         prefetch_factor=2,
         drop_last=False,
+        validate_on_setup: bool = False,
     ):
         super().__init__()
         self.batch_size = batch_size
@@ -140,6 +141,7 @@ class DataModuleFromConfig(pl.LightningDataModule):
         self.wrap = wrap
         self.test_max_n_samples = test_max_n_samples
         self.collate_fn = None
+        self.validate_on_setup = validate_on_setup
 
     def prepare_data(self):
         # for data_cfg in self.dataset_configs.values():
@@ -151,6 +153,11 @@ class DataModuleFromConfig(pl.LightningDataModule):
             (k, instantiate_from_config(self.dataset_configs[k]))
             for k in self.dataset_configs
         )
+        if self.validate_on_setup:
+            for ds in self.datasets.values():
+                validate_fn = getattr(ds, "validate_dataset", None)
+                if callable(validate_fn):
+                    validate_fn()
         if self.wrap:
             for k in self.datasets:
                 self.datasets[k] = WrappedDataset(self.datasets[k])

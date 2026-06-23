@@ -97,6 +97,8 @@ train:
       accumulate_grad_batches: 1
       max_epochs: 50
       precision: bf16-mixed
+      gradient_clip_val: 1.0
+      gradient_clip_algorithm: norm
     callbacks:
       image_logger:
         target: videotuna.utils.callbacks.ImageLogger

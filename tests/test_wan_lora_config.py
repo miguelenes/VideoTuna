@@ -24,3 +24,10 @@ def test_round_trip_revalidates():
     round_tripped = WanLoraTrainConfig.model_validate(cfg.model_dump(mode="json"))
     assert round_tripped.train.name == cfg.train.name
     assert round_tripped.flow.params.ckpt_path == cfg.flow.params.ckpt_path
+
+
+def test_trainer_gradient_clip_config():
+    """Verify gradient_clip fields are loaded from domain YAML."""
+    cfg = load_wan_lora_config(WAN_T2V_CONFIG)
+    assert cfg.train.lightning.trainer.gradient_clip_val == 1.0
+    assert cfg.train.lightning.trainer.gradient_clip_algorithm == "norm"

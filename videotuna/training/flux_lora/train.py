@@ -370,6 +370,7 @@ def _run_training_loop(
         total=max_train_steps,
     )
 
+    grad_norm: float = 0.0
     while global_step < max_train_steps:
         for batch in dataloader:
             with accelerator.accumulate(transformer):
@@ -381,6 +382,10 @@ def _run_training_loop(
                     accelerator,
                 )
                 accelerator.backward(loss)
+                if accelerator.sync_gradients and config.max_grad_norm:
+                    grad_norm = accelerator.clip_grad_norm_(
+                        transformer.parameters(), max_norm=config.max_grad_norm
+                    )
                 optimizer.step()
                 lr_scheduler.step()
                 optimizer.zero_grad(set_to_none=True)
@@ -391,13 +396,13 @@ def _run_training_loop(
             global_step += 1
             progress.update(1)
             progress.set_postfix(loss=f"{loss.item():.4f}", step=global_step)
-            accelerator.log(
-                {
-                    "train/loss": loss.item(),
-                    "train/lr": lr_scheduler.get_last_lr()[0],
-                },
-                step=global_step,
-            )
+            log_payload = {
+                "train/loss": loss.item(),
+                "train/lr": lr_scheduler.get_last_lr()[0],
+            }
+            if config.max_grad_norm:
+                log_payload["train/grad_norm"] = grad_norm
+            accelerator.log(log_payload, step=global_step)
             _run_validation(
                 pipeline,
                 config,

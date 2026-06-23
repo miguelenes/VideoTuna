@@ -156,6 +156,8 @@ class WanTrainerConfig(BaseModel):
     accumulate_grad_batches: int = 1
     max_epochs: int
     precision: str = "bf16-mixed"
+    gradient_clip_val: float | None = None
+    gradient_clip_algorithm: str | None = None
 
 
 class WanLightningCallbacks(BaseModel):

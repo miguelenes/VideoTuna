@@ -81,6 +81,7 @@ class FluxLoraTrainConfig(BaseModel):
     disable_benchmark: bool = False
     gradient_checkpointing: bool = True
     gradient_accumulation_steps: int = 1
+    max_grad_norm: float | None = 1.0
     caption_dropout_probability: float = 0.0
     write_batch_size: int = 128
     validation_prompt: str | None = None

@@ -4,7 +4,13 @@ import sys
 sys.path.append(os.getcwd())
 import copy
 import random
-from typing import Dict, List, Union
+from typing import Any, Dict, List, Union
+
+from videotuna.utils.logging_config import bound_logger
+
+logger = bound_logger(phase="data", flow="dataset")
+
+_SKIP_SUMMARY_INTERVAL = 100
 
 import pandas as pd
 import torch
@@ -87,6 +93,7 @@ class DatasetFromCSV(torch.utils.data.Dataset):
         image_to_video: bool = False,
         i2v_mode: bool = False,
         video_backend: str = "auto",
+        max_retries: int = 10,
         **kwargs,
     ):
         if "video_length" in kwargs:
@@ -135,6 +142,9 @@ class DatasetFromCSV(torch.utils.data.Dataset):
         self.image_to_video = image_to_video
         self.i2v_mode = i2v_mode
         self.video_backend = video_backend
+        self.max_retries = max_retries
+        self._skip_count = 0
+        self._access_count = 0
         self.check_video = CheckVideo(self.resolution, frame_interval, num_frames)
 
         self.load_annotations(csv_path, data_root)
@@ -267,29 +277,89 @@ class DatasetFromCSV(torch.utils.data.Dataset):
         return frame.permute(1, 0, 2, 3)
 
     def __getitem__(self, index):
-        cnt = 100
-        while cnt > 0:  # randomly get a good data, till 100 times
+        self._access_count += 1
+        last_error: Exception | None = None
+        first_failure = True
+        for _attempt in range(self.max_retries):
             try:
                 index = index % len(self)
                 data_item = self.getitem(index)
                 self.safe_data_list.add(index)
                 return data_item
-            except (ValueError, AssertionError):
-                import traceback
-
-                traceback.print_exc()
-
+            except (ValueError, AssertionError) as exc:
+                last_error = exc
+                path = self.data_list[index % len(self)].get("path", "<unknown>")
+                if first_failure:
+                    logger.warning(
+                        f"Skipping item index={index} path={path!r}: {exc}"
+                    )
+                    first_failure = False
+                else:
+                    logger.debug(
+                        f"Retry attempt={_attempt} index={index} path={path!r}: {exc}"
+                    )
+                self._skip_count += 1
+                if self._skip_count % _SKIP_SUMMARY_INTERVAL == 0:
+                    logger.warning(
+                        f"Skipped {self._skip_count} items out of "
+                        f"{self._access_count} due to data errors — "
+                        "check dataset integrity."
+                    )
                 index = (
                     random.choice(list(self.safe_data_list))
                     if len(self.safe_data_list) > 0
-                    else random.randint(0, len(self))
+                    else random.randint(0, len(self) - 1)
                 )
-                cnt -= 1
 
-        raise RuntimeError("Too many bad data.")
+        raise RuntimeError(
+            f"Too many bad data after {self.max_retries} retries. "
+            f"Last error: {last_error}"
+        ) from last_error
 
     def __len__(self):
         return len(self.data_list)
+
+    def validate_dataset(self, raise_on_error: bool = True) -> List[Dict[str, Any]]:
+        """Pre-scan all CSV entries to verify file existence and basic format.
+
+        Returns a list of issue dicts (keys: index, path, error). If raise_on_error
+        is True and any issues are found, raises RuntimeError with the first issue
+        as context.
+        """
+        from torchvision.datasets.folder import pil_loader as _pil_loader
+
+        issues: List[Dict[str, Any]] = []
+        for idx, entry in enumerate(self.data_list):
+            path = entry.get("path", "")
+            try:
+                if not os.path.exists(path):
+                    raise FileNotFoundError(f"File not found: {path}")
+                if is_video(path):
+                    frame_count = get_video_frame_count(path)
+                    if frame_count < self.frame_limit:
+                        raise ValueError(
+                            f"Video has {frame_count} frames but requires at least "
+                            f"{self.frame_limit}"
+                        )
+                elif is_image(path):
+                    _pil_loader(path)
+                else:
+                    raise ValueError(f"Unsupported file format: {path}")
+            except Exception as exc:
+                issues.append({"index": idx, "path": path, "error": str(exc)})
+
+        if issues:
+            logger.warning(
+                f"validate_dataset found {len(issues)} issues out of "
+                f"{len(self.data_list)} entries."
+            )
+        if raise_on_error and issues:
+            first = issues[0]
+            raise RuntimeError(
+                f"Dataset validation failed: index={first['index']} "
+                f"path={first['path']!r} error={first['error']}"
+            )
+        return issues
 
     def _is_valid_data(self, row) -> bool:
         if (
