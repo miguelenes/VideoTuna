@@ -32,7 +32,9 @@ cd checkpoints/wan
 hf download Wan-AI/Wan2.1-T2V-14B --local-dir ./Wan2.1-T2V-14B
 ```
 
-Cloud renters on Vast.ai can opt into faster multi-GB hub pulls with `VIDEOTUNA_FAST_HF_DOWNLOAD=1` at instance launch — see [`docs/runbooks/cloud-gpu-training.md`](runbooks/cloud-gpu-training.md#fast-model-downloads-opt-in). Local dev is unchanged.
+Cloud renters on Vast.ai can opt into faster multi-GB hub pulls with `VIDEOTUNA_FAST_HF_DOWNLOAD=1` and `HF_XET_HIGH_PERFORMANCE=1` at instance launch — see [`docs/runbooks/cloud-gpu-training.md`](runbooks/cloud-gpu-training.md#fast-model-downloads-opt-in).
+
+**Local opt-in:** uncomment `HF_XET_HIGH_PERFORMANCE=1` in [`.env.example`](../.env.example) (copy to `.env`), then `source .env` before `hf download` or training. Verify config without pulling weights: `poetry run verify-hf-download`.
 
 Flux and Wan 2.2 Diffusers weights are pulled from the hub on first `train-flux-lora` or `inference-wan2.2-t2v-720p` run unless you set `HF_HOME` or pass `--ckpt_path` / config overrides.
 
