@@ -38,38 +38,23 @@ from videotuna.utils.wan_training import (
 
 EXAMPLE_PROMPT = {
     "t2v-1.3B": {
-        "prompt": "Two anthropomorphic cats in comfy boxing gear and bright gloves fight
-            intensely on a spotlighted stage.",
+        "prompt": "Two anthropomorphic cats in comfy boxing gear and bright gloves fight intensely on a spotlighted stage.",
     },
     "t2v-14B": {
-        "prompt": "Two anthropomorphic cats in comfy boxing gear and bright gloves fight
-            intensely on a spotlighted stage.",
+        "prompt": "Two anthropomorphic cats in comfy boxing gear and bright gloves fight intensely on a spotlighted stage.",
     },
     "t2v-A14B": {
-        "prompt": "Two anthropomorphic cats in comfy boxing gear and bright gloves fight
-            intensely on a spotlighted stage.",
+        "prompt": "Two anthropomorphic cats in comfy boxing gear and bright gloves fight intensely on a spotlighted stage.",
     },
     "t2i-14B": {
         "prompt": "一个朴素端庄的美人",
     },
     "i2v-14B": {
-        "prompt": "Summer beach vacation style, a white cat wearing sunglasses sits on a
-            surfboard. The fluffy-furred feline gazes directly at the camera with a relaxed
-            expression. Blurred beach scenery forms the background featuring crystal-clear
-            waters, distant green hills, and a blue sky dotted with white clouds. The cat
-            assumes a naturally relaxed posture, as if savoring the sea breeze and warm
-            sunlight. A close-up shot highlights the feline's intricate details and the
-            refreshing atmosphere of the seaside.",
+        "prompt": "Summer beach vacation style, a white cat wearing sunglasses sits on a surfboard. The fluffy-furred feline gazes directly at the camera with a relaxed expression. Blurred beach scenery forms the background featuring crystal-clear waters, distant green hills, and a blue sky dotted with white clouds. The cat assumes a naturally relaxed posture, as if savoring the sea breeze and warm sunlight. A close-up shot highlights the feline's intricate details and the refreshing atmosphere of the seaside.",
         "image": "inputs/i2v/576x1024/i2v_input.JPG",
     },
     "i2v-A14B": {
-        "prompt": "Summer beach vacation style, a white cat wearing sunglasses sits on a
-            surfboard. The fluffy-furred feline gazes directly at the camera with a relaxed
-            expression. Blurred beach scenery forms the background featuring crystal-clear
-            waters, distant green hills, and a blue sky dotted with white clouds. The cat
-            assumes a naturally relaxed posture, as if savoring the sea breeze and warm
-            sunlight. A close-up shot highlights the feline's intricate details and the
-            refreshing atmosphere of the seaside.",
+        "prompt": "Summer beach vacation style, a white cat wearing sunglasses sits on a surfboard. The fluffy-furred feline gazes directly at the camera with a relaxed expression. Blurred beach scenery forms the background featuring crystal-clear waters, distant green hills, and a blue sky dotted with white clouds. The cat assumes a naturally relaxed posture, as if savoring the sea breeze and warm sunlight. A close-up shot highlights the feline's intricate details and the refreshing atmosphere of the seaside.",
         "image": "inputs/i2v/576x1024/i2v_input.JPG",
     },
 }
@@ -81,8 +66,7 @@ class WanVideoModelFlow(GenerationBase):
     """
     Training and inference flow for YourModel.
 
-    This model inherits from GenerationFlow, which is a base class for all generative
-        models.
+    This model inherits from GenerationFlow, which is a base class for all generative models.
     """
 
     def __init__(
@@ -174,8 +158,7 @@ class WanVideoModelFlow(GenerationBase):
             require_xfuser_sequence_parallel("WanVideoModelFlow")
             assert (
                 ulysses_size * ring_size == world_size
-            ), "The number of ulysses_size and ring_size should be equal to the world
-                size."
+            ), "The number of ulysses_size and ring_size should be equal to the world size."
             from xfuser.core.distributed import (
                 init_distributed_environment,
                 initialize_model_parallel,
@@ -216,8 +199,7 @@ class WanVideoModelFlow(GenerationBase):
             assert num_heads is not None, "Wan config missing num_heads"
             assert (
                 num_heads % ulysses_size == 0
-            ), f"`num_heads={num_heads}` cannot be divided evenly by
-                `ulysses_size={ulysses_size}`."
+            ), f"`num_heads={num_heads}` cannot be divided evenly by `ulysses_size={ulysses_size}`."
 
         self._log.info(f"WanVideo flow: model config: {cfg}")
 
@@ -264,14 +246,14 @@ class WanVideoModelFlow(GenerationBase):
         self._log.info(f"setting size = width*height == {args.size}")
         assert (
             args.size in SUPPORTED_SIZES[self.task]
-        ), f"Unsupport size {args.size} for task {self.task}, supported sizes are: {',
-            '.join(SUPPORTED_SIZES[self.task])}"
+        ), f"Unsupport size {args.size} for task {self.task}, supported sizes are: {', '.join(SUPPORTED_SIZES[self.task])}"
 
     def inference_t2v(self, args: DictConfig):
         # init vars
         rank = int(os.getenv("RANK", 0))
-        int(os.getenv("WORLD_SIZE", 1))
-        int(os.getenv("LOCAL_RANK", 0))
+        world_size = int(os.getenv("WORLD_SIZE", 1))
+        local_rank = int(os.getenv("LOCAL_RANK", 0))
+        device = local_rank
 
         frames = args.frames
         size = args.size
@@ -298,7 +280,7 @@ class WanVideoModelFlow(GenerationBase):
                         prompt, tar_lang=self.prompt_extend_target_lang, seed=self.seed
                     )
                     assert prompt_output is not None
-                    if prompt_output.status is False:
+                    if prompt_output.status == False:
                         self._log.info(
                             f"Extending prompt failed: {prompt_output.message}"
                         )
@@ -361,8 +343,9 @@ class WanVideoModelFlow(GenerationBase):
     def inference_i2v(self, args: DictConfig):
         # init vars
         rank = int(os.getenv("RANK", 0))
-        int(os.getenv("WORLD_SIZE", 1))
-        int(os.getenv("LOCAL_RANK", 0))
+        world_size = int(os.getenv("WORLD_SIZE", 1))
+        local_rank = int(os.getenv("LOCAL_RANK", 0))
+        device = local_rank
 
         frames = args.frames
         size = args.size
@@ -398,7 +381,7 @@ class WanVideoModelFlow(GenerationBase):
                         seed=self.seed,
                     )
                     assert prompt_output is not None
-                    if prompt_output.status is False:
+                    if prompt_output.status == False:
                         self._log.info(
                             f"Extending prompt failed: {prompt_output.message}"
                         )
@@ -471,8 +454,7 @@ class WanVideoModelFlow(GenerationBase):
             self.inference_i2v(args)
         else:
             raise ValueError(
-                "Error: invalid mode, we currently only support t2v and i2v for
-                    wanvideo"
+                "Error: invalid mode, we currently only support t2v and i2v for wanvideo"
             )
 
     def from_pretrained(

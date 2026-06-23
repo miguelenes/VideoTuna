@@ -180,7 +180,7 @@ def log_local(batch_logs, save_dir, filename, save_fps=10, rescale=True):
             ## only save grayscale or rgb mode
             if video.shape[1] != 1 and video.shape[1] != 3:
                 continue
-            video.shape[0]
+            n = video.shape[0]
             video = video.permute(2, 0, 1, 3, 4)  # t,n,c,h,w
             frame_grids = [
                 torchvision.utils.make_grid(framesheet, nrow=int(1))
@@ -210,14 +210,13 @@ def log_local(batch_logs, save_dir, filename, save_fps=10, rescale=True):
             ## only save grayscale or rgb mode
             if img.shape[1] != 1 and img.shape[1] != 3:
                 continue
-            img.shape[0]
+            n = img.shape[0]
             grid = torchvision.utils.make_grid(img, nrow=1)
             path = os.path.join(save_dir, "%s-%s.jpg" % (key, filename))
             save_img_grid(grid, path, rescale)
         else:
             raise ValueError(
-                f"The value of type [{type(value)}[] and key [{key}] does not
-                    supported!"
+                f"The value of type [{type(value)}[] and key [{key}] does not supported!"
             )
 
 
@@ -283,9 +282,7 @@ def load_num_videos(data_path, num_videos):
 def npz_to_video_grid(
     data_path, out_path, num_frames, fps, num_videos=None, nrow=None, verbose=True
 ):
-    # videos =
-    # torch.tensor(np.load(data_path)['arr_0']).permute(0,1,4,2,3).div_(255).mul_(2) -
-    # 1.0 # NTHWC->NTCHW, np int -> torch tensor 0-1
+    # videos = torch.tensor(np.load(data_path)['arr_0']).permute(0,1,4,2,3).div_(255).mul_(2) - 1.0 # NTHWC->NTCHW, np int -> torch tensor 0-1
     if isinstance(data_path, str):
         videos = load_num_videos(data_path, num_videos)
     elif isinstance(data_path, np.ndarray):

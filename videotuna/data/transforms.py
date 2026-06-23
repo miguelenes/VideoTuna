@@ -277,8 +277,7 @@ class RandomCropVideo:
 
         if h < th or w < tw:
             raise ValueError(
-                f"Required crop size {(th, tw)} is larger than input image size {(h,
-                    w)}"
+                f"Required crop size {(th, tw)} is larger than input image size {(h, w)}"
             )
 
         if w == tw and h == th:
@@ -332,8 +331,7 @@ class CenterCropResizeVideo:
         return clip_center_crop_resize
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(size={self.size},
-            interpolation_mode={self.interpolation_mode}"
+        return f"{self.__class__.__name__}(size={self.size}, interpolation_mode={self.interpolation_mode}"
 
 
 class ResizeCenterCropVideo:
@@ -410,8 +408,7 @@ class ResizeCenterCropVideo:
         return cropped_clip
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(size={self.size},
-            interpolation_mode={self.interpolation_mode}"
+        return f"{self.__class__.__name__}(size={self.size}, interpolation_mode={self.interpolation_mode}"
 
 
 class UCFCenterCropVideo:
@@ -459,14 +456,12 @@ class UCFCenterCropVideo:
         return clip_center_crop
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(size={self.size},
-            interpolation_mode={self.interpolation_mode}"
+        return f"{self.__class__.__name__}(size={self.size}, interpolation_mode={self.interpolation_mode}"
 
 
 class KineticsRandomCropResizeVideo:
     """
-    Slide along the long edge, with the short edge as crop size. And resie to the
-        desired size.
+    Slide along the long edge, with the short edge as crop size. And resie to the desired size.
     """
 
     def __init__(
@@ -520,8 +515,7 @@ class CenterCropVideo:
         return clip_center_crop
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(size={self.size},
-            interpolation_mode={self.interpolation_mode}"
+        return f"{self.__class__.__name__}(size={self.size}, interpolation_mode={self.interpolation_mode}"
 
 
 class NormalizeVideo:
@@ -546,8 +540,7 @@ class NormalizeVideo:
         return normalize(clip, self.mean, self.std, self.inplace)
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(mean={self.mean}, std={self.std},
-            inplace={self.inplace})"
+        return f"{self.__class__.__name__}(mean={self.mean}, std={self.std}, inplace={self.inplace})"
 
 
 class ToTensorVideo:
@@ -663,8 +656,8 @@ class CheckVideo:
 
     def __call__(self, vframes, index):
         length = vframes.shape[0]  # [F, C, H, W]
-        vframes.shape[2]
-        vframes.shape[3]
+        h = vframes.shape[2]
+        w = vframes.shape[3]
         if length < self.frame_limit:
             raise ValueError(
                 f"The video has not enough frames. Current frames: {length}"
