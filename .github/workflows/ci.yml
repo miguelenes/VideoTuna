@@ -86,9 +86,9 @@ jobs:
         if: always()
         run: |
           {
-            echo "## Coverage (videotuna/training + videotuna/utils)"
+            echo "## Coverage (videotuna/training + videotuna/utils + videotuna/flow + videotuna/cli)"
             poetry run coverage report \
-              --include='videotuna/training/*,videotuna/utils/*' \
+              --include='videotuna/training/*,videotuna/utils/*,videotuna/flow/*,videotuna/cli/*' \
               || echo "_Coverage report unavailable (tests may have failed)._"
           } >> "$GITHUB_STEP_SUMMARY"
 

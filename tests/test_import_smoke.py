@@ -45,6 +45,15 @@ def test_gpu_backend_import(module):
     importlib.import_module(module)
 
 
+def test_wan_model_package_import():
+    """videotuna.models.wan.wan cold-import after lazy-load change."""
+    import videotuna.models.wan.wan
+
+    assert hasattr(videotuna.models.wan.wan, "WanT2V")
+    assert hasattr(videotuna.models.wan.wan, "WanI2V")
+    assert hasattr(videotuna.models.wan.wan, "configs")
+
+
 def test_core_ml_stack_versions():
     import accelerate
     import diffusers

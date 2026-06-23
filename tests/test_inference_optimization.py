@@ -220,6 +220,31 @@ def test_monitor_resources_returns_extended_keys():
     assert "torch_compile" in out
 
 
+def test_monitor_resources_logs_via_bound_logger():
+    """monitor_resources uses bound_logger with phase=inference, flow=resources."""
+    mock_log = mock.MagicMock()
+    mock_log.info = mock.MagicMock()
+
+    with mock.patch(
+        "videotuna.utils.common_utils.bound_logger", return_value=mock_log
+    ) as mock_bound:
+
+        @monitor_resources(return_metrics=False, frames=10)
+        def dummy():
+            return "ok"
+
+        result = dummy()
+        assert result == "ok"
+        mock_bound.assert_called_once_with(phase="inference", flow="resources")
+        mock_log.info.assert_called_once()
+        call = mock_log.info.call_args
+        assert call[0][0] == "Resource usage"
+        assert "wall_time_s" in call[1]
+        assert "cpu_mem_change_gb" in call[1]
+        assert "peak_vram_allocated_gb" in call[1]
+        assert "peak_vram_reserved_gb" in call[1]
+
+
 def test_benchmark_defaults_wan_only():
     from scripts.benchmark_attn_backends import DEFAULT_MODEL, DEFAULT_NUM_FRAMES
 

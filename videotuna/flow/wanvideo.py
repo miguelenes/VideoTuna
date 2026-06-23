@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 from pathlib import Path
 from typing import Any, Dict, Optional, Union, cast
@@ -14,10 +16,6 @@ from videotuna.models.wan.wan.configs import (
     SIZE_CONFIGS,
     SUPPORTED_SIZES,
     WAN_CONFIGS,
-)
-from videotuna.models.wan.wan.utils.prompt_extend import (
-    DashScopePromptExpander,
-    QwenPromptExpander,
 )
 from videotuna.utils.args_utils import VideoMode
 from videotuna.utils.attention import maybe_compile_denoiser
@@ -195,6 +193,11 @@ class WanVideoModelFlow(GenerationBase):
             )
 
         if use_prompt_extend:
+            from videotuna.models.wan.wan.utils.prompt_extend import (
+                DashScopePromptExpander,
+                QwenPromptExpander,
+            )
+
             if prompt_extend_method == "dashscope":
                 self.prompt_expander = DashScopePromptExpander(
                     model_name=prompt_extend_model, is_vl="i2v" in task

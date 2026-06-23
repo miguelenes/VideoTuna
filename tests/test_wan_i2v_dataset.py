@@ -1,5 +1,6 @@
 """CPU tests for Wan I2V pair dataset loading."""
 
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -8,6 +9,10 @@ from PIL import Image
 from torchvision.io import write_video
 
 from videotuna.data.datasets import DatasetFromCSV
+from videotuna.training.wan_lora.config import WanLoraTrainConfig, load_wan_lora_config
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+WAN_I2V_CONFIG = REPO_ROOT / "configs" / "domain" / "wan_i2v_lora.yaml"
 
 
 def _write_test_mp4(path, num_frames: int = 90, height: int = 480, width: int = 832):
@@ -162,3 +167,56 @@ def test_i2v_pair_dataset_integration_with_pyav(tmp_path):
     assert sample["caption"] == "sks_style, slow pan"
     assert sample["video"].shape == (3, 81, 480, 832)
     assert sample["image"].shape == (3, 1, 480, 832)
+
+
+# --- I2V CSV-layout contract tests ---
+
+
+def test_i2v_mode_rejects_first_frame_csv_when_image_to_video_false(tmp_path):
+    """i2v_mode + image_to_video=false must use image_path,video_path,caption."""
+    csv_path = tmp_path / "bad.csv"
+    csv_path.write_text("path,caption\nvid.mp4,sks_style clip\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="path,caption columns"):
+        DatasetFromCSV(
+            str(csv_path),
+            height=480,
+            width=832,
+            num_frames=16,
+            image_to_video=False,
+            i2v_mode=True,
+        )
+
+
+def test_i2v_config_validates_with_i2v_mode_true():
+    """The canonical wan_i2v_lora.yaml must pass validation."""
+    cfg = load_wan_lora_config(WAN_I2V_CONFIG)
+    assert cfg.flow.params.task == "i2v-14B"
+    ds_params = cfg.train.data.params["train"]["params"]
+    assert ds_params["i2v_mode"] is True
+
+
+def test_i2v_config_fails_when_i2v_mode_is_false():
+    """i2v-14B task with i2v_mode=false must be rejected at config load."""
+    cfg = load_wan_lora_config(WAN_I2V_CONFIG)
+    payload = cfg.model_dump(mode="json")
+    payload["train"]["data"]["params"]["train"]["params"]["i2v_mode"] = False
+    with pytest.raises(ValueError, match="i2v_mode must be true"):
+        WanLoraTrainConfig.model_validate(payload)
+
+
+def test_i2v_config_fails_when_i2v_mode_is_missing():
+    """i2v-14B task without i2v_mode in dataset params must be rejected."""
+    cfg = load_wan_lora_config(WAN_I2V_CONFIG)
+    payload = cfg.model_dump(mode="json")
+    del payload["train"]["data"]["params"]["train"]["params"]["i2v_mode"]
+    with pytest.raises(ValueError, match="i2v_mode must be true"):
+        WanLoraTrainConfig.model_validate(payload)
+
+
+def test_i2v_config_rejects_extra_dataset_params():
+    """i2v-14B dataset params must match the strict DatasetFromCSVParams schema."""
+    cfg = load_wan_lora_config(WAN_I2V_CONFIG)
+    payload = cfg.model_dump(mode="json")
+    payload["train"]["data"]["params"]["train"]["params"]["unknown_key"] = 42
+    with pytest.raises(ValueError, match="Invalid train.data.params.train.params"):
+        WanLoraTrainConfig.model_validate(payload)

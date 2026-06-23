@@ -24,6 +24,26 @@ class InstantiateConfig(BaseModel):
     use_from_pretrained: bool = False
 
 
+class DatasetFromCSVParams(BaseModel):
+    """Strict schema for DatasetFromCSV instantiation payload.
+
+    Used by Wan I2V config validation to enforce that the dataset
+    params match one of the two documented I2V CSV layouts from
+    docs/runbooks/domain-adult-finetune.md (Phase 2.5).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    csv_path: str
+    height: int
+    width: int
+    num_frames: int
+    frame_interval: int = 1
+    image_to_video: bool = False
+    train: bool = True
+    i2v_mode: bool = False
+
+
 class WanLoraFlowParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -185,6 +205,43 @@ class WanLoraTrainConfig(BaseModel):
                 "flow.params.denoiser_config.params.subfolder must be "
                 "'high_noise_model' for i2v-14B"
             )
+        return self
+
+    @model_validator(mode="after")
+    def validate_i2v_dataset_layout(self) -> Self:
+        if self.flow.params.task != "i2v-14B":
+            return self
+
+        data_params = self.train.data.params
+        train_entry = data_params.get("train", {})
+        ds_params = train_entry.get("params", {})
+        target = train_entry.get("target")
+
+        if target != DATASET_FROM_CSV_TARGET:
+            raise ValueError(
+                f"train.data.params.train.target must be "
+                f"{DATASET_FROM_CSV_TARGET!r} for i2v-14B, "
+                f"got {target!r}"
+            )
+
+        try:
+            parsed = DatasetFromCSVParams.model_validate(ds_params)
+        except Exception as exc:
+            raise ValueError(
+                f"Invalid train.data.params.train.params for i2v-14B: {exc}"
+            ) from exc
+
+        if not parsed.i2v_mode:
+            raise ValueError(
+                "For i2v-14B task, train.data.params.train.params.i2v_mode "
+                "must be true so that DatasetFromCSV enforces the correct "
+                "Wan I2V CSV layout. See the two documented layouts in "
+                "docs/runbooks/domain-adult-finetune.md (Phase 2.5):\n"
+                "  - image_to_video: false  ->  image_path,video_path,caption\n"
+                "  - image_to_video: true   ->  path,caption\n"
+                "Set i2v_mode: true in configs/domain/wan_i2v_lora.yaml."
+            )
+
         return self
 
 

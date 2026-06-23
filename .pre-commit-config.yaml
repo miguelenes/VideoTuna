@@ -24,7 +24,7 @@ repos:
         stages: [pre-commit]
       - id: unit-tests
         name: unit tests
-        entry: poetry run coverage-gate
+        entry: poetry run test-smoke
         pass_filenames: false
         language: system
         stages: [pre-commit]

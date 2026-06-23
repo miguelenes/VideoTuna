@@ -20,10 +20,10 @@ Never commit datasets, weights, API keys, or `results/` to git.
 | `black-forest-labs/FLUX.1-dev` | Manifest + bootstrap | Flux T2I train |
 | `Wan-AI/Wan2.1-T2V-14B` | Manifest + bootstrap | Wan T2V train |
 | `Wan-AI/Wan2.1-I2V-14B-480P` | Manifest + bootstrap | Wan I2V train (optional) |
-| `Wan-AI/Wan2.2-T2V-A14B-Diffusers` | Bootstrap (`hf-download-cache`) | `validate-domain-t2v` |
-| `Wan-AI/Wan2.2-I2V-A14B-Diffusers` | Bootstrap (`hf-download-cache`) | `validate-domain-i2v` |
+| `Wan-AI/Wan2.2-T2V-A14B-Diffusers` | Manifest (opt-in, see below) + bootstrap (`hf-download-cache`) | `validate-domain-t2v` |
+| `Wan-AI/Wan2.2-I2V-A14B-Diffusers` | Manifest (opt-in, see below) + bootstrap (`hf-download-cache`) | `validate-domain-i2v` |
 
-Wan 2.2 Diffusers weights populate the Hugging Face hub cache so validation presets (hub IDs) resolve without config changes.
+Wan 2.2 Diffusers weights populate the Hugging Face hub cache (bootstrap) and/or local checkpoints (manifest opt-in) so validation presets (hub IDs) resolve without config changes.
 
 ## B. Launch checklist
 
@@ -39,16 +39,21 @@ Wan 2.2 Diffusers weights populate the Hugging Face hub cache so validation pres
 
 ### Fast model downloads (opt-in)
 
-Multi-GB first-boot pulls (FLUX.1-dev, Wan 2.1 train weights, Wan 2.2 validate weights) can dominate rental cost on datacenter GPUs with fast network and NVMe storage. PrivTune exposes an **opt-in** cloud knob:
+Multi-GB first-boot pulls (FLUX.1-dev, Wan 2.1 train weights, Wan 2.2 validate weights) can dominate rental cost on datacenter GPUs with fast network and NVMe storage. PrivTune exposes **opt-in** cloud knobs:
 
-| Variable | Value |
-|----------|-------|
-| `VIDEOTUNA_FAST_HF_DOWNLOAD` | `1` |
-| `HF_XET_HIGH_PERFORMANCE` | `1` (recommended at rent time for manifest phase) |
+| Variable | Value | Scope |
+|----------|-------|-------|
+| `VIDEOTUNA_FAST_HF_DOWNLOAD` | `1` | Bootstrap + training (fast transfer) |
+| `HF_XET_HIGH_PERFORMANCE` | `1` | Manifest phase (recommended at rent time) |
+| `VIDEOTUNA_PROVISION_VALIDATE_WEIGHTS` | `1` | Manifest phase (pre-fetch Wan 2.2 validate weights) |
 
-When set at **rent time**, bootstrap exports `HF_XET_HIGH_PERFORMANCE=1` (modern `hf-xet` high-bandwidth mode; **not** deprecated `hf_transfer`) and persists it into `.env` for training-time hub pulls.
+`VIDEOTUNA_FAST_HF_DOWNLOAD=1` and `HF_XET_HIGH_PERFORMANCE=1` control **transfer speed** (high-bandwidth `hf-xet` mode; **not** deprecated `hf_transfer`). `VIDEOTUNA_PROVISION_VALIDATE_WEIGHTS=1` controls **what** is downloaded during the manifest phase: when set at rent time (together with a valid `HF_TOKEN`), the manifest pre-fetches Wan 2.2 Diffusers weights to `/workspace/checkpoints/wan/` so `validate-domain-t2v` / `validate-domain-i2v` can run immediately after provisioning. This is **independent** of `VIDEOTUNA_FAST_HF_DOWNLOAD` — you can set either, both, or neither.
 
-**Important:** `conditional_downloads` in the manifest run **before** `bootstrap.sh`. Manifest-phase pulls only see instance env `HF_XET_HIGH_PERFORMANCE=1` — set it at rent time for full first-boot benefit. `VIDEOTUNA_FAST_HF_DOWNLOAD=1` ensures bootstrap persists the setting into `.env` for post-bootstrap and training pulls.
+Without `VIDEOTUNA_PROVISION_VALIDATE_WEIGHTS=1`, Wan 2.2 weights still download at bootstrap time via `hf-download-cache` (hub cache); they just aren't available during the manifest phase. See also the weight download table in [A. Instance selection](#a-instance-selection).
+
+When `VIDEOTUNA_FAST_HF_DOWNLOAD=1` is set at **rent time**, bootstrap exports `HF_XET_HIGH_PERFORMANCE=1` and persists it into `.env` for training-time hub pulls.
+
+**Important:** `conditional_downloads` in the manifest run **before** `bootstrap.sh`. Manifest-phase pulls only see instance env `HF_XET_HIGH_PERFORMANCE=1` and `VIDEOTUNA_PROVISION_VALIDATE_WEIGHTS=1` — set them at rent time for full first-boot benefit. `VIDEOTUNA_FAST_HF_DOWNLOAD=1` ensures bootstrap persists the fast transfer setting into `.env` for post-bootstrap and training pulls.
 
 **When to use:** datacenter GPU + NVMe, multi-GB weight pre-downloads.
 
@@ -186,6 +191,51 @@ export RESUME_CKPT=/workspace/results/train/.../checkpoints/...
 1. Run `./cloud/vast/run-smoke-train.sh` before any multi-hour job.
 2. Stop the instance when finished — only persist `results/` and `checkpoints/` via Syncthing.
 3. Use smoke configs: `configs/domain/flux_t2i_cloud_smoke.json`, `configs/domain/wan_t2v_lora_cloud_smoke.yaml`.
+
+## GPU nightly CI
+
+The repo includes an automated GPU regression workflow (`.github/workflows/gpu-nightly.yml`) that runs on a self-hosted GPU runner.
+
+### Trigger
+
+| Trigger | Schedule |
+|---------|----------|
+| `workflow_dispatch` | Manual via GitHub Actions UI (optional `runner` input to target a specific self-hosted label) |
+| `schedule` | Weekly — Monday 08:00 UTC (`cron: "0 8 * * 1"`) |
+
+### What it validates
+
+| Step | Description | Failure signal |
+|------|-------------|----------------|
+| Import smoke | `tests/test_import_smoke.py::test_gpu_backend_import` — wanvideo module loads on GPU | ImportError / CUDA OOM |
+| Bridge validation | `@pytest.mark.gpu` test loads Wan 2.2 Diffusers pipeline and validates the native LoRA→Diffusers bridge | Remap ratio < 0.9, missing keys, zero LoRA params loaded |
+| Diffusers flow GPU smoke | `@pytest.mark.gpu` test in `tests/test_diffusers_video_flow.py` runs two 4-step generations with seed=42 and asserts output tensors are identical | Determinism break (regression in pipeline / attention / torch version) |
+| Wan 2.2 4-step smoke (GPU) | `inference-wan2.2-t2v-720p` at 256×448, 5 frames, 4 steps, bf16 | Pipeline load failure, generation error, OOM |
+
+### Artifacts
+
+Validation PNGs and MP4s are uploaded as `gpu-nightly-outputs` (artifact name). The workflow also uploads any `metrics.json` files as `gpu-nightly-metrics`. Artifacts are retained per GitHub's default retention policy.
+
+### Failure handling
+
+The workflow fails in the normal GitHub Actions way — any step returning non-zero triggers failure, which surfaces through existing repository CI notifications. No separate GPU notifier is defined; regressions appear alongside other CI status checks.
+
+### Requirements
+
+- **Runner label:** `self-hosted` + `gpu` (default) or a custom label via `workflow_dispatch` `runner` input.
+- **VRAM:** minimum ~16 GB for the 4-step smoke (Wan 2.2 bf16 at 256×448). The bridge validation loads the full 14B model in bf16 and requires ~28 GB.
+- **CUDA:** PyTorch CUDA wheels from `poetry install -E cuda --with training`; DeepSpeed installed via `poetry run install-deepspeed`.
+- **HF token:** `HF_TOKEN` must be set in the runner's environment or repository secrets so the Wan 2.2 Diffusers weights can be downloaded.
+
+### Manual launch
+
+```bash
+# Via GitHub CLI:
+gh workflow run gpu-nightly.yml
+
+# With a specific runner label:
+gh workflow run gpu-nightly.yml -f runner=rtx4090
+```
 
 ## Training profiles (`TRAIN_PROFILE`)
 

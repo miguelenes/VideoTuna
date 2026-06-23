@@ -137,6 +137,20 @@ See [`docs/runbooks/domain-adult-finetune.md`](docs/runbooks/domain-adult-finetu
 
 ## CPU dev / CI gates
 
+Run the CI smoke subset (used by pre-commit):
+
+```bash
+poetry run test-smoke
+```
+
+Run the **full test suite** (authoritative CI gate — recommended before push):
+
+```bash
+poetry run test
+```
+
+Step-by-step manual gates:
+
 ```bash
 poetry install -E cpu --with dev --with training
 poetry run install-cpu-torch

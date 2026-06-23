@@ -5,7 +5,6 @@ from enum import Enum
 from pathlib import Path
 
 import torch
-from loguru import logger
 from omegaconf import DictConfig, OmegaConf
 from pytorch_lightning import Trainer
 
@@ -14,9 +13,9 @@ from videotuna.training.wan_lora.config import (
     WanLoraTrainConfig,
     validated_config_to_dictconfig,
 )
-from videotuna.utils.cli_console import render_inference_config_panel
 from videotuna.utils.config_mapping import apply_config_mappings
 from videotuna.utils.lightning_utils import add_trainer_args_to_parser
+from videotuna.utils.logging_config import bound_logger
 
 
 class VideoMode(Enum):
@@ -58,7 +57,8 @@ def prepare_train_args(parser: argparse.ArgumentParser):
                 train_config[k] = v
 
     apply_config_mappings(config, section="train")
-    logger.info(f"All Config: {OmegaConf.to_yaml(config)}")
+    log = bound_logger(phase="config", flow="train_args")
+    log.info("Merged training config", config_yaml=OmegaConf.to_yaml(config))
 
     def resolve_dtype(dtype_str):
         mapping = {
@@ -126,11 +126,24 @@ def prepare_inference_config(
     check_args(inference_config)
     inference_config.savedir = process_savedir(inference_config.savedir)
     config.inference = inference_config
-    print_inference_config(inference_config)
+
+    log = bound_logger(phase="config", flow="inference_args")
+    log.info(
+        "Inference configuration summary",
+        mode=inference_config.get("mode"),
+        savedir=inference_config.get("savedir"),
+        height=inference_config.get("height"),
+        width=inference_config.get("width"),
+        frames=inference_config.get("frames"),
+        fps=inference_config.get("fps"),
+        seed=inference_config.get("seed"),
+        bs=inference_config.get("bs"),
+        n_samples_prompt=inference_config.get("n_samples_prompt"),
+    )
 
     apply_config_mappings(config, section="inference")
 
-    logger.info(f"All Config: {OmegaConf.to_yaml(config)}")
+    log.info("Merged inference config", config_yaml=OmegaConf.to_yaml(config))
 
     if not OmegaConf.has_resolver("dtype_resolver"):
         OmegaConf.register_new_resolver("dtype_resolver", _resolve_dtype)
@@ -178,14 +191,3 @@ def process_savedir(savedir: str):
     Path(savedir).mkdir(parents=True, exist_ok=True)
 
     return savedir
-
-
-def print_inference_config(inference_config: DictConfig):
-    """
-    Print the basic information of the inference config.
-    Such as the mode, savedir, the seed, the height, width, frames, fps,
-    n_samples_prompt, bs.
-
-    :param inference_config: The inference config.
-    """
-    render_inference_config_panel(inference_config)

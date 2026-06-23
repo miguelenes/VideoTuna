@@ -128,6 +128,17 @@ poetry run test tests/test_wan_inference_presets.py -q
 poetry run test tests/test_import_smoke.py -q
 ```
 
+### GPU nightly CI
+
+An automated GPU regression workflow runs Wan 2.2 smoke inference on a self-hosted GPU runner. See [`cloud-gpu-training.md`](cloud-gpu-training.md#gpu-nightly-ci) for launch instructions, artifact locations, and failure interpretation.
+
+The workflow runs:
+- `@pytest.mark.gpu` bridge validation (LoRA→Diffusers remap)
+- `@pytest.mark.gpu` determinism smoke in `tests/test_diffusers_video_flow.py` (two 4-step generations with seed=42 must produce identical tensors)
+- `inference-wan2.2-t2v-720p` 4-step smoke at 256×448
+
+Artifacts: `gpu-nightly-outputs` (PNG/MP4) and `gpu-nightly-metrics` (metrics.json).
+
 ## VRAM / speed / quality tradeoffs
 
 | Tier | Est. peak VRAM | Speed | Quality tradeoffs |

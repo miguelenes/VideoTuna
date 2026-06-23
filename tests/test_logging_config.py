@@ -63,6 +63,59 @@ def test_bound_logger_emits_structured_context():
     assert "hello" in text
 
 
+def test_bound_logger_includes_config_yaml_in_logs():
+    """Config dump events via bound_logger carry structured context and YAML payload."""
+    configure_logging()
+
+    output = io.StringIO()
+    handler_id = logger.add(
+        output,
+        level="INFO",
+        format="phase={extra[phase]} flow={extra[flow]} | {message} | {extra}",
+    )
+
+    yaml_payload = "mode: t2v\nheight: 480"
+    bound_logger(phase="config", flow="train_args").info(
+        "Merged training config", config_yaml=yaml_payload
+    )
+
+    logger.remove(handler_id)
+    text = output.getvalue()
+    assert "phase=config" in text
+    assert "flow=train_args" in text
+    assert "Merged training config" in text
+    assert "config_yaml" in text
+    assert "mode: t2v" in text
+    assert "height: 480" in text
+
+
+def test_bound_logger_includes_inference_config_yaml_in_logs():
+    """Config dump for inference_args carries structured context and YAML payload."""
+    configure_logging()
+
+    output = io.StringIO()
+    handler_id = logger.add(
+        output,
+        level="INFO",
+        format="phase={extra[phase]} flow={extra[flow]} | {message} | {extra}",
+    )
+
+    yaml_payload = "mode: t2v\nheight: 720\nwidth: 1280"
+    bound_logger(phase="config", flow="inference_args").info(
+        "Merged inference config", config_yaml=yaml_payload
+    )
+
+    logger.remove(handler_id)
+    text = output.getvalue()
+    assert "phase=config" in text
+    assert "flow=inference_args" in text
+    assert "Merged inference config" in text
+    assert "config_yaml" in text
+    assert "mode: t2v" in text
+    assert "height: 720" in text
+    assert "width: 1280" in text
+
+
 def test_configure_logging_is_idempotent():
     configure_logging()
     first_count = len(logger._core.handlers)  # noqa: SLF001

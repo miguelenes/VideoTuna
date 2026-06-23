@@ -12,9 +12,20 @@ import pytest
 
 from videotuna.cli.inference_app import (
     PRESET_DOMAIN_T2I,
+    PRESET_VALIDATE_I2V,
     PRESET_VALIDATE_T2V,
+    PRESET_WAN2_2_I2V_720P,
     PRESET_WAN2_2_T2V_720P,
+    _entry_for_preset,
+    _make_app,
     app,
+    inference_domain_t2i_entry,
+    inference_flux_lora_entry,
+    inference_wan2_2_i2v_720p_entry,
+    inference_wan2_2_t2v_720p_entry,
+    main,
+    validate_domain_i2v_entry,
+    validate_domain_t2v_entry,
 )
 from videotuna.cli.inference_options import (
     InferenceRunConfig,
@@ -148,6 +159,120 @@ def test_inference_run_config_round_trip() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Inference app preset wiring and entrypoint registration (CPU-only)
+# ---------------------------------------------------------------------------
+
+
+class TestInferenceAppPresets:
+    """Verify preset wiring and entrypoint registration without model execution."""
+
+    def test_all_presets_have_required_fields(self) -> None:
+        presets = [
+            PRESET_DOMAIN_T2I,
+            PRESET_VALIDATE_T2V,
+            PRESET_WAN2_2_T2V_720P,
+            PRESET_VALIDATE_I2V,
+            PRESET_WAN2_2_I2V_720P,
+        ]
+        for preset in presets:
+            assert isinstance(preset.cli_name, str)
+            assert isinstance(preset.config, str)
+            assert isinstance(preset.enable_model_cpu_offload, bool)
+            assert isinstance(preset.require_checkpoint, bool)
+            assert isinstance(preset.require_prompt_dir, bool)
+
+    def test_preset_configs_exist_on_disk(self) -> None:
+        import os
+
+        presets = [
+            PRESET_DOMAIN_T2I,
+            PRESET_VALIDATE_T2V,
+            PRESET_WAN2_2_T2V_720P,
+            PRESET_VALIDATE_I2V,
+            PRESET_WAN2_2_I2V_720P,
+        ]
+        for preset in presets:
+            assert os.path.isfile(
+                preset.config
+            ), f"Preset config {preset.config} not found on disk"
+
+    def test_domain_t2i_preset_has_cpu_offload(self) -> None:
+        assert PRESET_DOMAIN_T2I.enable_model_cpu_offload is True
+
+    def test_validate_t2v_requires_checkpoint(self) -> None:
+        assert PRESET_VALIDATE_T2V.require_checkpoint is True
+        assert PRESET_VALIDATE_T2V.enable_model_cpu_offload is True
+
+    def test_wan22_720p_preset_no_cpu_offload(self) -> None:
+        assert PRESET_WAN2_2_T2V_720P.enable_model_cpu_offload is False
+        assert PRESET_WAN2_2_T2V_720P.require_checkpoint is False
+
+    def test_validate_i2v_requires_checkpoint_and_prompt_dir(self) -> None:
+        assert PRESET_VALIDATE_I2V.require_checkpoint is True
+        assert PRESET_VALIDATE_I2V.require_prompt_dir is True
+        assert PRESET_VALIDATE_I2V.enable_model_cpu_offload is True
+
+
+def test_make_app_creates_app_with_preset_name() -> None:
+    app_instance = _make_app(PRESET_DOMAIN_T2I)
+    assert app_instance.name[0] == "inference-domain-t2i"
+    assert app_instance.default_command is not None
+
+
+def test_make_app_registers_default_command() -> None:
+    app_instance = _make_app(PRESET_VALIDATE_T2V)
+    assert app_instance.name[0] == "validate-domain-t2v"
+
+
+def test_entry_for_preset_returns_callable() -> None:
+    entry = _entry_for_preset(PRESET_DOMAIN_T2I)
+    assert callable(entry)
+    assert entry.__name__ == "inference_domain_t2i"
+
+
+def test_entry_for_preset_validate_t2v_naming() -> None:
+    entry = _entry_for_preset(PRESET_VALIDATE_T2V)
+    assert entry.__name__ == "validate_domain_t2v"
+
+
+def test_entry_for_preset_wan22_720p_naming() -> None:
+    entry = _entry_for_preset(PRESET_WAN2_2_T2V_720P)
+    assert entry.__name__ == "inference_wan2_2_t2v_720p"
+
+
+def test_inference_flux_lora_is_same_as_domain_t2i() -> None:
+    assert inference_flux_lora_entry is inference_domain_t2i_entry
+
+
+def test_shared_app_has_expected_commands() -> None:
+    names = set(app._commands.keys())
+    expected = {
+        "inference-domain-t2i",
+        "validate-domain-t2v",
+        "inference-wan2.2-t2v-720p",
+        "run",
+    }
+    assert expected.issubset(names)
+
+
+def test_main_function_exists() -> None:
+    assert callable(main)
+    assert main.__name__ == "main"
+
+
+def test_all_public_entries_are_callable() -> None:
+    entries = [
+        inference_domain_t2i_entry,
+        validate_domain_t2v_entry,
+        inference_wan2_2_t2v_720p_entry,
+        validate_domain_i2v_entry,
+        inference_wan2_2_i2v_720p_entry,
+    ]
+    for entry in entries:
+        assert callable(entry)
+
+
+# ---------------------------------------------------------------------------
 # End-to-end typed inference path — no argparse.Namespace bridge
 # ---------------------------------------------------------------------------
 
@@ -170,9 +295,9 @@ def test_removed_bridge_functions_are_gone(module_name: str, attr: str) -> None:
 
 def test_inference_new_has_no_namespace() -> None:
     """scripts/inference_new.py must not import argparse or use Namespace."""
-    source = (Path(__file__).resolve().parents[1] / "scripts" / "inference_new.py").read_text(
-        encoding="utf-8"
-    )
+    source = (
+        Path(__file__).resolve().parents[1] / "scripts" / "inference_new.py"
+    ).read_text(encoding="utf-8")
     assert "import argparse" not in source
     assert "argparse.Namespace" not in source
 
@@ -203,16 +328,17 @@ def test_prepare_inference_config_propagates_preset_side_effects() -> None:
     yaml_config = OmegaConf.load(run_config.config)
 
     with (
-        mock.patch(
-            "videotuna.utils.device_utils.gpu_is_available", return_value=True
-        ),
+        mock.patch("videotuna.utils.device_utils.gpu_is_available", return_value=True),
         mock.patch(
             "videotuna.utils.device_utils.detect_compute_backend", return_value="cuda"
         ),
+        mock.patch("videotuna.utils.device_utils.resolve_cpu_mode", return_value="off"),
         mock.patch(
-            "videotuna.utils.device_utils.resolve_cpu_mode", return_value="off"
+            "videotuna.utils.args_utils.process_savedir", side_effect=lambda d: d
         ),
-        mock.patch("videotuna.utils.args_utils.process_savedir", side_effect=lambda d: d),
+        mock.patch(
+            "videotuna.utils.cli_console.render_inference_config_panel"
+        ) as mock_panel,
     ):
         merged = prepare_inference_config(run_config, yaml_config)
 
@@ -220,6 +346,7 @@ def test_prepare_inference_config_propagates_preset_side_effects() -> None:
     assert inference.dtype == "fp16"
     assert inference.enable_sequential_cpu_offload is True
     assert inference.enable_model_cpu_offload is False
+    mock_panel.assert_not_called()
 
 
 def test_typed_end_to_end_merge() -> None:
@@ -242,16 +369,17 @@ def test_typed_end_to_end_merge() -> None:
     yaml_config = OmegaConf.load(run_config.config)
 
     with (
-        mock.patch(
-            "videotuna.utils.device_utils.gpu_is_available", return_value=True
-        ),
+        mock.patch("videotuna.utils.device_utils.gpu_is_available", return_value=True),
         mock.patch(
             "videotuna.utils.device_utils.detect_compute_backend", return_value="cuda"
         ),
+        mock.patch("videotuna.utils.device_utils.resolve_cpu_mode", return_value="off"),
         mock.patch(
-            "videotuna.utils.device_utils.resolve_cpu_mode", return_value="off"
+            "videotuna.utils.args_utils.process_savedir", side_effect=lambda d: d
         ),
-        mock.patch("videotuna.utils.args_utils.process_savedir", side_effect=lambda d: d),
+        mock.patch(
+            "videotuna.utils.cli_console.render_inference_config_panel"
+        ) as mock_panel,
     ):
         merged = prepare_inference_config(run_config, yaml_config)
 
@@ -259,3 +387,4 @@ def test_typed_end_to_end_merge() -> None:
     assert inference.lorackpt == "/tmp/lora"
     assert int(inference.num_inference_steps) == 4
     assert int(inference.seed) == 123
+    mock_panel.assert_not_called()

@@ -11,7 +11,6 @@ import numpy as np
 import psutil
 import torch
 import torch.distributed as dist
-from loguru import logger
 from omegaconf import DictConfig, OmegaConf
 
 from videotuna.settings import get_settings
@@ -26,6 +25,7 @@ from videotuna.utils.device_utils import (
     synchronize_accelerator,
 )
 from videotuna.utils.inference_cli import resolve_offload_mode
+from videotuna.utils.logging_config import bound_logger
 from videotuna.utils.lora_utils import parameter_matches_lora_target
 
 precision_to_dtype = {
@@ -238,13 +238,14 @@ def monitor_resources(
             time_used = end_time - start_time
             cpu_mem_used = end_cpu_mem - start_cpu_mem
 
-            logger.info(f"Time used: {time_used:.2f} seconds")
-            logger.info(f"CPU memory change: {cpu_mem_used:.2f} GB")
             peak_alloc, peak_reserved = _peak_vram_stats(dev_idx or 0)
-            if peak_alloc is not None:
-                logger.info(f"Peak GPU memory allocated: {peak_alloc:.2f} GB")
-            if peak_reserved is not None:
-                logger.info(f"Peak GPU memory reserved: {peak_reserved:.2f} GB")
+            bound_logger(phase="inference", flow="resources").info(
+                "Resource usage",
+                wall_time_s=round(time_used, 2),
+                cpu_mem_change_gb=round(cpu_mem_used, 2),
+                peak_vram_allocated_gb=peak_alloc,
+                peak_vram_reserved_gb=peak_reserved,
+            )
 
             if return_metrics:
                 sample = _build_sample_metrics(time_used, peak_alloc, frames)

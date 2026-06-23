@@ -25,11 +25,13 @@ __all__ = [
     "WAN_I2V_LORA_CONFIG",
     "WAN_T2V_LORA_CLOUD_SMOKE",
     "WAN_T2V_LORA_CONFIG",
+    "test_smoke",
 ]
 
 # Single source of truth for CPU CI smoke tests (see .github/workflows/ci.yml).
 CI_SMOKE_TESTS = [
     "tests/test_import_smoke.py",
+    "tests/test_settings.py",
     "tests/test_domain_finetune_configs.py",
     "tests/test_flux_lora_train_smoke.py",
     "tests/test_wan_lora_bridge.py",
@@ -43,9 +45,9 @@ CI_SMOKE_TESTS = [
     "tests/test_diffusers_quantization.py",
 ]
 
-# Line-coverage floor for videotuna/training/ + videotuna/utils/
-# (CI smoke baseline ~36%).
-COVERAGE_GATE_FAIL_UNDER = 33
+# Line-coverage floor for videotuna/training/ + videotuna/utils/ +
+# videotuna/flow/ + videotuna/cli/.
+COVERAGE_GATE_FAIL_UNDER = 35
 
 
 def _require_cuda_backend(installer_name: str) -> None:
@@ -489,7 +491,7 @@ def coverage_gate():
     )
     if run.returncode != 0:
         exit(run.returncode)
-    include = "videotuna/training/*,videotuna/utils/*"
+    include = "videotuna/training/*,videotuna/utils/*,videotuna/flow/*,videotuna/cli/*"
     report = subprocess.run(
         [
             "coverage",
@@ -505,6 +507,21 @@ def coverage_gate():
         check=False,
     )
     exit(report.returncode)
+
+
+def test_smoke():
+    """
+    Run CI smoke tests without coverage enforcement (for pre-commit hooks).
+
+    Reuses the centralized CI_SMOKE_TESTS list so pre-commit and CI stay aligned
+    on the same smoke test suite.
+    """
+    os.environ["ENV"] = "test"
+    result = subprocess.run(
+        ["pytest", "-q", *CI_SMOKE_TESTS],
+        check=False,
+    )
+    exit(result.returncode)
 
 
 def type_check():

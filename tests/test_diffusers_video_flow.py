@@ -6,6 +6,7 @@ import argparse
 from types import SimpleNamespace
 from unittest import mock
 
+import pytest
 import torch
 from omegaconf import OmegaConf
 
@@ -33,16 +34,145 @@ def test_resolve_model_id_defaults():
     assert resolve_model_id("wan", "t2v", "custom/model") == "custom/model"
 
 
+def test_resolve_model_id_variant_fallback():
+    assert (
+        resolve_model_id("wan", "t2v", None, model_variant="2.1")
+        == "Wan-AI/Wan2.1-T2V-14B-Diffusers"
+    )
+    assert (
+        resolve_model_id("wan", "t2v", None, model_variant="unknown")
+        == "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
+    )
+
+
+def test_resolve_model_id_i2v_defaults():
+    assert (
+        resolve_model_id("wan", "i2v", None, model_variant="2.2")
+        == "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
+    )
+    assert (
+        resolve_model_id("wan", "i2v", None, model_variant="2.1")
+        == "Wan-AI/Wan2.1-I2V-14B-480P-Diffusers"
+    )
+
+
+def test_resolve_model_id_unknown_family_raises():
+    with pytest.raises(ValueError, match="Unsupported diffusers model"):
+        resolve_model_id("cogvideox", "t2v", None)
+
+
+def test_resolve_model_id_no_variant_uses_default():
+    assert (
+        resolve_model_id("flux", "t2i", None)
+        == "black-forest-labs/FLUX.1-dev"
+    )
+
+
 def test_resolve_torch_dtype():
     assert resolve_torch_dtype("fp16") == torch.float16
     assert resolve_torch_dtype("bf16") == torch.bfloat16
     assert resolve_torch_dtype(None) == torch.bfloat16
 
 
+def test_resolve_torch_dtype_float16_alias():
+    assert resolve_torch_dtype("float16") == torch.float16
+
+
 def test_model_registry_covers_domain_families():
     assert ("flux", "t2i") in MODEL_REGISTRY
     assert ("wan", "t2v") in MODEL_REGISTRY
+    assert ("wan", "i2v") in MODEL_REGISTRY
     assert ("cogvideox", "t2v") not in MODEL_REGISTRY
+
+
+def test_model_registry_entries_have_pipeline_cls():
+    for key, entry in MODEL_REGISTRY.items():
+        assert "pipeline_cls" in entry
+        assert "default_id" in entry
+
+
+class TestDiffusersVideoFlowConfig:
+    """Config-only tests for DiffusersVideoFlow (no weights loaded)."""
+
+    def test_init_sets_pipeline_only_true(self):
+        flow = DiffusersVideoFlow(model_family="wan", mode="t2v")
+        assert flow.pipeline_only is True
+        assert flow.pipeline is None
+        assert flow.model_family == "wan"
+        assert flow.mode == "t2v"
+        assert flow._model_id is None
+
+    def test_init_stores_all_kwargs(self):
+        flow = DiffusersVideoFlow(
+            model_family="flux",
+            mode="t2i",
+            pretrained_model_name_or_path="some/model",
+            model_variant="schnell",
+            lora_rank=64,
+            fuse_qkv=True,
+            enable_attention_cache=True,
+        )
+        assert flow.pretrained_model_name_or_path == "some/model"
+        assert flow.model_variant == "schnell"
+        assert flow.lora_rank == 64
+        assert flow.fuse_qkv is True
+        assert flow.enable_attention_cache is True
+
+    def test_from_pretrained_resolves_model_id_with_pretrained_path(self):
+        flow = DiffusersVideoFlow(
+            model_family="flux",
+            mode="t2i",
+            pretrained_model_name_or_path="black-forest-labs/FLUX.1-schnell",
+        )
+        flow.from_pretrained()
+        assert flow._model_id == "black-forest-labs/FLUX.1-schnell"
+
+    def test_from_pretrained_resolves_model_id_with_ckpt_path(self):
+        flow = DiffusersVideoFlow(
+            model_family="wan",
+            mode="t2v",
+            pretrained_model_name_or_path="default/model",
+        )
+        flow.from_pretrained(ckpt_path="explicit/ckpt")
+        assert flow._model_id == "explicit/ckpt"
+
+    def test_from_pretrained_resolves_variant_when_no_path(self):
+        flow = DiffusersVideoFlow(
+            model_family="flux",
+            mode="t2i",
+            model_variant="schnell",
+        )
+        flow.from_pretrained()
+        assert flow._model_id == "black-forest-labs/FLUX.1-schnell"
+
+    def test_from_pretrained_sets_lora_path(self):
+        flow = DiffusersVideoFlow(model_family="wan", mode="t2v")
+        flow.from_pretrained(lora_ckpt_path="/tmp/my_lora.safetensors")
+        assert flow._lora_path == "/tmp/my_lora.safetensors"
+        assert flow._model_id == "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
+
+    def test_from_pretrained_sets_denoiser_as_lora_for_wan(self):
+        flow = DiffusersVideoFlow(model_family="wan", mode="t2v")
+        flow.from_pretrained(denoiser_ckpt_path="/tmp/denoiser.ckpt")
+        assert flow._lora_path == "/tmp/denoiser.ckpt"
+
+    def test_from_pretrained_no_denoiser_as_lora_for_flux(self):
+        flow = DiffusersVideoFlow(model_family="flux", mode="t2i")
+        flow.from_pretrained(denoiser_ckpt_path="/tmp/denoiser.ckpt")
+        assert flow._lora_path is None
+
+    def test_from_pretrained_lora_overrides_denoiser(self):
+        flow = DiffusersVideoFlow(model_family="wan", mode="t2v")
+        flow.from_pretrained(
+            lora_ckpt_path="/tmp/lora.safetensors",
+            denoiser_ckpt_path="/tmp/denoiser.ckpt",
+        )
+        assert flow._lora_path == "/tmp/lora.safetensors"
+
+    def test_from_pretrained_stores_device(self):
+        flow = DiffusersVideoFlow(model_family="wan", mode="t2v")
+        flow.from_pretrained(device="cuda:0")
+        assert flow._inference_device == "cuda:0"
 
 
 def test_apply_diffusers_optimizations_mock_pipe():
@@ -118,3 +248,52 @@ def test_yaml_wan22_instantiates_flow():
     flow = build_flow(cfg.flow)
     assert isinstance(flow, DiffusersVideoFlow)
     assert flow.model_variant == "2.2"
+
+
+@pytest.mark.gpu
+def test_wan22_4step_deterministic_gpu_smoke(tmp_path):
+    """GPU regression: two Wan 2.2 4-step generations with seed=42 must be identical."""
+    import torch
+    from diffusers import WanPipeline
+
+    if not torch.cuda.is_available():
+        pytest.skip("GPU not available")
+
+    model_id = "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
+    pipe = WanPipeline.from_pretrained(
+        model_id,
+        torch_dtype=torch.bfloat16,
+    ).to("cuda")
+
+    def _run():
+        generator = torch.Generator(device="cuda").manual_seed(42)
+        return pipe(
+            prompt="a beautiful sunset over the ocean, cinematic",
+            num_frames=5,
+            height=256,
+            width=448,
+            num_inference_steps=4,
+            guidance_scale=5.0,
+            generator=generator,
+        )
+
+    result_a = _run()
+    result_b = _run()
+
+    assert result_a is not None
+    assert result_b is not None
+    assert len(result_a.frames[0]) == 5
+    assert len(result_b.frames[0]) == 5
+
+    va = torch.stack([torch.as_tensor(f) for f in result_a.frames[0]])
+    vb = torch.stack([torch.as_tensor(f) for f in result_b.frames[0]])
+    assert torch.equal(va, vb), "4-step GPU generations diverged — regression detected"
+
+    from diffusers.utils import export_to_video
+
+    savedir = tmp_path / "smoke"
+    savedir.mkdir()
+    export_to_video(result_a.frames[0], str(savedir / "run_a.mp4"), fps=8)
+    export_to_video(result_b.frames[0], str(savedir / "run_b.mp4"), fps=8)
+    assert (savedir / "run_a.mp4").exists()
+    assert (savedir / "run_b.mp4").exists()

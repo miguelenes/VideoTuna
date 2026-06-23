@@ -89,6 +89,7 @@ train:
           num_frames: 81
           frame_interval: 1
           image_to_video: false
+          i2v_mode: true
           train: True
 
   lightning:

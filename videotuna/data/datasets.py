@@ -85,6 +85,7 @@ class DatasetFromCSV(torch.utils.data.Dataset):
         train: bool = True,
         split_val: bool = False,
         image_to_video: bool = False,
+        i2v_mode: bool = False,
         video_backend: str = "auto",
         **kwargs,
     ):
@@ -101,9 +102,9 @@ class DatasetFromCSV(torch.utils.data.Dataset):
         if len(data_root) == 1:
             data_root = data_root * len(csv_path)
 
-        assert len(csv_path) == len(data_root), (
-            "The number of csv files and data root should be the same."
-        )
+        assert len(csv_path) == len(
+            data_root
+        ), "The number of csv files and data root should be the same."
 
         if transform is None:
             transform = dict(
@@ -116,9 +117,9 @@ class DatasetFromCSV(torch.utils.data.Dataset):
                 image=get_transforms_image((height, width), num_frames),
             )
 
-        assert "video" in transform or "image" in transform, (
-            "The transform should contain 'video' or 'image'."
-        )
+        assert (
+            "video" in transform or "image" in transform
+        ), "The transform should contain 'video' or 'image'."
         self.transform = transform
         self.height = height
         self.width = width
@@ -132,6 +133,7 @@ class DatasetFromCSV(torch.utils.data.Dataset):
         self.split_val = split_val
         self.safe_data_list = set()
         self.image_to_video = image_to_video
+        self.i2v_mode = i2v_mode
         self.video_backend = video_backend
         self.check_video = CheckVideo(self.resolution, frame_interval, num_frames)
 
@@ -314,6 +316,7 @@ class DatasetFromCSV(torch.utils.data.Dataset):
         has_video_path = "video_path" in columns
         has_image_path = "image_path" in columns
         pair_mode = has_video_path and has_image_path and not has_path
+        first_frame_only = has_path and not has_video_path and not has_image_path
 
         if not (has_path or has_video_path or has_image_path):
             raise ValueError(
@@ -339,6 +342,16 @@ class DatasetFromCSV(torch.utils.data.Dataset):
                     "image_to_video=true (first-frame conditioning mode)."
                 )
             return
+
+        if self.i2v_mode and first_frame_only:
+            raise ValueError(
+                f"The csv file {df_path} has only path,caption columns "
+                "(first-frame-only layout), but image_to_video=false expects "
+                "the pair-mode layout with image_path,video_path,caption "
+                "columns for Wan I2V. Either switch to image_to_video=true "
+                "in your config, or restructure your CSV to the pair layout "
+                "(see docs/runbooks/domain-adult-finetune.md Phase 2.5)."
+            )
 
         if has_video_path and not has_image_path:
             raise ValueError(

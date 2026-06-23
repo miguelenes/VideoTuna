@@ -1,0 +1,67 @@
+# PrivTune — Windsurf Rules
+
+## Project Purpose
+
+**PrivTune** is a private-domain LoRA training platform (not a general inference service). It trains LoRA adapters for FLUX T2I (images) and Wan 2.1 T2V/I2V (videos), then validates with Wan 2.2 Diffusers.
+
+## Tech Stack
+
+- **Language:** Python 3.11+
+- **Package manager:** Poetry (primary), uv (secondary)
+- **Deep learning:** PyTorch, Diffusers, PEFT, Accelerate, PyTorch Lightning, DeepSpeed ZeRO-3
+- **CLI:** cyclopts
+- **Config:** pydantic-settings (`VIDEOTUNA_*` env vars)
+- **Testing:** pytest (markers: `gpu`, `rocm`, `cpu_smoke`)
+- **Lint/format:** ruff, mypy (typed allowlist only)
+
+## Key Commands
+
+```bash
+# Install (CUDA)
+poetry install -E cuda --with training && poetry run install-deepspeed
+
+# Dev
+poetry run lint && poetry run format-check && poetry run type-check
+
+# Tests
+poetry run test -q
+
+# Training
+poetry run train-domain-t2i   # Flux T2I
+poetry run train-domain-t2v   # Wan T2V
+
+# Validation
+poetry run validate-domain-t2v --trained_ckpt <ckpt>
+```
+
+## Coding Conventions
+
+1. **Device detection:** Always use `videotuna/utils/device_utils.py` (`detect_compute_backend()`, `resolve_inference_device()`). Never check `torch.cuda.is_available()` directly.
+2. **Settings:** All environment config goes through `videotuna/settings.py` (`PrivTuneSettings`). Use `VIDEOTUNA_*` prefix.
+3. **Imports:** Python import path is `videotuna/`. Poetry package name is `privtune`.
+4. **Flows:** Two separate execution paths in `videotuna/flow/` — `wanvideo.py` (Lightning/native Wan 2.1) and `diffusers_video.py` (Diffusers for Wan 2.2 + Flux). Never mix.
+5. **CLI entry points:** Follow the pattern in `videotuna/cli/inference_app.py` and `videotuna/cli/inference_options.py`.
+6. **Configs:** Training configs in `configs/domain/`, inference presets in `configs/inference/presets/`.
+7. **Scoped diffs:** Change only what the task requires. No incidental refactoring.
+
+## Testing
+
+- Run `poetry run lint && poetry run format-check && poetry run coverage-gate` before finishing.
+- Coverage floor: **33%** on `videotuna/training/` + `videotuna/utils/`.
+- GPU tests use `@pytest.mark.gpu` marker; skipped without CUDA.
+- Key test files: `test_wan_lora_bridge.py`, `test_diffusers_video_flow.py`, `test_device_utils.py`, `test_wan_inference_presets.py`.
+
+## Boundaries
+
+- **Never commit:** `.env`, checkpoints, `outputs/`, `results/`, `data/`, weights, secrets.
+- **ROCm:** Use `VIDEOTUNA_ATTN_BACKEND=sdpa`. Never run `install-flash-attn`.
+- **CPU:** Use `VIDEOTUNA_ATTN_BACKEND=eager`, `VIDEOTUNA_TORCH_COMPILE=0`.
+- **Vendored code:** Read `docs/vendor-policy.md` before modifying `videotuna/models/wan/wan/`.
+- **No generic benchmarking:** VBench was removed. QA = training callbacks + smoke inference.
+
+## References
+
+- [`AGENTS.md`](AGENTS.md) — full agent instructions
+- [`CLAUDE.md`](CLAUDE.md) — Claude Code guide
+- [`docs/runbooks/domain-adult-finetune.md`](docs/runbooks/domain-adult-finetune.md)
+- [`.mcp.json`](.mcp.json) — MCP servers

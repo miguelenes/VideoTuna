@@ -1,0 +1,52 @@
+{
+  "assistant": {
+    "version": "1",
+    "provider": {
+      "name": "openai",
+      "model": "gpt-4o"
+    },
+    "enable_context_servers": true,
+    "default_model": {
+      "provider": "openai",
+      "model": "gpt-4o"
+    },
+    "rules": [
+      {
+        "path": "AGENTS.md"
+      }
+    ],
+    "context_servers": [
+      {
+        "name": "jollimemory",
+        "command": "/home/menes/.jolli/jollimemory/run-cli",
+        "args": ["mcp"]
+      }
+    ]
+  },
+  "languages": {
+    "Python": {
+      "format_on_save": "ruff",
+      "formatter": {
+        "external": {
+          "command": "poetry",
+          "arguments": ["run", "ruff", "format", "-"]
+        }
+      },
+      "language_servers": ["pyright"]
+    }
+  },
+  "project": {
+    "name": "PrivTune",
+    "description": "Private-domain LoRA training platform: FLUX T2I, Wan T2V/I2V, Wan 2.2 Diffusers validation.",
+    "python_version": "3.11",
+    "package_manager": "poetry"
+  },
+  "commands": {
+    "lint": "poetry run lint",
+    "format": "poetry run format",
+    "test": "poetry run test -q",
+    "train-t2i": "poetry run train-domain-t2i",
+    "train-t2v": "poetry run train-domain-t2v",
+    "validate-t2v": "poetry run validate-domain-t2v --trained_ckpt"
+  }
+}

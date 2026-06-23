@@ -173,6 +173,29 @@ def test_provisioning_includes_wan_train_and_validate_hub_ids():
         assert repo in combined, f"expected hub id in cloud bundle: {repo}"
 
 
+def test_provisioning_yaml_documents_validate_weights_opt_in():
+    prov_path = CLOUD_VAST / "provisioning.yaml"
+    text = prov_path.read_text(encoding="utf-8")
+    assert "VIDEOTUNA_PROVISION_VALIDATE_WEIGHTS" in text
+    assert "Wan2.2-T2V-A14B-Diffusers" in text
+    assert "Wan2.2-I2V-A14B-Diffusers" in text
+    assert "hf_token_valid" in text
+    data = yaml.safe_load(text)
+    cond = data.get("conditional_downloads", [])
+    assert len(cond) >= 2, "expected at least two conditional_downloads blocks"
+    validate_block = cond[1]
+    assert "env" in validate_block
+    assert validate_block["env"]["VIDEOTUNA_PROVISION_VALIDATE_WEIGHTS"] == "1"
+    assert validate_block["when"] == "hf_token_valid"
+    assert len(validate_block["downloads"]) == 2
+    wan22_ids = {
+        d["url"].rstrip("/").split("/")[-2] + "/" + d["url"].rstrip("/").split("/")[-1]
+        for d in validate_block["downloads"]
+        if "/Wan-AI/Wan2.2" in d["url"]
+    }
+    assert len(wan22_ids) == 2
+
+
 def test_provisioning_yaml_documents_retry_layers():
     prov_path = CLOUD_VAST / "provisioning.yaml"
     text = prov_path.read_text(encoding="utf-8")
