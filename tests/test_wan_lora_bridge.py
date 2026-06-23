@@ -13,16 +13,19 @@ from videotuna.testing.wan_lora_ckpt import build_synthetic_wan_lora_ckpt
 from videotuna.utils.wan_lora_bridge import (
     MIN_REMAP_COVERAGE,
     WAN_DIFFUSERS_LORA_TARGETS,
+    WanBridgeConfig,
     _infer_lora_rank,
     _remap_native_to_diffusers_keys,
     _remap_single_native_key,
     analyze_native_wan_lora_ckpt,
     apply_native_wan_lora_to_pipeline,
+    build_bridge_key_map,
     compute_remap_coverage,
     export_diffusers_lora_state_dicts,
     is_native_wan_lora_ckpt,
     load_native_wan_lora_state_dict,
     validate_remap_coverage,
+    verify_runtime_export_parity,
 )
 
 
@@ -249,6 +252,127 @@ def test_apply_native_wan_lora_to_pipeline_raises_on_low_coverage():
     ):
         with pytest.raises(RuntimeError):
             apply_native_wan_lora_to_pipeline(pipeline, ckpt_path)
+
+
+def test_renamed_keys_content():
+    """renamed_keys pairs must match expected old→new mapping for each pattern."""
+    from videotuna.utils.wan_lora_bridge import _remap_state_with_meta
+
+    native = _production_native_keys()
+    _, _, renamed = _remap_state_with_meta(native)
+    assert len(renamed) == 20
+    mapping = dict(renamed)
+
+    # self_attn.q → attn1.to_q
+    assert (
+        mapping["blocks.0.self_attn.q.lora_A.weight"]
+        == "blocks.0.attn1.to_q.lora_A.weight"
+    )
+    # self_attn.o → attn1.to_out.0
+    assert (
+        mapping["blocks.0.self_attn.o.lora_B.weight"]
+        == "blocks.0.attn1.to_out.0.lora_B.weight"
+    )
+    # cross_attn.q → attn2.to_q
+    assert (
+        mapping["blocks.0.cross_attn.q.lora_A.weight"]
+        == "blocks.0.attn2.to_q.lora_A.weight"
+    )
+    # cross_attn.o → attn2.to_out.0
+    assert (
+        mapping["blocks.0.cross_attn.o.lora_B.weight"]
+        == "blocks.0.attn2.to_out.0.lora_B.weight"
+    )
+    # ffn.0 → ffn.net.0.proj
+    assert (
+        mapping["blocks.0.ffn.0.lora_A.weight"]
+        == "blocks.0.ffn.net.0.proj.lora_A.weight"
+    )
+    # ffn.2 → ffn.net.2
+    assert mapping["blocks.0.ffn.2.lora_B.weight"] == "blocks.0.ffn.net.2.lora_B.weight"
+
+
+def test_bridge_config_from_env(monkeypatch):
+    """VIDEOTUNA_WAN_BRIDGE_MIN_COVERAGE env var overrides default threshold."""
+    config = WanBridgeConfig.from_env()
+    assert config.min_coverage == MIN_REMAP_COVERAGE  # no env → default
+
+    monkeypatch.setenv("VIDEOTUNA_WAN_BRIDGE_MIN_COVERAGE", "0.85")
+    config = WanBridgeConfig.from_env()
+    assert config.min_coverage == 0.85
+
+    monkeypatch.setenv("VIDEOTUNA_WAN_BRIDGE_MIN_COVERAGE", "0.95")
+    config = WanBridgeConfig.from_env()
+    assert config.min_coverage == 0.95
+
+
+def test_configurable_coverage_threshold(tmp_path):
+    """Bridge accepts configurable min_coverage via WanBridgeConfig."""
+    ckpt = tmp_path / "denoiser.ckpt"
+    state = _production_native_keys()
+    # Add 2 unmapped keys → coverage ≈ 20/22 ≈ 0.909
+    state["blocks.0.unknown.layer.lora_A.weight"] = torch.zeros(16, 5120)
+    state["blocks.0.unknown.layer.lora_B.weight"] = torch.zeros(5120, 16)
+    torch.save({"state_dict": state}, ckpt)
+
+    # Strict threshold above coverage should raise.
+    strict_config = WanBridgeConfig(min_coverage=0.95)
+    with pytest.raises(RuntimeError, match="remap coverage"):
+        export_diffusers_lora_state_dicts(ckpt, bridge_config=strict_config)
+
+    # Lenient threshold below coverage should pass.
+    lenient_config = WanBridgeConfig(min_coverage=0.85)
+    exports = export_diffusers_lora_state_dicts(ckpt, bridge_config=lenient_config)
+    assert "high_noise" in exports
+
+
+def test_runtime_export_parity_pass(tmp_path):
+    """Runtime bridge remap and export remap produce identical key sets."""
+    ckpt = tmp_path / "denoiser.ckpt"
+    state = _production_native_keys()
+    torch.save({"state_dict": state}, ckpt)
+
+    parity = verify_runtime_export_parity(ckpt)
+    assert parity.keys_match is True
+    assert parity.runtime_key_count == parity.export_key_count
+    assert parity.only_in_export == []
+
+
+def test_key_diff_structure(tmp_path):
+    """build_bridge_key_map returns one entry per native key with correct status."""
+    ckpt = tmp_path / "denoiser.ckpt"
+    state = _production_native_keys()
+    state["blocks.0.unknown.extra.weight"] = torch.zeros(1)
+    torch.save({"state_dict": state}, ckpt)
+
+    native_state = load_native_wan_lora_state_dict(ckpt)
+    key_map = build_bridge_key_map(native_state)
+
+    assert len(key_map) == len(native_state)
+    for entry in key_map:
+        assert entry.native_key in native_state
+        if entry.status == "remapped":
+            assert entry.diffusers_key is not None
+            assert entry.pattern is not None
+        elif entry.status == "unmapped":
+            assert entry.diffusers_key is None
+            assert entry.pattern is None
+
+
+def test_export_include_key_diff(tmp_path):
+    """export_diffusers_lora_state_dicts with include_key_diff=True returns diff."""
+    ckpt = tmp_path / "denoiser.ckpt"
+    state = _production_native_keys()
+    torch.save({"state_dict": state}, ckpt)
+
+    exports = export_diffusers_lora_state_dicts(ckpt, include_key_diff=True)
+    assert "_parity" in exports
+    assert exports["_parity"]["keys_match"] is True
+    assert "_key_diff" in exports
+    assert len(exports["_key_diff"]) == 20
+    for entry in exports["_key_diff"]:
+        assert "native_key" in entry
+        assert "status" in entry
 
 
 def _count_lora(module: WanTransformer3DModel) -> int:

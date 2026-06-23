@@ -302,9 +302,19 @@ def test_diffusers_video_flow_instantiate_pipeline_only():
     assert flow.pipeline is None
 
 
-@mock.patch("videotuna.flow.diffusers_video.export_to_video")
+@mock.patch("videotuna.flow.diffusers_video.get_settings")
 @mock.patch.object(DiffusersVideoFlow, "_generate_sample")
-def test_inference_t2v_saves_video(mock_generate, mock_export):
+@mock.patch.object(DiffusersVideoFlow, "save_output")
+@mock.patch.object(DiffusersVideoFlow, "save_manifest")
+@mock.patch.object(DiffusersVideoFlow, "save_metrics")
+def test_inference_t2v_saves_video(
+    mock_save_metrics,
+    mock_save_manifest,
+    mock_save_output,
+    mock_generate,
+    mock_get_settings,
+):
+    mock_get_settings.return_value.metrics_owner = "flow"
     mock_generate.return_value = {
         "result": [{"frame": 0}],
         "peak_vram_gb": 1.0,
@@ -315,7 +325,7 @@ def test_inference_t2v_saves_video(mock_generate, mock_export):
     args = OmegaConf.create(
         {
             "savedir": "/tmp/privtune-test",
-            "prompt_file": "inputs/t2v/prompts.txt",
+            "prompt_file": "hello world",
             "frames": 49,
             "num_inference_steps": 4,
             "unconditional_guidance_scale": 6.0,
@@ -323,13 +333,11 @@ def test_inference_t2v_saves_video(mock_generate, mock_export):
             "savefps": 8,
         }
     )
-    with mock.patch.object(
-        DiffusersVideoFlow, "load_inference_inputs", return_value=["hello"]
-    ):
-        with mock.patch.object(flow, "save_metrics"):
-            metrics = flow.inference(args)
+    metrics = flow.inference(args)
     assert len(metrics["per_sample"]) == 1
-    mock_export.assert_called_once()
+    mock_save_output.assert_called_once()
+    mock_save_manifest.assert_called_once()
+    mock_save_metrics.assert_called_once()
 
 
 def test_yaml_wan22_instantiates_flow():

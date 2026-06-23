@@ -44,6 +44,32 @@ def make_t2v_flow() -> DummyFlow:
     return flow
 
 
+def make_i2v_flow() -> DummyFlow:
+    flow = DummyFlow()
+    flow.task = "i2v-14B"
+    flow.seed = 42
+    flow.cfg = MagicMock()
+    flow.cfg.param_dtype = torch.float32
+    flow.cfg.sample_shift = 5.0
+
+    wan_i2v = MagicMock()
+    wan_i2v.device = torch.device("cpu")
+    wan_i2v.vae_stride = (4, 8, 8)
+    wan_i2v.patch_size = (1, 2, 2)
+    wan_i2v.num_train_timesteps = 1000
+    wan_i2v.boundary = 0.7
+    wan_i2v.sample_neg_prompt = ""
+    wan_i2v.vae.model.z_dim = 16
+    wan_i2v.text_encoder.return_value = [torch.randn(1, 512, 4096)]
+    wan_i2v.vae.decode.return_value = [torch.randn(3, 5, 8, 8)]
+    wan_i2v.vae.encode.return_value = [torch.randn(16, 2, 1, 1)]
+
+    flow.wan_i2v = wan_i2v
+    flow.low_denoiser = MagicMock()
+    flow.high_denoiser = MagicMock()
+    return flow
+
+
 def test_log_images_returns_inputs_and_captions_on_cpu(monkeypatch):
     monkeypatch.setattr("videotuna.flow.wanvideo.gpu_is_available", lambda: False)
 
@@ -117,6 +143,57 @@ def test_log_images_respects_max_preview_samples(monkeypatch):
     batch_logs = flow.log_images(batch, max_preview_samples=2)
 
     assert batch_logs["samples"].shape[0] == 2
+
+
+def test_log_images_no_grad_behavior(monkeypatch):
+    monkeypatch.setattr("videotuna.flow.wanvideo.gpu_is_available", lambda: True)
+    flow = make_t2v_flow()
+    batch = {
+        "video": torch.randn(2, 3, 5, 8, 8),
+        "caption": ["cat video"],
+    }
+    latent_shape = (16, 2, 1, 1)
+    noise_pred = torch.randn(*latent_shape)
+    flow.low_denoiser.return_value = [noise_pred]
+    flow.high_denoiser.return_value = [noise_pred]
+    scheduler_mock = MagicMock()
+    scheduler_mock.timesteps = torch.tensor([999.0])
+    scheduler_mock.step.return_value = [torch.randn(*latent_shape)]
+    monkeypatch.setattr(
+        "videotuna.flow.wanvideo.FlowUniPCMultistepScheduler",
+        lambda **_: scheduler_mock,
+    )
+    with torch.enable_grad():
+        batch_logs = flow.log_images(batch)
+        assert not batch_logs["inputs"].requires_grad
+        assert not batch_logs["samples"].requires_grad
+
+
+def test_log_images_i2v_gpu_path(monkeypatch):
+    monkeypatch.setattr("videotuna.flow.wanvideo.gpu_is_available", lambda: True)
+    flow = make_i2v_flow()
+    batch = {
+        "video": torch.randn(2, 3, 5, 8, 8),
+        "caption": ["cat video", "dog video"],
+        "image": torch.randn(2, 3, 8, 8),
+    }
+    latent_shape = (16, 2, 1, 1)
+    noise_pred = torch.randn(*latent_shape)
+    flow.low_denoiser.return_value = [noise_pred]
+    flow.high_denoiser.return_value = [noise_pred]
+    scheduler_mock = MagicMock()
+    scheduler_mock.timesteps = torch.tensor([999.0, 500.0])
+    scheduler_mock.step.return_value = [torch.randn(*latent_shape)]
+    monkeypatch.setattr(
+        "videotuna.flow.wanvideo.FlowUniPCMultistepScheduler",
+        lambda **_: scheduler_mock,
+    )
+    batch_logs = flow.log_images(batch)
+    assert "inputs" in batch_logs
+    assert "samples" in batch_logs
+    assert "caption" in batch_logs
+    assert batch_logs["samples"].shape == (2, 3, 5, 8, 8)
+    flow.wan_i2v.vae.encode.assert_called()
 
 
 def test_image_logger_tensor_to_pil_image():

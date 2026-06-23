@@ -279,7 +279,6 @@ class WanVideoModelFlow(GenerationBase):
         )
 
     def inference_t2v(self, args: DictConfig):
-        # init vars
         rank = int(os.getenv("RANK", 0))
         int(os.getenv("WORLD_SIZE", 1))
         int(os.getenv("LOCAL_RANK", 0))
@@ -291,16 +290,30 @@ class WanVideoModelFlow(GenerationBase):
         sampling_steps = args.num_inference_steps
         guide_scale = args.unconditional_guidance_scale
 
-        # load input
-        prompt_list = self.load_inference_inputs(args.prompt_file, args.mode)
-        if len(prompt_list) > 1:
+        samples = self.build_manifest_inputs(
+            args.prompt_file,
+            mode=args.mode,
+            args=args,
+            n_samples=1,
+            seed=self.seed,
+            per_sample_seed=False,
+        )
+        if args.size and "*" in args.size:
+            width, height = args.size.split("*")
+            for sample in samples:
+                sample.width = int(width)
+                sample.height = int(height)
+        if len(samples) > 1:
             self._log.info("Processing prompts sequentially (batch size 1 per prompt).")
 
-        videos = []
+        self.assign_output_paths(samples, args.savedir)
+        manifest = self.create_manifest(model_family="wan", mode=args.mode, config=args)
+
         gpu = []
         time = []
-        for prompt in prompt_list:
-            self._log.info(f"Input prompt: {prompt}")
+        for sample in samples:
+            self._log.info(f"Input prompt: {sample.prompt}")
+            prompt = sample.prompt
             if self.use_prompt_extend:
                 assert self.prompt_expander is not None
                 self._log.info("Extending prompt ...")
@@ -324,6 +337,7 @@ class WanVideoModelFlow(GenerationBase):
                     dist.broadcast_object_list(input_prompt, src=0)
                 prompt = input_prompt[0]
                 self._log.info(f"Extended prompt: {prompt}")
+                sample.metrics["extended_prompt"] = prompt
 
             self._log.info(
                 f"Generating {'image' if 't2i' in self.task else 'video'} ..."
@@ -339,38 +353,43 @@ class WanVideoModelFlow(GenerationBase):
                     sample_solver=sample_solver,
                     sampling_steps=sampling_steps,
                     guide_scale=guide_scale,
-                    seed=self.seed,
+                    seed=sample.seed,
                     offload_model=self.offload_model,
                 )
 
             result_with_metrics = _run_generate()
             video = result_with_metrics["result"]
-            videos.append(video)
+            video = video.cpu()
 
-            gpu.append(
-                result_with_metrics.get("peak_vram_gb")
-                or result_with_metrics.get("gpu", -1.0)
+            peak = result_with_metrics.get("peak_vram_gb")
+            wall = result_with_metrics.get("wall_time_s")
+            gpu.append(peak or result_with_metrics.get("gpu", -1.0))
+            time.append(wall or result_with_metrics.get("time", -1.0))
+
+            sample.peak_vram_gb = peak
+            sample.wall_time_s = wall
+            sample.seconds_per_frame = (
+                round(wall / frames, 4) if wall and frames > 0 else None
             )
-            time.append(
-                result_with_metrics.get("wall_time_s")
-                or result_with_metrics.get("time", -1.0)
+            sample.metrics.update(
+                {k: v for k, v in result_with_metrics.items() if k not in {"result"}}
             )
+            manifest.add_sample(sample)
+
+            if rank == 0:
+                self.save_output(sample, video, fps=args.savefps)
 
         if rank == 0:
-            self._log.info("Saving videos")
-            filenames = self.process_savename(prompt_list, args.n_samples_prompt)
-            self.save_videos(
-                torch.stack(videos).unsqueeze(dim=1),
-                args.savedir,
-                filenames,
-                fps=args.savefps,
-            )
             self.save_metrics(
                 gpu=gpu, time=time, config=args, savedir=args.savedir, frames=frames
             )
+            self.save_manifest(
+                manifest,
+                args.savedir,
+                metrics_file=os.path.join(args.savedir, "metrics.json"),
+            )
 
     def inference_i2v(self, args: DictConfig):
-        # init vars
         rank = int(os.getenv("RANK", 0))
         int(os.getenv("WORLD_SIZE", 1))
         int(os.getenv("LOCAL_RANK", 0))
@@ -382,22 +401,33 @@ class WanVideoModelFlow(GenerationBase):
         sampling_steps = args.num_inference_steps
         guide_scale = args.unconditional_guidance_scale
 
-        prompt_list, image_list = self.load_inference_inputs(args.prompt_dir, args.mode)
-        assert len(prompt_list) == len(
-            image_list
-        ), "prompt and image number should match"
-
-        if len(prompt_list) > 1:
+        samples = self.build_manifest_inputs(
+            args.prompt_dir,
+            mode="i2v",
+            args=args,
+            n_samples=1,
+            seed=self.seed,
+            per_sample_seed=False,
+        )
+        if args.size and "*" in args.size:
+            width, height = args.size.split("*")
+            for sample in samples:
+                sample.width = int(width)
+                sample.height = int(height)
+        if len(samples) > 1:
             self._log.info("Processing prompts sequentially (batch size 1 per prompt).")
 
-        videos = []
+        self.assign_output_paths(samples, args.savedir)
+        manifest = self.create_manifest(model_family="wan", mode="i2v", config=args)
+
         gpu = []
         time = []
-        for prompt, image_path in zip(prompt_list, image_list):
-            self._log.info(f"Input prompt: {prompt}")
-            self._log.info(f"Input image: {image_path}")
+        for sample in samples:
+            self._log.info(f"Input prompt: {sample.prompt}")
+            self._log.info(f"Input image: {sample.image_path}")
 
-            img = Image.open(image_path).convert("RGB")
+            img = Image.open(sample.image_path).convert("RGB")
+            prompt = sample.prompt
             if self.use_prompt_extend:
                 assert self.prompt_expander is not None
                 self._log.info("Extending prompt ...")
@@ -424,6 +454,7 @@ class WanVideoModelFlow(GenerationBase):
                     dist.broadcast_object_list(input_prompt, src=0)
                 prompt = input_prompt[0]
                 self._log.info(f"Extended prompt: {prompt}")
+                sample.metrics["extended_prompt"] = prompt
 
             self._log.info("Generating video ...")
 
@@ -438,35 +469,40 @@ class WanVideoModelFlow(GenerationBase):
                     sample_solver=sample_solver,
                     sampling_steps=sampling_steps,
                     guide_scale=guide_scale,
-                    seed=self.seed,
+                    seed=sample.seed,
                     offload_model=self.offload_model,
                 )
 
             result_with_metrics = _run_generate()
             video = result_with_metrics["result"]
             video = video.cpu()
-            videos.append(video)
-            gpu.append(
-                result_with_metrics.get("peak_vram_gb")
-                or result_with_metrics.get("gpu", -1.0)
+
+            peak = result_with_metrics.get("peak_vram_gb")
+            wall = result_with_metrics.get("wall_time_s")
+            gpu.append(peak or result_with_metrics.get("gpu", -1.0))
+            time.append(wall or result_with_metrics.get("time", -1.0))
+
+            sample.peak_vram_gb = peak
+            sample.wall_time_s = wall
+            sample.seconds_per_frame = (
+                round(wall / frames, 4) if wall and frames > 0 else None
             )
-            time.append(
-                result_with_metrics.get("wall_time_s")
-                or result_with_metrics.get("time", -1.0)
+            sample.metrics.update(
+                {k: v for k, v in result_with_metrics.items() if k not in {"result"}}
             )
-            del result_with_metrics
+            manifest.add_sample(sample)
+
+            if rank == 0:
+                self.save_output(sample, video, fps=args.savefps)
 
         if rank == 0:
-            self._log.info("Saving videos")
-            filenames = self.process_savename(prompt_list, args.n_samples_prompt)
-            self.save_videos(
-                torch.stack(videos).unsqueeze(dim=1),
-                args.savedir,
-                filenames,
-                fps=args.savefps,
-            )
             self.save_metrics(
                 gpu=gpu, time=time, config=args, savedir=args.savedir, frames=frames
+            )
+            self.save_manifest(
+                manifest,
+                args.savedir,
+                metrics_file=os.path.join(args.savedir, "metrics.json"),
             )
 
     @torch.inference_mode()

@@ -135,6 +135,38 @@ hf download black-forest-labs/FLUX.1-dev --local-dir checkpoints/flux/FLUX.1-dev
 
 Then set `"--pretrained_model_name_or_path": "checkpoints/flux/FLUX.1-dev"` in `flux_t2i.json`.
 
+### Validate datasets (optional but recommended)
+
+Before training, run the unified dataset validation to catch missing files,
+incorrect captions, wrong dimensions, or insufficient frame counts:
+
+```bash
+poetry run validate-datasets
+```
+
+This auto-discovers your data roots from the domain configs (Flux from
+`configs/domain/flux_t2i_data.json`; Wan from `configs/domain/wan_t2v_lora.yaml`
+and `wan_i2v_lora.yaml`) and validates all configured phases.
+
+Validation output:
+- `results/data_validation/report.json` — machine-readable report
+- `results/data_validation/summary.md` — human-readable summary
+
+To re-encode Wan clips to the expected 480×832 / 81-frame format:
+
+```bash
+poetry run validate-datasets --normalize
+```
+
+For per-phase or custom data-root validation:
+
+```bash
+poetry run validate-datasets --phase flux-t2i --data-root /path/to/images
+poetry run validate-datasets --phase wan-t2v --data-root /path/to/t2v
+```
+
+Exit codes: 0 = all pass, 2 = validation errors found.
+
 ### Train
 
 ```bash
@@ -237,7 +269,7 @@ poetry run validate-domain-t2v \
 | ~24 GB | default (`wan_domain_lora_smoke_22.yaml`) |
 | 12–16 GB | `--config configs/inference/presets/wan_domain_lora_smoke_22_low_vram.yaml` |
 
-Output: `results/t2v/wan-domain-lora-smoke-22/*.mp4` at **720×1280**, **81 frames**, **16 fps**.
+Output: `results/t2v/wan-domain-lora-smoke-22/*.mp4` at **720×1280**, **81 frames**, **16 fps**. Each run also writes a `manifest.json` next to the outputs with the full prompt-to-output mapping, seeds, dimensions, and provenance, plus a `metrics.json` with aggregate timing/VRAM data.
 
 For full-quality QA (20–50 steps), use [`balanced_wan2_2_720p.yaml`](../../configs/inference/presets/balanced_wan2_2_720p.yaml) — see [wan2.2-inference-profile.md](wan2.2-inference-profile.md).
 
@@ -249,7 +281,25 @@ poetry run python tools/convert_wan_lora_21_to_22.py \
   --output-dir results/lora/wan22-export/
 ```
 
-**Bridge debug / spike:** `poetry run python tools/spike_wan_lora_bridge.py --synthetic /tmp/synthetic.ckpt`
+The export tool writes `high_noise.safetensors`, `low_noise.safetensors`, a `manifest.json` with parity and coverage stats, and a `key_diff.json` with the full per-key remap table. Use `--min-coverage 0.85` to override the coverage threshold.
+
+**Bridge debug / spike:**
+
+```bash
+# Inventory only
+poetry run python tools/spike_wan_lora_bridge.py --synthetic /tmp/synthetic.ckpt
+
+# Full per-key remap diff
+poetry run python tools/spike_wan_lora_bridge.py --input <ckpt> --diff
+
+# Parity check (runtime vs offline export)
+poetry run python tools/spike_wan_lora_bridge.py --input <ckpt> --check-parity
+
+# Expert mapping (high/low/both)
+poetry run python tools/spike_wan_lora_bridge.py --input <ckpt> --expert-map
+```
+
+Configure coverage threshold via `VIDEOTUNA_WAN_BRIDGE_MIN_COVERAGE` env var or pass `--min-coverage` to spike/export tools.
 
 <details>
 <summary>Optional fast path — Wan 2.1 native smoke (480p)</summary>
@@ -342,7 +392,7 @@ poetry run validate-domain-i2v \
   --prompt_dir inputs/i2v/domain_smoke
 ```
 
-`inputs/i2v/domain_smoke/` must contain paired `.txt` prompts and images (`.jpg`/`.png`), one line per prompt.
+`inputs/i2v/domain_smoke/` must contain paired `.txt` prompts and images (`.jpg`/`.png`), one line per prompt. The validation output directory includes `manifest.json` (prompt/image/output mapping and provenance) and `metrics.json` (aggregate timing/VRAM).
 
 **Wan 2.1 native smoke (debug):**
 
@@ -390,14 +440,14 @@ poetry run test tests/test_poetry_scripts.py -q
 | HF gated model | `huggingface-cli login` and accept FLUX.1-dev license |
 | Wan grey output at inference | Use `unconditional_guidance_scale: 12.0` during training preview (set in YAML `image_logger`) |
 | Wan 2.2 validation OOM | Use `wan_domain_lora_smoke_22_low_vram.yaml` or `--enable_sequential_cpu_offload` |
-| Bridge load warnings | Run `tools/spike_wan_lora_bridge.py --input <ckpt>` for key inventory |
+| Bridge raises RuntimeError | Run `tools/spike_wan_lora_bridge.py --input <ckpt> --diff` for full per-key remap table; lower threshold via `VIDEOTUNA_WAN_BRIDGE_MIN_COVERAGE` if needed |
 
 ## Known limitations
 
 - **FLUX.1 only:** Training uses FLUX.1-dev; see [`docs/MODEL_VERSIONS.md`](../MODEL_VERSIONS.md).
 - **Wan 2.1 → 2.2 bridge (`validate-domain-t2v`):** Production-ready for domain LoRA QA via `poetry run validate-domain-t2v`. The bridge remaps native Wan 2.1 Lightning keys onto Wan 2.2 Diffusers and loads the **same** LoRA onto both high-noise (`transformer`) and low-noise (`transformer_2`) experts. Limitations:
   - Default smoke preset uses **4 inference steps** at 720×1280 — use [`balanced_wan2_2_720p.yaml`](../../configs/inference/presets/balanced_wan2_2_720p.yaml) for higher-quality QA.
-  - Remap ratio below 90% logs a warning (does not block load) — run visual QA and `tools/spike_wan_lora_bridge.py --input <ckpt>` if keys look wrong.
+  - Remap ratio below the threshold (default 90%, configurable via `VIDEOTUNA_WAN_BRIDGE_MIN_COVERAGE`) **raises RuntimeError** — run `tools/spike_wan_lora_bridge.py --input <ckpt> --diff` for a full key inventory if loading fails.
   - Training runs on Wan 2.1 block layout; validate visually after bridge — block-count mismatch may leave some pipeline LoRA slots at init.
   - Optional offline export: `tools/convert_wan_lora_21_to_22.py` writes `high_noise.safetensors` / `low_noise.safetensors`.
 

@@ -400,9 +400,9 @@ class ResizeCenterCropVideo:
         """
         T, C, H, W = clip.shape
         target_h, target_w = self.size
-        assert H >= target_h and W >= target_w, (
-            "Video dimensions should be larger than crop size"
-        )
+        assert (
+            H >= target_h and W >= target_w
+        ), "Video dimensions should be larger than crop size"
         # Compute cropping indices
         top = (H - target_h) // 2
         left = (W - target_w) // 2

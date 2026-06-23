@@ -20,9 +20,9 @@ print(f"number of prompts: {num_of_prompts}")
 print(f"number of images: {num_of_images}")
 
 if num_of_images != 0:
-    assert num_of_prompts == num_of_images, (
-        "The number of prompts should be equal to the number of images"
-    )
+    assert (
+        num_of_prompts == num_of_images
+    ), "The number of prompts should be equal to the number of images"
 else:
     # create images using flux
     import torch

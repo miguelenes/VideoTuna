@@ -65,6 +65,7 @@ def test_default_num_workers_not_batch_scaled():
 # DatasetFromCSV.__getitem__ error-handling tests
 # ---------------------------------------------------------------------------
 
+
 def _make_csv_dataset(tmp_path, size=6, max_retries=10):
     """Build a minimal DatasetFromCSV pointing at non-existent mp4 paths."""
     import pandas as pd
@@ -74,8 +75,7 @@ def _make_csv_dataset(tmp_path, size=6, max_retries=10):
 
     csv_file = tmp_path / "data.csv"
     rows = [
-        {"path": str(tmp_path / f"v{i}.mp4"), "caption": f"cap{i}"}
-        for i in range(size)
+        {"path": str(tmp_path / f"v{i}.mp4"), "caption": f"cap{i}"} for i in range(size)
     ]
     pd.DataFrame(rows).to_csv(csv_file, index=False)
 
@@ -136,6 +136,27 @@ def test_access_count_increments(tmp_path):
     with pytest.raises(RuntimeError):
         ds[1]
     assert ds._access_count == 2
+
+
+def test_final_exception_includes_offending_sample_context(tmp_path):
+    """Final RuntimeError must contain the offending sample index and path."""
+    ds = _make_csv_dataset(tmp_path, size=3, max_retries=2)
+
+    def always_fail(index):
+        raise ValueError("injected failure")
+
+    ds.getitem = always_fail
+    ds.safe_data_list = set()
+
+    with pytest.raises(RuntimeError) as exc_info:
+        ds[0]
+
+    msg = str(exc_info.value)
+    assert (
+        "Last offending sample:" in msg
+    ), f"Expected offending sample context in: {msg}"
+    assert "index=" in msg, f"Expected index in exception: {msg}"
+    assert ".mp4" in msg, f"Expected path fragment in exception: {msg}"
 
 
 def test_off_by_one_fallback_index_upper_bound(tmp_path):
@@ -203,9 +224,9 @@ def test_datamodule_setup_validate_on_setup_raises(tmp_path):
     from videotuna.data.datasets import DatasetFromCSV
 
     csv_file = tmp_path / "data.csv"
-    pd.DataFrame(
-        [{"path": str(tmp_path / "missing.mp4"), "caption": "cap"}]
-    ).to_csv(csv_file, index=False)
+    pd.DataFrame([{"path": str(tmp_path / "missing.mp4"), "caption": "cap"}]).to_csv(
+        csv_file, index=False
+    )
 
     dm = DataModuleFromConfig(
         batch_size=1,
@@ -228,9 +249,9 @@ def test_datamodule_setup_validate_off_by_default(tmp_path):
     import pandas as pd
 
     csv_file = tmp_path / "data.csv"
-    pd.DataFrame(
-        [{"path": str(tmp_path / "missing.mp4"), "caption": "cap"}]
-    ).to_csv(csv_file, index=False)
+    pd.DataFrame([{"path": str(tmp_path / "missing.mp4"), "caption": "cap"}]).to_csv(
+        csv_file, index=False
+    )
 
     dm = DataModuleFromConfig(
         batch_size=1,

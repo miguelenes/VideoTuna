@@ -34,9 +34,9 @@ class DDIMSampler(object):
             verbose=verbose,
         )
         alphas_cumprod = self.model.diffusion_scheduler.alphas_cumprod
-        assert alphas_cumprod.shape[0] == self.ddpm_num_timesteps, (
-            "alphas have to be defined for each timestep"
-        )
+        assert (
+            alphas_cumprod.shape[0] == self.ddpm_num_timesteps
+        ), "alphas have to be defined for each timestep"
 
         def to_torch(x):
             return x.clone().detach().to(torch.float32).to(self.model.device)

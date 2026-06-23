@@ -20,6 +20,7 @@ from videotuna.training.flux_lora.checkpoint import (
     checkpoint_step,
     find_latest_checkpoint,
     has_accelerate_state,
+    has_lora_weights,
     load_lora_checkpoint,
     prune_checkpoints,
     save_lora_checkpoint,
@@ -37,6 +38,7 @@ from videotuna.training.flux_lora.dataset import (
 )
 from videotuna.training.flux_lora.model_utils import load_flux_training_models
 from videotuna.training.flux_lora.text_embed_cache import build_or_load_cache
+from videotuna.utils.device_utils import detect_compute_backend
 from videotuna.utils.logging_config import bound_logger, resolve_device_label
 from videotuna.utils.training_metrics import (
     DEFAULT_FLUX_TRACKIO_PROJECT,
@@ -122,14 +124,25 @@ def _resolve_resume_checkpoint(
     if not config.resume_from_checkpoint:
         return None
     if config.resume_from_checkpoint == "latest":
-        candidate = find_latest_checkpoint(output_dir)
-    else:
-        candidate = Path(config.resume_from_checkpoint)
-        if not candidate.is_absolute():
-            candidate = output_dir / candidate
-        candidate = candidate if candidate.is_dir() else None
-    if candidate is not None and not has_accelerate_state(candidate):
+        return find_latest_checkpoint(output_dir)
+    candidate = Path(config.resume_from_checkpoint)
+    if not candidate.is_absolute():
+        candidate = output_dir / candidate
+    if not candidate.is_dir():
         return None
+    if not has_accelerate_state(candidate):
+        raise ValueError(
+            f"Requested checkpoint {candidate} exists but is missing "
+            "optimizer/scheduler state (optimizer.bin, scheduler.pt, ...). "
+            "Point resume_from_checkpoint to a complete checkpoint or use "
+            "'latest' to auto-select."
+        )
+    if not has_lora_weights(candidate):
+        raise ValueError(
+            f"Requested checkpoint {candidate} exists but is missing "
+            "LoRA weight files (adapter_config.json, ...). "
+            "The checkpoint may be incomplete."
+        )
     return candidate
 
 
@@ -312,7 +325,7 @@ def _build_dataloader(
             dataset,
             batch_sampler=batch_sampler,
             num_workers=config.num_workers,
-            pin_memory=torch.cuda.is_available(),
+            pin_memory=detect_compute_backend() != "cpu",
             collate_fn=_collate_batch,
         )
     return DataLoader(
@@ -320,7 +333,7 @@ def _build_dataloader(
         batch_size=config.train_batch_size,
         shuffle=True,
         num_workers=config.num_workers,
-        pin_memory=torch.cuda.is_available(),
+        pin_memory=detect_compute_backend() != "cpu",
         collate_fn=_collate_batch,
     )
 
@@ -416,12 +429,14 @@ def _run_training_loop(
             if (
                 global_step % config.checkpointing_steps == 0
                 or global_step == max_train_steps
-            ) and accelerator.is_main_process:
-                unwrapped = accelerator.unwrap_model(transformer)
-                ckpt = save_lora_checkpoint(unwrapped, output_dir, global_step)
+            ):
+                ckpt = Path(str(output_dir)) / f"checkpoint-{global_step}"
                 accelerator.save_state(str(ckpt))
-                prune_checkpoints(output_dir, config.checkpoints_total_limit)
-                log.info("Saved LoRA checkpoint to {}", ckpt)
+                if accelerator.is_main_process:
+                    unwrapped = accelerator.unwrap_model(transformer)
+                    save_lora_checkpoint(unwrapped, output_dir, global_step)
+                    prune_checkpoints(output_dir, config.checkpoints_total_limit)
+                    log.info("Saved LoRA checkpoint to {}", ckpt)
             if global_step >= max_train_steps:
                 break
 

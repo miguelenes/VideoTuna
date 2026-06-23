@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -34,6 +35,36 @@ HIGH_NOISE_ADAPTER = "domain_high"
 LOW_NOISE_ADAPTER = "domain_low"
 MIN_REMAP_COVERAGE = 0.9
 
+
+@dataclass
+class WanBridgeConfig:
+    """Configuration for the Wan 2.1 → 2.2 LoRA bridge.
+
+    Controls coverage thresholds, fallback remap behavior, and strictness.
+    Use ``from_env()`` to pick up ``VIDEOTUNA_WAN_BRIDGE_MIN_COVERAGE``.
+    """
+
+    min_coverage: float = MIN_REMAP_COVERAGE
+    min_coverage_export: float | None = None
+    allow_fallback_remap: bool = False
+
+    @property
+    def effective_export_coverage(self) -> float:
+        return (
+            self.min_coverage_export
+            if self.min_coverage_export is not None
+            else self.min_coverage
+        )
+
+    @classmethod
+    def from_env(cls) -> WanBridgeConfig:
+        """Build from ``VIDEOTUNA_WAN_BRIDGE_MIN_COVERAGE`` env var if set."""
+        raw = os.environ.get("VIDEOTUNA_WAN_BRIDGE_MIN_COVERAGE")
+        if raw is not None:
+            return cls(min_coverage=float(raw))
+        return cls()
+
+
 _SELF_ATTN_RE = re.compile(
     r"^blocks\.(\d+)\.self_attn\.(q|k|v|o)\.(lora_[AB]\.weight)$"
 )
@@ -44,6 +75,14 @@ _FFN0_RE = re.compile(r"^blocks\.(\d+)\.ffn\.0\.(lora_[AB]\.weight)$")
 _FFN2_RE = re.compile(r"^blocks\.(\d+)\.ffn\.2\.(lora_[AB]\.weight)$")
 # Legacy / test shorthand: blocks.N.attn.q (no self_/cross_ prefix).
 _LEGACY_ATTN_RE = re.compile(r"^blocks\.(\d+)\.attn\.(q|k|v|o)\.(lora_[AB]\.weight)$")
+
+_PATTERN_LABELS: Dict[re.Pattern, str] = {
+    _SELF_ATTN_RE: "self_attn",
+    _CROSS_ATTN_RE: "cross_attn",
+    _FFN0_RE: "ffn.0",
+    _FFN2_RE: "ffn.2",
+    _LEGACY_ATTN_RE: "legacy_attn",
+}
 
 
 @dataclass
@@ -79,6 +118,27 @@ class WanLoraLoadReport:
             "unmapped_keys": len(self.unmapped_keys),
             "renamed_keys": len(self.renamed_keys),
         }
+
+
+@dataclass
+class KeyDiffEntry:
+    """Per-key remap status entry from the bridge."""
+
+    native_key: str
+    diffusers_key: str | None = None
+    status: str = "unmapped"  # "remapped" | "unmapped" | "fallback"
+    pattern: str | None = None
+    expert: str = "both"  # high-noise / low-noise — both until expert split
+
+
+@dataclass
+class ParityReport:
+    """Comparison between runtime bridge remap and offline export remap."""
+
+    keys_match: bool
+    runtime_key_count: int
+    export_key_count: int
+    only_in_export: List[str] = field(default_factory=list)
 
 
 def is_native_wan_lora_ckpt(path: str | Path) -> bool:
@@ -186,6 +246,14 @@ def _matches_known_remap_pattern(key: str) -> bool:
     )
 
 
+def _match_label(key: str) -> str | None:
+    """Return the human-readable pattern label for a key, or None."""
+    for pattern, label in _PATTERN_LABELS.items():
+        if pattern.match(key):
+            return label
+    return None
+
+
 def _remap_state_with_meta(
     native_state: Dict[str, torch.Tensor],
 ) -> Tuple[Dict[str, torch.Tensor], List[str], List[Tuple[str, str]]]:
@@ -200,7 +268,7 @@ def _remap_state_with_meta(
         new_key = _remap_single_native_key(key)
         renamed.append((key, new_key))
         remapped[new_key] = tensor
-    return remapped, unmapped, renamed[:10]
+    return remapped, unmapped, renamed
 
 
 def compute_remap_coverage(
@@ -220,11 +288,15 @@ def validate_remap_coverage(
     *,
     min_coverage: float = MIN_REMAP_COVERAGE,
     context: str = "",
+    config: WanBridgeConfig | None = None,
 ) -> Tuple[int, int, float, List[str]]:
     """Validate remap coverage and return (remapped_count, total, ratio, unmapped).
 
-    Raises RuntimeError when coverage is below ``min_coverage``.
+    Raises RuntimeError when coverage is below ``min_coverage`` (or
+    ``config.min_coverage`` if ``config`` is provided).
     """
+    if config is not None:
+        min_coverage = config.min_coverage
     if not native_state:
         raise ValueError("No LoRA tensors to validate; checkpoint may be empty")
     remapped, unmapped, _ = _remap_state_with_meta(native_state)
@@ -262,6 +334,73 @@ def analyze_native_wan_lora_ckpt(ckpt_path: str | Path) -> Dict[str, Any]:
         "sample_native": sorted(native_state.keys())[:5],
         "sample_remapped": sorted(remapped.keys())[:5],
     }
+
+
+def build_bridge_key_map(
+    native_state: Dict[str, torch.Tensor],
+    *,
+    config: WanBridgeConfig | None = None,
+) -> List[KeyDiffEntry]:
+    """Build a per-key remap status table for the entire state dict.
+
+    Every native key gets one entry showing its remap status, target
+    Diffusers key, and the matched pattern label.
+    """
+    cfg = config or WanBridgeConfig()
+    entries: List[KeyDiffEntry] = []
+    for key in native_state:
+        if _matches_known_remap_pattern(key):
+            new_key = _remap_single_native_key(key)
+            entries.append(
+                KeyDiffEntry(
+                    native_key=key,
+                    diffusers_key=new_key,
+                    status="remapped",
+                    pattern=_match_label(key),
+                )
+            )
+        elif cfg.allow_fallback_remap and key.startswith("blocks."):
+            entries.append(
+                KeyDiffEntry(
+                    native_key=key,
+                    diffusers_key="transformer_blocks." + key[len("blocks.") :],
+                    status="fallback",
+                )
+            )
+        else:
+            entries.append(KeyDiffEntry(native_key=key, status="unmapped"))
+    return entries
+
+
+def verify_runtime_export_parity(
+    ckpt_path: str | Path,
+    *,
+    config: WanBridgeConfig | None = None,
+) -> ParityReport:
+    """Compare runtime bridge remap with offline export remap.
+
+    The runtime path uses ``_remap_state_with_meta`` which drops keys
+    not matching known patterns.  The export path uses
+    ``_remap_native_to_diffusers_keys`` which applies the fallback
+    ``blocks.* → transformer_blocks.*`` to all keys.  This function
+    flags any divergence between the two.
+    """
+    native_state = load_native_wan_lora_state_dict(ckpt_path)
+    runtime_remapped, _, _ = _remap_state_with_meta(native_state)
+    export_remapped = _remap_native_to_diffusers_keys(native_state)
+
+    runtime_keys = set(runtime_remapped)
+    export_keys = set(export_remapped)
+
+    only_in_export = sorted(export_keys - runtime_keys)
+    keys_match = runtime_keys == export_keys
+
+    return ParityReport(
+        keys_match=keys_match,
+        runtime_key_count=len(runtime_keys),
+        export_key_count=len(export_keys),
+        only_in_export=only_in_export,
+    )
 
 
 def _peft_prefix_keys(state: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
@@ -348,6 +487,7 @@ def apply_native_wan_lora_to_pipeline(
     lora_scale: float = 1.0,
     lora_scale_2: Optional[float] = None,
     mode: str = "t2v",
+    bridge_config: WanBridgeConfig | None = None,
 ) -> List[WanLoraLoadReport]:
     """
     Attach Wan 2.1 native LoRA weights to a Wan 2.2 Diffusers pipeline.
@@ -361,12 +501,15 @@ def apply_native_wan_lora_to_pipeline(
         lora_scale: Scale for the high-noise (transformer) adapter.
         lora_scale_2: Scale for the low-noise (transformer_2) adapter.
         mode: "t2v" or "i2v"; affects logging/report labels only.
+        bridge_config: Optional bridge configuration (defaults to env vars).
     """
+    config = bridge_config or WanBridgeConfig.from_env()
     native_state = load_native_wan_lora_state_dict(ckpt_path)
     rank = _infer_lora_rank(native_state)
     remapped, unmapped, renamed = _remap_state_with_meta(native_state)
     remapped_keys, source_keys, _, _ = validate_remap_coverage(
         native_state,
+        config=config,
         context=f"Wan {mode.upper()} LoRA bridge",
     )
     scale_2 = lora_scale if lora_scale_2 is None else lora_scale_2
@@ -438,6 +581,7 @@ def apply_native_wan_lora_to_i2v_pipeline(
     *,
     lora_scale: float = 1.0,
     lora_scale_2: Optional[float] = None,
+    bridge_config: WanBridgeConfig | None = None,
 ) -> List[WanLoraLoadReport]:
     """
     Attach Wan 2.1 native I2V LoRA weights to a Wan 2.2 I2V Diffusers pipeline.
@@ -452,6 +596,7 @@ def apply_native_wan_lora_to_i2v_pipeline(
         lora_scale=lora_scale,
         lora_scale_2=lora_scale_2,
         mode="i2v",
+        bridge_config=bridge_config,
     )
 
 
@@ -459,19 +604,51 @@ def export_diffusers_lora_state_dicts(
     ckpt_path: str | Path,
     *,
     mode: str = "t2v",
-) -> Dict[str, Dict[str, torch.Tensor]]:
+    bridge_config: WanBridgeConfig | None = None,
+    include_key_diff: bool = False,
+) -> Dict[str, Any]:
     """
     Export remapped LoRA tensors for Diffusers ``load_lora_weights``.
 
     Validates remap coverage before export and raises RuntimeError if it is
-    below ``MIN_REMAP_COVERAGE``. Returns a dict with ``high_noise`` and
-    ``low_noise`` entries (same weights; Wan 2.2 loads low-noise expert via
-    ``load_into_transformer_2``).
+    below the configured threshold (default ``MIN_REMAP_COVERAGE``).
+
+    Returns a dict with ``high_noise`` and ``low_noise`` tensor dicts,
+    plus ``_parity`` metadata.  When ``include_key_diff=True`` a
+    ``_key_diff`` entry with full per-key status is also included.
+
+    Both expert dicts hold the **same** remapped tensors; Wan 2.2
+    loads low-noise via ``load_into_transformer_2``.
     """
+    config = bridge_config or WanBridgeConfig.from_env()
     native_state = load_native_wan_lora_state_dict(ckpt_path)
-    validate_remap_coverage(native_state, context=f"Wan {mode.upper()} LoRA export")
+    validate_remap_coverage(
+        native_state, config=config, context=f"Wan {mode.upper()} LoRA export"
+    )
     remapped = _remap_native_to_diffusers_keys(native_state)
-    exports = {"high_noise": remapped, "low_noise": dict(remapped)}
+    exports: Dict[str, Any] = {
+        "high_noise": remapped,
+        "low_noise": dict(remapped),
+    }
+
+    parity = verify_runtime_export_parity(ckpt_path, config=config)
+    exports["_parity"] = {
+        "keys_match": parity.keys_match,
+        "runtime_key_count": parity.runtime_key_count,
+        "export_key_count": parity.export_key_count,
+        "only_in_export": parity.only_in_export,
+    }
+    if include_key_diff:
+        exports["_key_diff"] = [
+            {
+                "native_key": e.native_key,
+                "diffusers_key": e.diffusers_key,
+                "status": e.status,
+                "pattern": e.pattern,
+            }
+            for e in build_bridge_key_map(native_state, config=config)
+        ]
+
     return exports
 
 

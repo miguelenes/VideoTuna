@@ -59,6 +59,7 @@ def _cuda_available() -> bool:
     if _CUDA_DETECTED is None:
         try:
             import torch  # fmt: skip
+
             _CUDA_DETECTED = torch.cuda.is_available()
         except Exception:
             _CUDA_DETECTED = False
@@ -70,6 +71,7 @@ def _gpu_count() -> int:
     if _GPU_COUNT is None:
         if _cuda_available():
             import torch  # fmt: skip
+
             _GPU_COUNT = torch.cuda.device_count()
         else:
             _GPU_COUNT = 0

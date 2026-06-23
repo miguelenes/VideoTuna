@@ -8,10 +8,10 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
 from diffusers import FluxPipeline, WanImageToVideoPipeline, WanPipeline
-from diffusers.utils import export_to_video
 from omegaconf import DictConfig
 
 from videotuna.base.generation_base import GenerationBase
+from videotuna.base.inference_manifest import InferenceSample
 from videotuna.settings import get_settings
 from videotuna.utils.common_utils import monitor_resources
 from videotuna.utils.device_utils import resolve_inference_device
@@ -231,22 +231,6 @@ class DiffusersVideoFlow(GenerationBase):
             pipeline.load_lora_weights(self._lora_path)
             self._log.info("Loaded Wan Diffusers LoRA from {}", self._lora_path)
 
-    def _resolve_inputs(
-        self, args: DictConfig
-    ) -> Tuple[List[str], List[Optional[str]]]:
-        if self.mode in ("t2v", "t2i"):
-            prompts = self.load_inference_inputs(args.prompt_file, "t2v")
-            return prompts, [None] * len(prompts)
-        if self.mode == "i2v":
-            prompt_dir = getattr(args, "prompt_dir", None)
-            if not prompt_dir:
-                raise ValueError(
-                    "I2V inference requires --prompt_dir with paired images"
-                )
-            prompts, image_paths = self.load_inference_inputs(prompt_dir, "i2v")
-            return prompts, image_paths
-        raise ValueError(f"Unsupported mode: {self.mode}")
-
     @torch.inference_mode()
     def inference(self, args: DictConfig) -> Dict[str, Any]:
         os.makedirs(args.savedir, exist_ok=True)
@@ -284,52 +268,50 @@ class DiffusersVideoFlow(GenerationBase):
             device=inference_device,
         )
 
-        prompts, media_paths = self._resolve_inputs(args)
-        num_steps = int(
-            getattr(args, "num_inference_steps", None)
-            or getattr(args, "ddim_steps", 50)
-            or 50
-        )
-        guidance = float(
-            getattr(args, "unconditional_guidance_scale", None)
-            or getattr(args, "guidance_scale", 6.0)
-            or 6.0
-        )
         seed = int(getattr(args, "seed", 42) or 42)
-        frames = int(getattr(args, "frames", 49) or 49)
-        height = getattr(args, "height", None)
-        width = getattr(args, "width", None)
         n_samples = int(getattr(args, "n_samples_prompt", 1) or 1)
+        fps = int(getattr(args, "savefps", None) or 8)
+        frames = int(getattr(args, "frames", 49) or 49)
+
+        prompt_source = getattr(args, "prompt_file", None)
+        if self.mode == "i2v":
+            prompt_source = getattr(args, "prompt_dir", None)
+        samples = self.build_manifest_inputs(
+            prompt_source,
+            self.mode,
+            args,
+            n_samples=n_samples,
+            seed=seed,
+            per_sample_seed=True,
+        )
+        self.assign_output_paths(samples, args.savedir)
+
+        manifest = self.create_manifest(
+            model_id=self._model_id,
+            lora_path=self._lora_path,
+            model_family=self.model_family,
+            mode=self.mode,
+            config=args,
+        )
 
         per_sample: List[Dict[str, Any]] = []
         gpu_metrics: List[float] = []
         time_metrics: List[float] = []
 
-        for idx, (prompt, media_path) in enumerate(zip(prompts, media_paths)):
-            for sample_idx in range(n_samples):
-                sample_seed = seed + idx * n_samples + sample_idx
-                result = self._generate_sample(
-                    prompt=prompt,
-                    num_steps=num_steps,
-                    guidance=guidance,
-                    seed=sample_seed,
-                    frames=frames,
-                    height=height,
-                    width=width,
-                    args=args,
-                    image_path=media_path,
-                )
-                per_sample.append(result)
-                gpu_metrics.append(result.get("peak_vram_gb", -1.0))
-                time_metrics.append(result.get("wall_time_s", -1.0))
-                self._save_output(
-                    result["result"],
-                    args,
-                    prompt,
-                    idx,
-                    sample_idx,
-                )
+        for sample in samples:
+            result = self._generate_sample(sample, args)
+            per_sample.append(result)
+            gpu_metrics.append(result.get("peak_vram_gb", -1.0))
+            time_metrics.append(result.get("wall_time_s", -1.0))
 
+            sample.peak_vram_gb = result.get("peak_vram_gb")
+            sample.wall_time_s = result.get("wall_time_s")
+            sample.seconds_per_frame = result.get("seconds_per_frame")
+            sample.metrics = {k: v for k, v in result.items() if k not in {"result"}}
+            manifest.add_sample(sample)
+            self.save_output(sample, result["result"], fps=fps)
+
+        metrics_file: Optional[str] = None
         if get_settings().metrics_owner == "flow":
             self.save_metrics(
                 gpu=gpu_metrics,
@@ -338,27 +320,23 @@ class DiffusersVideoFlow(GenerationBase):
                 savedir=args.savedir,
                 frames=frames if self.mode != "t2i" else 1,
             )
+            metrics_file = os.path.join(args.savedir, "metrics.json")
+
+        self.save_manifest(manifest, args.savedir, metrics_file=metrics_file)
         return {"per_sample": per_sample, "gpu": gpu_metrics, "time": time_metrics}
 
     @monitor_resources(return_metrics=True)
     def _generate_sample(
         self,
-        prompt: str,
-        num_steps: int,
-        guidance: float,
-        seed: int,
-        frames: int,
-        height: Optional[int],
-        width: Optional[int],
+        sample: InferenceSample,
         args: DictConfig,
-        image_path: Optional[str] = None,
     ) -> Any:
         from PIL import Image
 
-        generator = torch.Generator().manual_seed(seed)
+        generator = torch.Generator().manual_seed(sample.seed)
         pipe_kwargs: Dict[str, Any] = {
-            "prompt": prompt,
-            "num_inference_steps": num_steps,
+            "prompt": sample.prompt,
+            "num_inference_steps": sample.num_inference_steps or 50,
             "generator": generator,
         }
 
@@ -368,53 +346,32 @@ class DiffusersVideoFlow(GenerationBase):
         with transformer_cache_context(pipeline):
             if self.model_family == "flux":
                 pipe_kwargs.update(
-                    guidance_scale=guidance,
-                    height=height or 768,
-                    width=width or 1360,
+                    guidance_scale=sample.guidance_scale or 3.5,
+                    height=sample.height or 768,
+                    width=sample.width or 1360,
                     max_sequence_length=256,
                 )
                 output = pipeline(**pipe_kwargs).images[0]
             elif self.model_family == "wan":
                 pipe_kwargs.update(
-                    num_frames=frames,
-                    guidance_scale=guidance,
+                    num_frames=sample.frames or 49,
+                    guidance_scale=sample.guidance_scale or 6.0,
                 )
-                if height is not None:
-                    pipe_kwargs["height"] = height
-                if width is not None:
-                    pipe_kwargs["width"] = width
+                if sample.height is not None:
+                    pipe_kwargs["height"] = sample.height
+                if sample.width is not None:
+                    pipe_kwargs["width"] = sample.width
                 neg = getattr(args, "uncond_prompt", None) or entry.get(
                     "negative_prompt"
                 )
                 if neg:
                     pipe_kwargs["negative_prompt"] = neg
                 if self.mode == "i2v":
-                    if not image_path:
+                    if not sample.image_path:
                         raise ValueError("I2V generation requires an image path")
-                    pipe_kwargs["image"] = Image.open(image_path).convert("RGB")
+                    pipe_kwargs["image"] = Image.open(sample.image_path).convert("RGB")
                 output = pipeline(**pipe_kwargs).frames[0]
             else:
                 raise ValueError(f"Unknown model family: {self.model_family}")
 
         return output
-
-    def _save_output(
-        self,
-        output: Any,
-        args: DictConfig,
-        prompt: str,
-        idx: int,
-        sample_idx: int,
-    ) -> None:
-        entry = MODEL_REGISTRY[(self.model_family, self.mode)]
-        safe_prompt = prompt[:80].replace("/", "_").replace(" ", "_")
-        if self.mode == "t2i":
-            filename = f"{idx:03d}_{sample_idx:02d}_{safe_prompt}.jpg"
-            out_path = os.path.join(args.savedir, filename)
-            output.save(out_path)
-            return
-
-        fps = int(getattr(args, "savefps", None) or entry.get("export_fps", 8))
-        filename = f"{idx:03d}_{sample_idx:02d}_{safe_prompt}.mp4"
-        out_path = os.path.join(args.savedir, filename)
-        export_to_video(output, out_path, fps=fps)

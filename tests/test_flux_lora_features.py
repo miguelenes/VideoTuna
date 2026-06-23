@@ -19,6 +19,7 @@ from videotuna.training.flux_lora.bucketing import (
 from videotuna.training.flux_lora.checkpoint import (
     find_latest_checkpoint,
     has_accelerate_state,
+    has_lora_weights,
     load_lora_checkpoint,
     prune_checkpoints,
 )
@@ -138,9 +139,11 @@ def test_invalid_num_train_epochs_raises(tmp_path):
 
 
 def test_find_latest_checkpoint(tmp_path):
-    (tmp_path / "checkpoint-10").mkdir()
-    (tmp_path / "checkpoint-250").mkdir()
-    (tmp_path / "checkpoint-50").mkdir()
+    for step in (10, 250, 50):
+        d = tmp_path / f"checkpoint-{step}"
+        d.mkdir()
+        (d / "optimizer.bin").write_bytes(b"")
+        (d / "adapter_config.json").write_bytes(b"{}")
     latest = find_latest_checkpoint(tmp_path)
     assert latest is not None
     assert latest.name == "checkpoint-250"
@@ -327,6 +330,7 @@ def test_resolve_resume_checkpoint_latest(tmp_path):
     (tmp_path / "checkpoint-10").mkdir()
     (tmp_path / "checkpoint-50").mkdir()
     (tmp_path / "checkpoint-50" / "optimizer.bin").write_bytes(b"")
+    (tmp_path / "checkpoint-50" / "adapter_config.json").write_bytes(b"{}")
     config = FluxLoraTrainConfig(
         pretrained_model_name_or_path="black-forest-labs/FLUX.1-dev",
         output_dir=str(tmp_path),
@@ -341,6 +345,7 @@ def test_resolve_resume_checkpoint_latest(tmp_path):
 def test_resolve_resume_checkpoint_relative_path(tmp_path):
     (tmp_path / "checkpoint-100").mkdir()
     (tmp_path / "checkpoint-100" / "optimizer.bin").write_bytes(b"")
+    (tmp_path / "checkpoint-100" / "adapter_config.json").write_bytes(b"{}")
     config = FluxLoraTrainConfig(
         pretrained_model_name_or_path="black-forest-labs/FLUX.1-dev",
         output_dir=str(tmp_path),
@@ -522,6 +527,7 @@ def test_resolve_resume_checkpoint_returns_path_with_accelerate_state(tmp_path):
     ckpt.mkdir()
     (ckpt / "optimizer.bin").write_bytes(b"")
     (ckpt / "scheduler.pt").write_bytes(b"")
+    (ckpt / "adapter_config.json").write_bytes(b"{}")
     config = FluxLoraTrainConfig(
         pretrained_model_name_or_path="black-forest-labs/FLUX.1-dev",
         output_dir=str(tmp_path),
@@ -604,6 +610,7 @@ def test_load_state_called_on_resume(tmp_path):
     ckpt.mkdir()
     (ckpt / "optimizer.bin").write_bytes(b"")
     (ckpt / "scheduler.pt").write_bytes(b"")
+    (ckpt / "adapter_config.json").write_bytes(b"{}")
 
     config = FluxLoraTrainConfig(
         pretrained_model_name_or_path="black-forest-labs/FLUX.1-dev",
@@ -691,6 +698,7 @@ def test_no_manual_lr_scheduler_step_on_resume(tmp_path):
     ckpt.mkdir()
     (ckpt / "optimizer.bin").write_bytes(b"")
     (ckpt / "scheduler.pt").write_bytes(b"")
+    (ckpt / "adapter_config.json").write_bytes(b"{}")
 
     config = FluxLoraTrainConfig(
         pretrained_model_name_or_path="black-forest-labs/FLUX.1-dev",
@@ -932,3 +940,133 @@ def test_clip_grad_norm_disabled_when_none(tmp_path):
     # Verify grad_norm is not logged
     log_call_args = mock_accelerator.log.call_args_list
     assert not any("train/grad_norm" in str(call[0][0]) for call in log_call_args)
+
+
+def test_has_lora_weights_true(tmp_path):
+    ckpt = tmp_path / "checkpoint-10"
+    ckpt.mkdir()
+    (ckpt / "adapter_config.json").write_bytes(b"{}")
+    assert has_lora_weights(ckpt) is True
+
+
+def test_has_lora_weights_false_on_empty_dir(tmp_path):
+    ckpt = tmp_path / "checkpoint-10"
+    ckpt.mkdir()
+    assert has_lora_weights(ckpt) is False
+
+
+def test_has_lora_weights_false_on_nonexistent(tmp_path):
+    assert has_lora_weights(tmp_path / "nope") is False
+
+
+def test_find_latest_skips_incomplete_dirs(tmp_path):
+    """Only checkpoint-50 has accelerate state AND LoRA weights."""
+    for step in (10, 100):
+        d = tmp_path / f"checkpoint-{step}"
+        d.mkdir()
+        (d / "optimizer.bin").write_bytes(b"")
+    d50 = tmp_path / "checkpoint-50"
+    d50.mkdir()
+    (d50 / "optimizer.bin").write_bytes(b"")
+    (d50 / "adapter_config.json").write_bytes(b"{}")
+    latest = find_latest_checkpoint(tmp_path)
+    assert latest is not None
+    assert latest.name == "checkpoint-50"
+
+
+def test_find_latest_returns_none_all_incomplete(tmp_path):
+    for step in (10, 50):
+        d = tmp_path / f"checkpoint-{step}"
+        d.mkdir()
+        (d / "optimizer.bin").write_bytes(b"")
+    assert find_latest_checkpoint(tmp_path) is None
+
+
+def test_resolve_resume_rejects_state_only_checkpoint(tmp_path):
+    (tmp_path / "checkpoint-50").mkdir()
+    (tmp_path / "checkpoint-50" / "optimizer.bin").write_bytes(b"")
+    (tmp_path / "checkpoint-50" / "scheduler.pt").write_bytes(b"")
+    config = FluxLoraTrainConfig(
+        pretrained_model_name_or_path="black-forest-labs/FLUX.1-dev",
+        output_dir=str(tmp_path),
+        instance_data_dir="data",
+        resume_from_checkpoint="checkpoint-50",
+    )
+    with pytest.raises(ValueError, match="missing.*LoRA weight"):
+        _resolve_resume_checkpoint(config, tmp_path)
+
+
+def test_resolve_resume_rejects_lora_only_checkpoint(tmp_path):
+    (tmp_path / "checkpoint-50").mkdir()
+    (tmp_path / "checkpoint-50" / "adapter_config.json").write_bytes(b"{}")
+    config = FluxLoraTrainConfig(
+        pretrained_model_name_or_path="black-forest-labs/FLUX.1-dev",
+        output_dir=str(tmp_path),
+        instance_data_dir="data",
+        resume_from_checkpoint="checkpoint-50",
+    )
+    with pytest.raises(ValueError, match="missing.*optimizer/scheduler"):
+        _resolve_resume_checkpoint(config, tmp_path)
+
+
+def test_save_state_called_on_non_main_process(tmp_path):
+    """accelerator.save_state must run even when is_main_process=False."""
+    config = FluxLoraTrainConfig(
+        pretrained_model_name_or_path="black-forest-labs/FLUX.1-dev",
+        output_dir=str(tmp_path),
+        instance_data_dir="data",
+        max_train_steps=1,
+        checkpointing_steps=1,
+        checkpoints_total_limit=None,
+    )
+    mock_accelerator = mock.MagicMock()
+    mock_accelerator.is_main_process = False
+    mock_accelerator.sync_gradients = True
+    mock_accelerator.accumulate.return_value.__enter__ = mock.MagicMock()
+    mock_accelerator.accumulate.return_value.__exit__ = mock.MagicMock(
+        return_value=False
+    )
+    mock_accelerator.device = torch.device("cpu")
+
+    mock_pipeline = mock.MagicMock()
+    mock_transformer = mock.MagicMock()
+    mock_dataloader = mock.MagicMock()
+    mock_optimizer = mock.MagicMock()
+    mock_lr_scheduler = mock.MagicMock()
+
+    batch = {"pixel_values": torch.zeros(1, 3, 64, 64), "caption": ["test"]}
+    mock_dataloader.__iter__ = mock.MagicMock(return_value=iter([batch]))
+
+    with (
+        mock.patch(
+            "videotuna.training.flux_lora.train._compute_loss",
+            return_value=torch.tensor(1.0, requires_grad=True),
+        ),
+        mock.patch(
+            "videotuna.training.flux_lora.train._run_validation",
+        ),
+        mock.patch(
+            "videotuna.training.flux_lora.train.save_lora_checkpoint",
+        ) as save_ckpt,
+        mock.patch(
+            "videotuna.training.flux_lora.train.prune_checkpoints",
+        ),
+    ):
+        _run_training_loop(
+            config=config,
+            output_dir=tmp_path,
+            pipeline=mock_pipeline,
+            transformer=mock_transformer,
+            dataloader=mock_dataloader,
+            optimizer=mock_optimizer,
+            lr_scheduler=mock_lr_scheduler,
+            accelerator=mock_accelerator,
+            weight_dtype=torch.bfloat16,
+            global_step=0,
+            max_train_steps=1,
+            log=mock.MagicMock(),
+            metrics_backend="tensorboard",
+        )
+
+    mock_accelerator.save_state.assert_called_once()
+    save_ckpt.assert_not_called()

@@ -10,6 +10,7 @@ from diffusers import FluxPipeline
 from peft.utils import get_peft_model_state_dict, set_peft_model_state_dict
 
 _CHECKPOINT_RE = re.compile(r"^checkpoint-(\d+)$")
+_LORA_MARKERS = ("adapter_config.json", "pytorch_lora_weights.safetensors")
 
 
 def save_lora_checkpoint(transformer, output_dir: str | Path, step: int) -> Path:
@@ -35,6 +36,8 @@ def find_latest_checkpoint(output_dir: str | Path) -> Path | None:
             continue
         match = _CHECKPOINT_RE.match(path.name)
         if match is None:
+            continue
+        if not has_accelerate_state(path) or not has_lora_weights(path):
             continue
         step = int(match.group(1))
         if step > best_step:
@@ -64,6 +67,14 @@ def has_accelerate_state(checkpoint_dir: str | Path) -> bool:
     return any(
         (path / name).exists() for name in ("optimizer.bin", "scheduler.pt")
     ) or any(path.glob("random_states_*.pkl"))
+
+
+def has_lora_weights(checkpoint_dir: str | Path) -> bool:
+    """Return True if *checkpoint_dir* contains Diffusers-compatible LoRA files."""
+    path = Path(checkpoint_dir)
+    if not path.is_dir():
+        return False
+    return any((path / name).is_file() for name in _LORA_MARKERS)
 
 
 def prune_checkpoints(output_dir: str | Path, limit: int | None) -> None:

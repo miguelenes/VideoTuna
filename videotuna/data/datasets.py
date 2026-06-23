@@ -279,6 +279,8 @@ class DatasetFromCSV(torch.utils.data.Dataset):
     def __getitem__(self, index):
         self._access_count += 1
         last_error: Exception | None = None
+        last_bad_index: int = index
+        last_bad_path: str = "<unknown>"
         first_failure = True
         for _attempt in range(self.max_retries):
             try:
@@ -288,15 +290,17 @@ class DatasetFromCSV(torch.utils.data.Dataset):
                 return data_item
             except (ValueError, AssertionError) as exc:
                 last_error = exc
-                path = self.data_list[index % len(self)].get("path", "<unknown>")
+                last_bad_index = index % len(self)
+                last_bad_path = self.data_list[last_bad_index].get("path", "<unknown>")
                 if first_failure:
                     logger.warning(
-                        f"Skipping item index={index} path={path!r}: {exc}"
+                        f"Skipping item index={index} path={last_bad_path!r}: {exc}"
                     )
                     first_failure = False
                 else:
                     logger.debug(
-                        f"Retry attempt={_attempt} index={index} path={path!r}: {exc}"
+                        f"Retry attempt={_attempt} index={index} "
+                        f"path={last_bad_path!r}: {exc}"
                     )
                 self._skip_count += 1
                 if self._skip_count % _SKIP_SUMMARY_INTERVAL == 0:
@@ -313,6 +317,7 @@ class DatasetFromCSV(torch.utils.data.Dataset):
 
         raise RuntimeError(
             f"Too many bad data after {self.max_retries} retries. "
+            f"Last offending sample: index={last_bad_index} path={last_bad_path!r}. "
             f"Last error: {last_error}"
         ) from last_error
 

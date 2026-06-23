@@ -70,6 +70,7 @@ poetry run test tests/test_poetry_scripts.py -q
 | diffusers_video | `test_diffusers_video_flow.py` |
 | device/attention | `test_device_utils.py`, `test_attention_backend.py` |
 | inference CLI / memory | `test_inference_optimization.py` |
+| Dataset validation | `test_dataset_validation.py`, `test_dataset_cli.py` |
 
 ## Commands
 

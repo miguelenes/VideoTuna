@@ -68,9 +68,11 @@ The key architectural decision ([ADR-001](docs/decisions/0001-dual-training-stac
 
 ### LoRA bridge: `videotuna/utils/wan_lora_bridge.py`
 - **Purpose:** Remaps Wan 2.1 Lightning checkpoint keys (e.g., `blocks.N.self_attn.q`) to Wan 2.2 Diffusers keys (`attn1.to_q`) for validation inference.
-- **Coverage:** Must be >= 90%. Verified by `test_wan_lora_bridge.py`.
-- **Offline export:** `tools/convert_wan_lora_21_to_22.py`
-- **Debugging:** `tools/spike_wan_lora_bridge.py`
+- **Coverage:** Default >= 90%, configurable via `VIDEOTUNA_WAN_BRIDGE_MIN_COVERAGE` env var or `WanBridgeConfig.min_coverage`. Verified by `test_wan_lora_bridge.py`.
+- **Key-diff reporting:** `build_bridge_key_map()` produces a full per-key remap table; `key_diff.json` is written by the export tool.
+- **Parity checking:** `verify_runtime_export_parity()` compares runtime bridge remap vs offline export remap to detect divergent key handling.
+- **Offline export:** `tools/convert_wan_lora_21_to_22.py` writes `high_noise.safetensors`, `low_noise.safetensors`, `manifest.json`, and `key_diff.json`.
+- **Debugging:** `tools/spike_wan_lora_bridge.py` supports `--diff`, `--check-parity`, `--expert-map`, `--min-coverage`.
 
 ### Settings: `videotuna/settings.py`
 - **Class:** `PrivTuneSettings` (pydantic-settings)
