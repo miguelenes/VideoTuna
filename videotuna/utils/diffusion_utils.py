@@ -73,7 +73,8 @@ def make_ddim_timesteps(
     if ddim_discr_method == "uniform":
         c = num_ddpm_timesteps // num_ddim_timesteps
         ddim_timesteps = np.asarray(list(range(0, num_ddpm_timesteps, c)))
-        # add one to get the final alpha values right (the ones from first scale to data during sampling)
+        # add one to get the final alpha values right (the ones from first
+        # scale to data during sampling)
         steps_out = ddim_timesteps + 1
     elif ddim_discr_method == "uniform_trailing":
         c = num_ddpm_timesteps / num_ddim_timesteps
@@ -85,7 +86,8 @@ def make_ddim_timesteps(
         ddim_timesteps = (
             (np.linspace(0, np.sqrt(num_ddpm_timesteps * 0.8), num_ddim_timesteps)) ** 2
         ).astype(int)
-        # add one to get the final alpha values right (the ones from first scale to data during sampling)
+        # add one to get the final alpha values right (the ones from first
+        # scale to data during sampling)
         steps_out = ddim_timesteps + 1
     else:
         raise NotImplementedError(
@@ -139,7 +141,8 @@ def betas_for_alpha_bar(num_diffusion_timesteps, alpha_bar, max_beta=0.999):
 
 def rescale_zero_terminal_snr(betas):
     """
-    Rescales betas to have zero terminal SNR Based on https://arxiv.org/pdf/2305.08891.pdf (Algorithm 1)
+    Rescales betas to have zero terminal SNR Based on
+    https://arxiv.org/pdf/2305.08891.pdf (Algorithm 1)
 
     Args:
         betas (`numpy.ndarray`):
@@ -174,8 +177,9 @@ def rescale_zero_terminal_snr(betas):
 
 def rescale_noise_cfg(noise_cfg, noise_pred_text, guidance_rescale=0.0):
     """
-    Rescale `noise_cfg` according to `guidance_rescale`. Based on findings of [Common Diffusion Noise Schedules and
-    Sample Steps are Flawed](https://arxiv.org/pdf/2305.08891.pdf). See Section 3.4
+    Rescale `noise_cfg` according to `guidance_rescale`. Based on findings of
+    [Common Diffusion Noise Schedules and Sample Steps are
+    Flawed](https://arxiv.org/pdf/2305.08891.pdf). See Section 3.4
     """
     std_text = noise_pred_text.std(
         dim=list(range(1, noise_pred_text.ndim)), keepdim=True
@@ -183,7 +187,8 @@ def rescale_noise_cfg(noise_cfg, noise_pred_text, guidance_rescale=0.0):
     std_cfg = noise_cfg.std(dim=list(range(1, noise_cfg.ndim)), keepdim=True)
     # rescale the results from guidance (fixes overexposure)
     noise_pred_rescaled = noise_cfg * (std_text / std_cfg)
-    # mix with the original results from guidance by factor guidance_rescale to avoid "plain looking" images
+    # mix with the original results from guidance by factor guidance_rescale
+    # to avoid "plain looking" images
     noise_cfg = (
         guidance_rescale * noise_pred_rescaled + (1 - guidance_rescale) * noise_cfg
     )

@@ -38,7 +38,8 @@ precision_to_dtype = {
 
 def get_resize_crop_region_for_grid(src, target):
     """
-    Returns the centered crop region grid for a resized image to the target size while preserving aspect ratio.
+    Returns the centered crop region grid for a resized image to the target
+    size while preserving aspect ratio.
     src: (h, w)
     target: (h, w)
     """

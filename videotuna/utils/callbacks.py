@@ -83,7 +83,7 @@ class VideoTunaModelCheckpoint(pl.callbacks.ModelCheckpoint):
         batch: Any,
         batch_idx: int,
     ) -> None:
-        """Save checkpoint on train batch end if we meet the criteria for `every_n_train_steps`"""
+        """Save checkpoint on train batch end when `every_n_train_steps` met."""
         if self._should_skip_saving_checkpoint(trainer):
             return
         skip_batch = self._every_n_train_steps < 1 or (
@@ -269,7 +269,7 @@ class VideoTunaModelCheckpoint(pl.callbacks.ModelCheckpoint):
     def _format_ckpt_path(
         self, monitor_candidates: dict[str, Tensor], prefix: str | None = None
     ) -> str:
-        """Format the checkpoint path with the current values of monitored quantities."""
+        """Format checkpoint path with current values of monitored quantities."""
         epoch_tensor = monitor_candidates.get("epoch")
         step_tensor = monitor_candidates.get("step")
         assert epoch_tensor is not None and step_tensor is not None
@@ -423,7 +423,7 @@ class ImageLogger(Callback):
 
 
 class TrainingMetricsCallback(Callback):
-    """Log per-epoch wall time and peak GPU memory to metrics.json in the run directory."""
+    """Log per-epoch wall time and peak GPU memory to metrics.json in run dir."""
 
     def __init__(self, save_dir: Optional[str] = None):
         self.save_dir = save_dir

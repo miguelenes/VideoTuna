@@ -51,8 +51,8 @@ class DatasetFromCSV(torch.utils.data.Dataset):
             ```
 
         data_root : str or list
-            the root path of the data item. If the path in the csv file is a relative path,
-            the data_root will be added to the file path.
+            the root path of the data item. If the path in the csv file is a
+            relative path, the data_root will be added to the file path.
 
         transform : callable
             the transform function to process the video/image data.
@@ -64,7 +64,8 @@ class DatasetFromCSV(torch.utils.data.Dataset):
             the interval of the sampled frames.
 
         train : bool
-            if True, the dataset is for training. Otherwise, the dataset is for validation.
+            if True, the dataset is for training. Otherwise, the dataset is for
+            validation.
 
         split_val : bool
             if True, split the dataset into training and validation dataset.

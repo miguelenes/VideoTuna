@@ -5,9 +5,9 @@ import torch
 class TrainBase(pl.LightningModule):
     """
     Base class for training models using PyTorch Lightning.
-    This class extends pl.LightningModule and provides a template for implementing
-    custom training logic. Users should inherit from this class and override the necessary
-    methods to define their training process.
+    This class extends pl.LightningModule and provides a template for
+    implementing custom training logic. Users should inherit from this class and
+    override the necessary methods to define their training process.
     """
 
     def __init__(self):
@@ -20,21 +20,24 @@ class TrainBase(pl.LightningModule):
     def configure_optimizers(self):
         """
         Configures the optimizers and learning rate schedulers.
-        This method should be overridden in the child class to define the optimizers and learning rate schedules.
+        This method should be overridden in the child class to define the
+        optimizers and learning rate schedules.
         """
         raise NotImplementedError("Please implement the configure_optimizers method")
 
     def forward(self):
         """
         Defines the forward pass of the model.
-        This method should be overridden in the child class to define the model's forward pass.
+        This method should be overridden in the child class to define the model's
+        forward pass.
         """
         raise NotImplementedError("Please implement the forward method")
 
     def training_step(self, batch, batch_idx):
         """
         Defines a single training step.
-        This method should be overridden in the child class to implement the logic for a single training step.
+        This method should be overridden in the child class to implement the
+        logic for a single training step.
 
         :param batch: A batch of input data.
         :param batch_idx: The index of the current batch.
@@ -46,7 +49,8 @@ class TrainBase(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         """
         Defines a single validation step.
-        This method can be overridden in the child class to implement the logic for a single validation step.
+        This method can be overridden in the child class to implement the logic
+        for a single validation step.
         If not overridden, it does nothing by default.
 
         :param batch: A batch of input data.

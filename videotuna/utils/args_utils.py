@@ -185,7 +185,8 @@ def process_savedir(savedir: str):
 def print_inference_config(inference_config: DictConfig):
     """
     Print the basic information of the inference config.
-    Such as the mode, savedir, the seed, the height, width, frames, fps, n_samples_prompt, bs.
+    Such as the mode, savedir, the seed, the height, width, frames, fps,
+    n_samples_prompt, bs.
 
     :param inference_config: The inference config.
     """

@@ -55,14 +55,14 @@ def load_model_checkpoint(model, ckpt):
             for key in state_dict["module"].keys():
                 new_pl_sd[key[16:]] = state_dict["module"][key]
             model.load_state_dict(new_pl_sd, strict=full_strict)
-        except:
+        except Exception:
             if "state_dict" in list(state_dict.keys()):
                 state_dict = state_dict["state_dict"]
             try:
                 model.model.diffusion_model.load_state_dict(
                     state_dict, strict=full_strict
                 )
-            except:
+            except Exception:
                 model.load_state_dict(state_dict, strict=False)
         return model
 
@@ -84,7 +84,8 @@ def load_inputs_i2v(input_dir, video_size=(256, 256), video_frames=16):
     if len(prompt_files) > 1:
         # only use the first one (sorted by name) if multiple exist
         print(
-            f"Warning: multiple prompt files exist. The one {os.path.split(prompt_files[0])[1]} is used."
+            "Warning: multiple prompt files exist. The one "
+            f"{os.path.split(prompt_files[0])[1]} is used."
         )
         prompt_file = prompt_files[0]
     elif len(prompt_files) == 1:
@@ -134,7 +135,8 @@ def load_inputs_v2v(input_dir, video_size=None, video_frames=None):
     if len(prompt_files) > 1:
         # only use the first one (sorted by name) if multiple exist
         print(
-            f"Warning: multiple prompt files exist. The one {os.path.split(prompt_files[0])[1]} is used."
+            "Warning: multiple prompt files exist. The one "
+            f"{os.path.split(prompt_files[0])[1]} is used."
         )
         prompt_file = prompt_files[0]
     elif len(prompt_files) == 1:
@@ -143,7 +145,7 @@ def load_inputs_v2v(input_dir, video_size=None, video_frames=None):
         print(prompt_files)
         raise ValueError(f"Error: found NO prompt file in {input_dir}")
     prompt_list = load_prompts_from_txt(prompt_file)
-    n_samples = len(prompt_list)
+    len(prompt_list)
 
     ## load videos
     video_filepaths = get_target_filelist(input_dir, ext="mp4")
@@ -156,9 +158,7 @@ def load_inputs_v2v(input_dir, video_size=None, video_frames=None):
 
 def open_video_to_tensor(filepath, video_width=None, video_height=None):
     if video_width is None and video_height is None:
-        vidreader = VideoReader(
-            filepath, width=video_width, height=video_height
-        )
+        vidreader = VideoReader(filepath, width=video_width, height=video_height)
     else:
         vidreader = VideoReader(filepath)
     frame_indices = list(range(len(vidreader)))
@@ -174,16 +174,15 @@ def load_video_batch(
     """
     Notice about some special cases:
     1. video_frames=-1 means to take all the frames (with fs=1)
-    2. when the total video frames is less than required, padding strategy will be used (repreated last frame)
+    2. when the total video frames is less than required, padding strategy
+       will be used (repreated last frame)
     """
     fps_list = []
     batch_tensor = []
     assert frame_stride > 0, "valid frame stride should be a positive interge!"
     for filepath in filepath_list:
         padding_num = 0
-        vidreader = VideoReader(
-            filepath, width=video_size[1], height=video_size[0]
-        )
+        vidreader = VideoReader(filepath, width=video_size[1], height=video_size[0])
         fps = vidreader.get_avg_fps()
         total_frames = len(vidreader)
         max_valid_frames = (total_frames - 1) // frame_stride + 1
@@ -206,7 +205,8 @@ def load_video_batch(
                 [frame_tensor, *([frame_tensor[:, -1:, :, :]] * padding_num)], dim=1
             )
             print(
-                f"{os.path.split(filepath)[1]} is not long enough: {padding_num} frames padded."
+                f"{os.path.split(filepath)[1]} is not long enough: "
+                f"{padding_num} frames padded."
             )
         batch_tensor.append(frame_tensor)
         sample_fps = int(fps / frame_stride)
@@ -221,9 +221,7 @@ def load_image_batch(filepath_list, image_size=(256, 256)):
         _, filename = os.path.split(filepath)
         _, ext = os.path.splitext(filename)
         if ext == ".mp4":
-            vidreader = VideoReader(
-                filepath, width=image_size[1], height=image_size[0]
-            )
+            vidreader = VideoReader(filepath, width=image_size[1], height=image_size[0])
             frame = vidreader.get_batch([0])
             img_tensor = (
                 torch.tensor(frame.asnumpy()).squeeze(0).permute(2, 0, 1).float()

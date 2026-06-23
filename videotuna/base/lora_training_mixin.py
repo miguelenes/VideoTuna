@@ -38,7 +38,8 @@ class LoraTrainingMixin:
             self.use_lora = True
             self.lora_path = config.get("ckpt_path")
             logger.info(
-                f"self.use_lora: {self.use_lora} self.lora_path: {self.lora_path} self.lora_params: {self.lora_params}"
+                f"self.use_lora: {self.use_lora} self.lora_path: {self.lora_path} "
+                f"self.lora_params: {self.lora_params}"
             )
 
     def set_trainable_components(
@@ -58,7 +59,8 @@ class LoraTrainingMixin:
             model = getattr(self, component)
             if model is None or not isinstance(model, nn.Module):
                 logger.info(
-                    f"Skipping eval component {component} since it is not set or not module"
+                    f"Skipping eval component {component} since it is not set or "
+                    "not module"
                 )
                 continue
 

@@ -30,7 +30,9 @@ class DDPM:
         linear_end=2e-2,
         cosine_s=8e-3,
         given_betas=None,
-        v_posterior=0.0,  # weight for choosing posterior variance as sigma = (1-v) * beta_tilde + v * beta
+        # weight for choosing posterior variance as
+        # sigma = (1-v) * beta_tilde + v * beta
+        v_posterior=0.0,
         learn_logvar=False,
         logvar_init=0.0,
         rescale_betas_zero_snr=False,
@@ -116,7 +118,8 @@ class DDPM:
         ) / (1.0 - alphas_cumprod) + self.v_posterior * betas
         # above: equal to 1. / (1. / (1. - alpha_cumprod_tm1) + alpha_t / beta_t)
         self.posterior_variance = to_torch(posterior_variance)
-        # below: log calculation clipped because the posterior variance is 0 at the beginning of the diffusion chain
+        # below: log calculation clipped because the posterior variance
+        # is 0 at the beginning of the diffusion chain
         self.posterior_log_variance_clipped = to_torch(
             np.log(np.maximum(posterior_variance, 1e-20))
         )
@@ -179,7 +182,10 @@ class DDPM:
 
     def predict_start_from_z_and_v(self, x_t, t, v):
         # self.register_buffer('sqrt_alphas_cumprod', to_torch(np.sqrt(alphas_cumprod)))
-        # self.register_buffer('sqrt_one_minus_alphas_cumprod', to_torch(np.sqrt(1. - alphas_cumprod)))
+        # self.register_buffer(
+        #     'sqrt_one_minus_alphas_cumprod',
+        #     to_torch(np.sqrt(1. - alphas_cumprod)),
+        # )
         return (
             extract_into_tensor(self.sqrt_alphas_cumprod, t, x_t.shape) * x_t
             - extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t, x_t.shape) * v

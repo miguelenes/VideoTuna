@@ -102,7 +102,7 @@ def cuda_is_available() -> bool:
 
 
 def accelerator_device_string() -> str:
-    """PyTorch device type string for GPU autocast/offload ('cuda' for CUDA and ROCm)."""
+    """PyTorch device type string for GPU autocast/offload (cuda for CUDA/ROCm)."""
     return "cuda" if gpu_is_available() else "cpu"
 
 
@@ -131,7 +131,8 @@ def normalize_device_prefer(prefer: str | int | None) -> str | None:
     if re.match(r"^cuda:\d+$", text):
         return text
     raise ValueError(
-        f"Invalid device {prefer!r}. Expected cpu, cuda, cuda:N, or an integer GPU index."
+        f"Invalid device {prefer!r}. Expected cpu, cuda, cuda:N, "
+        "or an integer GPU index."
     )
 
 

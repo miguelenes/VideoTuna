@@ -69,10 +69,12 @@ def validate_cpu_offload_flags(args: Any) -> None:
     )
     if offload:
         raise RuntimeError(
-            "CPU offload flags (--enable_model_cpu_offload, --enable_sequential_cpu_offload, "
-            "--memory-preset low_vram) require a GPU accelerator to stage weights. "
+            "CPU offload flags (--enable_model_cpu_offload, "
+            "--enable_sequential_cpu_offload, --memory-preset low_vram) "
+            "require a GPU accelerator to stage weights. "
             "They are not CPU-only inference modes.\n"
-            "Install a GPU stack (poetry install --extras cuda) or run without offload flags."
+            "Install a GPU stack (poetry install --extras cuda) or run "
+            "without offload flags."
         )
 
 

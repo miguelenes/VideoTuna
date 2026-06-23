@@ -142,7 +142,8 @@ class CheckpointMixin:
             num_updated_keys = len(all_keys) - len(missing_keys)
             num_unexpected_keys = len(unexpected_keys)
             logger.info(
-                f"{num_updated_keys} parameters are loaded from {ckpt_path}. {num_unexpected_keys} parameters are unexpected."
+                f"{num_updated_keys} parameters are loaded from {ckpt_path}. "
+                f"{num_unexpected_keys} parameters are unexpected."
             )
             return model
         else:

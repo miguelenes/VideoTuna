@@ -47,14 +47,19 @@ class GenerationBase(
     pipeline: Any | None = None
 
     """
-    The GenerationFlow class is a generative model class that inherits from both TrainBase and InferenceBase.
-    It manages the instantiation of different stages of a generative process, including a denoiser and a scheduler.
+    The GenerationFlow class is a generative model class that inherits from both
+    TrainBase and InferenceBase.
+    It manages the instantiation of different stages of a generative process,
+    including a denoiser and a scheduler.
     It also configures optimizers and learning rate schedulers for training.
 
     The main components of the model are:
-        - `first_stage`: a VAE model that encodes the input video into a latent space and decodes it back to the original video.
-        - `cond_stage`: a conditional model that takes the latent space and the conditioning text as input and generates the output video.
-        - `denoiser`: a denoiser model that takes the noisy output of the `cond_stage` and tries to remove the noise.
+        - `first_stage`: a VAE model that encodes the input video into a latent
+          space and decodes it back to the original video.
+        - `cond_stage`: a conditional model that takes the latent space and the
+          conditioning text as input and generates the output video.
+        - `denoiser`: a denoiser model that takes the noisy output of the
+          `cond_stage` and tries to remove the noise.
         - `scheduler`: a scheduler that controls denosing and sampling.
     """
 
@@ -70,15 +75,23 @@ class GenerationBase(
         pipeline_only: bool = False,
     ):
         """
-        Initializes the GenerationFlow class with configurations for different stages and components.
+        Initializes the GenerationFlow class with configurations for different
+        stages and components.
 
-        :param first_stage_config: Dictionary containing configuration for the first stage model.
-        :param cond_stage_config: Dictionary containing configuration for the conditional stage model.
-        :param cond_stage_2_config: Dictionary containing configuration for the conditional stage model 2, can be none.
-        :param denoiser_config: Dictionary containing configuration for the denoiser model.
-        :param scheduler_config: Dictionary containing configuration for the diffusion scheduler.
-        :param trainable_components: The components of the model that should be trainable.
-        :param pipeline_only: When True, skip stage instantiation (Diffusers pipeline flows).
+        :param first_stage_config: Dictionary containing configuration for the
+            first stage model.
+        :param cond_stage_config: Dictionary containing configuration for the
+            conditional stage model.
+        :param cond_stage_2_config: Dictionary containing configuration for the
+            conditional stage model 2, can be none.
+        :param denoiser_config: Dictionary containing configuration for the
+            denoiser model.
+        :param scheduler_config: Dictionary containing configuration for the
+            diffusion scheduler.
+        :param trainable_components: The components of the model that should be
+            trainable.
+        :param pipeline_only: When True, skip stage instantiation (Diffusers
+            pipeline flows).
         """
         super().__init__()
 
@@ -132,7 +145,8 @@ class GenerationBase(
         """
         Configures the optimizers and learning rate schedulers for the generative model.
 
-        :return: A list containing the optimizer and optionally a list containing the learning rate scheduler.
+        :return: A list containing the optimizer and optionally a list
+            containing the learning rate scheduler.
         """
         assert self.lr_config is not None
         lr_config = self.lr_config
@@ -356,7 +370,8 @@ class GenerationBase(
         ## since loaded weight will ovrride params, make sure it is been handled
         if trainer.strategy.__class__.__name__ == "DeepSpeedStrategy":
             logger.info(
-                "Make parameter contiguous in case deepseed does not allow non contigouous data"
+                "Make parameter contiguous in case deepseed does not allow "
+                "non contigouous data"
             )
             for param in self.parameters():
                 param.data = param.data.contiguous()

@@ -138,7 +138,8 @@ class InferenceBase:
         fps: int = 10,
     ) -> None:
         """
-        Save a batch of video tensors to the specified directory with filenames based on prompts.
+        Save a batch of video tensors to the specified directory with filenames
+        based on prompts.
 
         :param batch_tensors: A tensor containing the batch of video data.
         :param savedir: The directory where the videos will be saved.
@@ -211,21 +212,14 @@ class InferenceBase:
         return file_list
 
     @staticmethod
-    def load_prompts_from_txt(prompt_file: str):
-        """Load and return a list of prompts from a text file, stripping whitespace."""
-        with open(prompt_file, "r") as f:
-            lines = f.readlines()
-        prompt_list = [line.strip() for line in lines if line.strip() != ""]
-        return prompt_list
-
-    @staticmethod
     def load_prompts_images(prompt_dir: str):
         # 1. load prompts
         prompt_files = InferenceBase.get_target_filelist(prompt_dir, ext="txt")
         if len(prompt_files) > 1:
             # only use the first one (sorted by name) if multiple exist
             logger.warning(
-                f"Warning: multiple prompt files exist. The one {os.path.split(prompt_files[0])[1]} is used."
+                "Warning: multiple prompt files exist. The one "
+                f"{os.path.split(prompt_files[0])[1]} is used."
             )
             prompt_file = prompt_files[0]
         elif len(prompt_files) == 1:

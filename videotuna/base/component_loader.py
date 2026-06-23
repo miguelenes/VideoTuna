@@ -53,7 +53,8 @@ class ComponentLoader:
         """
         Instantiates the conditional stage model of the generative process.
 
-        :param config: Dictionary containing configuration for the conditional stage model.
+        :param config: Dictionary containing configuration for the conditional
+            stage model.
         """
         if config is None:
             return
@@ -79,7 +80,8 @@ class ComponentLoader:
         """
         Instantiates the conditional stage model of the generative process.
 
-        :param config: Dictionary containing configuration for the conditional stage model.
+        :param config: Dictionary containing configuration for the conditional
+            stage model.
         """
         self.cond_stage_2_model = None
         if config is not None:
