@@ -307,7 +307,9 @@ class WanDatasetValidator:
                         code="csv_missing_column",
                         severity=Severity.ERROR,
                         message="I2V CSV must have 'image_path' column",
-                        hint="Add an 'image_path' column with conditioning image paths.",
+                        hint=(
+                            "Add an 'image_path' column with conditioning image paths."
+                        ),
                     )
                 ]
             if "video_path" not in cols and "path" not in cols:

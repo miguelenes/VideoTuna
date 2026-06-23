@@ -83,7 +83,7 @@ class InferenceBase:
 
     @staticmethod
     def _get_target_filelist(data_dir: str, ext: str) -> List[str]:
-        """Return a sorted list of file paths matching the comma-separated extensions."""
+        """Return sorted file paths matching the comma-separated extensions."""
         file_list = [
             os.path.join(data_dir, f)
             for f in os.listdir(data_dir)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, fields
+from dataclasses import dataclass
 from typing import Annotated, Any, Literal
 
 from cyclopts import Parameter
@@ -15,9 +15,10 @@ DeviceMapChoice = Literal["auto"]
 
 
 @Parameter(name="*")
-@dataclass
-class StandardInferenceOptions:
+class StandardInferenceOptions(BaseModel):
     """Memory, device, and performance flags shared by all inference commands."""
+
+    model_config = ConfigDict(extra="forbid")
 
     cpu_smoke: Annotated[bool | None, Parameter(name="cpu-smoke")] = None
     device: Annotated[str | None, Parameter(name="device", alias="--gpu-id")] = None
@@ -65,9 +66,10 @@ class StandardInferenceOptions:
 
 
 @Parameter(name="*")
-@dataclass
-class InferenceRunOptions:
+class InferenceRunOptions(BaseModel):
     """Model, prompt, and sampling flags for inference."""
+
+    model_config = ConfigDict(extra="forbid")
 
     mode: str | None = None
     ckpt_path: str | None = None
@@ -171,10 +173,6 @@ class InferenceRunConfig(BaseModel):
     quant_backend: str | None = None
 
 
-def _non_null_values(options: Any) -> dict[str, Any]:
-    return {field.name: getattr(options, field.name) for field in fields(options)}
-
-
 def inference_options_to_config(
     *,
     run: InferenceRunOptions | None = None,
@@ -189,13 +187,15 @@ def inference_options_to_config(
         if preset.enable_model_cpu_offload:
             merged["enable_model_cpu_offload"] = True
 
-    for key, value in _non_null_values(run or InferenceRunOptions()).items():
-        if value is not None:
-            merged[key] = value
+    for key, value in (run or InferenceRunOptions()).model_dump(
+        exclude_none=True
+    ).items():
+        merged[key] = value
 
-    for key, value in _non_null_values(standard or StandardInferenceOptions()).items():
-        if value is not None:
-            merged[key] = value
+    for key, value in (standard or StandardInferenceOptions()).model_dump(
+        exclude_none=True
+    ).items():
+        merged[key] = value
 
     if "config" not in merged:
         raise ValueError("Inference requires a YAML config path (--config or preset).")

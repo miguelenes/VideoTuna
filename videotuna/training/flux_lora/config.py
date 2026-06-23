@@ -50,6 +50,34 @@ class FluxLoraDataConfig(BaseModel):
     text_embeds: FluxTextEmbedConfig | None = None
 
 
+_INT_FIELDS: frozenset[str] = frozenset({
+    "lora_rank",
+    "max_train_steps",
+    "checkpointing_steps",
+    "checkpoints_total_limit",
+    "train_batch_size",
+    "write_batch_size",
+    "resolution",
+    "validation_steps",
+    "validation_num_inference_steps",
+    "lr_warmup_steps",
+    "num_train_epochs",
+    "seed",
+    "validation_seed",
+    "num_workers",
+    "aspect_bucket_rounding",
+    "minimum_image_size",
+    "gradient_accumulation_steps",
+})
+
+_FLOAT_FIELDS: frozenset[str] = frozenset({
+    "learning_rate",
+    "validation_guidance",
+    "validation_guidance_rescale",
+    "caption_dropout_probability",
+})
+
+
 class FluxLoraTrainConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -102,6 +130,18 @@ class FluxLoraTrainConfig(BaseModel):
     @classmethod
     def _coerce_bool_fields(cls, value: object) -> bool:
         return _coerce_bool(value)
+
+    @field_validator(*_INT_FIELDS, mode="before")
+    @classmethod
+    def _coerce_int_fields(cls, value: object) -> int | None:
+        if value is None:
+            return None
+        return int(value)
+
+    @field_validator(*_FLOAT_FIELDS, mode="before")
+    @classmethod
+    def _coerce_float_fields(cls, value: object) -> float:
+        return float(value)
 
     @model_validator(mode="after")
     def validate_flux_constraints(self) -> Self:
@@ -202,46 +242,12 @@ def _parse_local_backend(backends: list[dict[str, Any]]) -> FluxLoraDataConfig:
 
 
 def _normalize_train_payload(raw: dict[str, Any]) -> dict[str, Any]:
-    """Normalize SimpleTuner-style keys and coerce JSON scalar types."""
-    normalized: dict[str, Any] = {}
-    for key, value in raw.items():
-        norm_key = _normalize_key(key)
-        if norm_key in {
-            "gradient_checkpointing",
-            "disable_benchmark",
-            "disable_tf32",
-        }:
-            normalized[norm_key] = _coerce_bool(value)
-        elif norm_key in {
-            "lora_rank",
-            "max_train_steps",
-            "checkpointing_steps",
-            "checkpoints_total_limit",
-            "train_batch_size",
-            "write_batch_size",
-            "resolution",
-            "validation_steps",
-            "validation_num_inference_steps",
-            "lr_warmup_steps",
-            "num_train_epochs",
-            "seed",
-            "validation_seed",
-            "num_workers",
-            "aspect_bucket_rounding",
-            "minimum_image_size",
-            "gradient_accumulation_steps",
-        }:
-            normalized[norm_key] = int(value)
-        elif norm_key in {
-            "learning_rate",
-            "validation_guidance",
-            "validation_guidance_rescale",
-            "caption_dropout_probability",
-        }:
-            normalized[norm_key] = float(value)
-        else:
-            normalized[norm_key] = value
-    return normalized
+    """Normalize SimpleTuner-style keys (strip ``--`` prefix).
+
+    Type coercion is handled by Pydantic ``mode="before"`` validators
+    on :class:`FluxLoraTrainConfig`; this function only normalises keys.
+    """
+    return {_normalize_key(key): value for key, value in raw.items()}
 
 
 def _merge_data_config(

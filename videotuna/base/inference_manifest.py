@@ -14,7 +14,6 @@ from typing import Any, Dict, List, Optional
 
 from videotuna.utils.common_utils import _strip_non_serializable_metrics
 
-
 MANIFEST_VERSION = "1.0"
 
 

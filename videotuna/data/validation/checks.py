@@ -157,8 +157,12 @@ def check_orphan_media(
                 Issue(
                     code="orphan_media",
                     severity=Severity.WARNING,
-                    message=f"Orphan {label} file not referenced in metadata: {fp.name}",
-                    hint=f"Either reference {fp.name} in your metadata CSV or remove it.",
+                    message=(
+                        f"Orphan {label} file not referenced in metadata: {fp.name}"
+                    ),
+                    hint=(
+                        f"Either reference {fp.name} in your metadata CSV or remove it."
+                    ),
                 )
             )
 
