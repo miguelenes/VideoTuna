@@ -16,7 +16,8 @@ def init_workspace(name, logdir, model_config, lightning_config, rank=0):
     cfgdir = os.path.join(workdir, "configs")
     loginfo = os.path.join(workdir, "loginfo")
 
-    # Create logdirs and save configs (all ranks will do to avoid missing directory error if rank:0 is slower)
+    # Create logdirs and save configs (all ranks will do to avoid missing directory
+    # error if rank:0 is slower)
     os.makedirs(workdir, exist_ok=True)
     os.makedirs(ckptdir, exist_ok=True)
     os.makedirs(cfgdir, exist_ok=True)
@@ -176,7 +177,7 @@ def load_checkpoints(model, model_cfg):
                 for key in pl_sd["module"].keys():
                     new_pl_sd[key[16:]] = pl_sd["module"][key]
                 model.load_state_dict(new_pl_sd)
-        except:
+        except Exception:
             if "state_dict" in pl_sd.keys():
                 model.load_state_dict(pl_sd["state_dict"], strict=False)
             else:
@@ -185,13 +186,15 @@ def load_checkpoints(model, model_cfg):
         """
         try:
             model = model.load_from_checkpoint(pretrained_ckpt, **model_cfg.params)
-        except:
-            mainlogger.info("[Warning] checkpoint NOT complete matched. To adapt by skipping ...")
+        except Exception:
+            mainlogger.info("[Warning] checkpoint NOT complete matched. To adapt by
+                skipping ...")
             state_dict = torch.load(pretrained_ckpt, map_location=f"cpu")
             if "state_dict" in list(state_dict.keys()):
                 state_dict = state_dict["state_dict"]
             model_state_dict = model.state_dict()
-            ## for layer with channel changed (e.g. GEN 1's conditon-concatenating setting)
+            # # for layer with channel changed (e.g. GEN 1's conditon-concatenating
+            # setting)
             for n, p in model_state_dict.items():
                 if p.shape != state_dict[n].shape:
                     mainlogger.info(f"Skipped parameter [{n}] from pretrained! ")
@@ -244,7 +247,7 @@ def get_autoresume_path(logdir):
             gs = tmp["global_step"]
             mainlogger.info(f"[INFO] Resume from epoch {e}, global step {gs}!")
             del tmp
-        except:
+        except Exception:
             try:
                 mainlogger.info("Load last.ckpt failed!")
                 ckpts = sorted(
@@ -269,7 +272,8 @@ def get_autoresume_path(logdir):
     else:
         resume_checkpt_path = None
         mainlogger.info(
-            f"[INFO] no checkpoint found in current workspace: {os.path.join(logdir, 'checkpoints')}"
+            f"[INFO] no checkpoint found in current workspace: {os.path.join(logdir,
+                'checkpoints')}"
         )
 
     return resume_checkpt_path

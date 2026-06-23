@@ -1,19 +1,19 @@
 import copy
 import logging
-
-from omegaconf import OmegaConf
-
-mainlogger = logging.getLogger("mainlogger")
-
 from collections import OrderedDict
 from contextlib import contextmanager
 
 import torch
+from omegaconf import OmegaConf
 from safetensors import safe_open
 
 from videotuna.utils.common_utils import instantiate_from_config
 
-# from lvdm.personalization.lora import net_load_lora
+mainlogger = logging.getLogger("mainlogger")
+
+
+def net_load_lora(*_args, **_kwargs):
+    raise NotImplementedError("lvdm LoRA loading is unavailable in PrivTune")
 
 
 @contextmanager
@@ -103,7 +103,8 @@ def load_from_pretrainedSD_checkpoint(
     mainlogger.info(f"Num of parameters of source model: {len(sd_state_dict.keys())}")
 
     if adapt_keyname:
-        ## adapting to standard 2d network: modify the key name because of the add of temporal-attention
+        # # adapting to standard 2d network: modify the key name because of the add of
+        # temporal-attention
         mapping_dict = {
             "middle_block.2": "middle_block.3",
             "output_blocks.5.2": "output_blocks.5.3",
@@ -141,7 +142,7 @@ def load_from_pretrainedSD_checkpoint(
     # load the new state dict
     try:
         model.load_state_dict(model_state_dict)
-    except:
+    except Exception:
         state_dict = torch.load(model_state_dict, map_location="cpu")
         if "state_dict" in list(state_dict.keys()):
             state_dict = state_dict["state_dict"]
@@ -221,7 +222,8 @@ def load_partial_weights(
     mainlogger.info(f"Num of parameters of source model: {len(pretrained_dict.keys())}")
 
     if adapt_keyname:
-        ## adapting to menghan's standard 2d network: modify the key name because of the add of temporal-attention
+        # # adapting to menghan's standard 2d network: modify the key name because of
+        # the add of temporal-attention
         mapping_dict = {
             "middle_block.2": "middle_block.3",
             "output_blocks.5.2": "output_blocks.5.3",
@@ -265,7 +267,7 @@ def load_partial_weights(
     # load the new state dict
     try:
         model2.load_state_dict(model_dict)
-    except:
+    except Exception:
         # if parameter size mismatch, skip them
         skipped = []
         for n, p in model_dict.items():
@@ -294,7 +296,8 @@ def load_autoencoder(model, config_path=None, ckpt_path=None, device=None):
     if ckpt_path is None:
         ckpt_path = "models/ldm/text2img-large/model.ckpt"
     # if device is None:
-    #     device = torch.device(f"cuda:{dist.get_rank()}") if torch.cuda.is_available() else torch.device("cpu")
+    #     device = torch.device(f"cuda:{dist.get_rank()}") if torch.cuda.is_available()
+    # else torch.device("cpu")
 
     pretrained_ldm = init_and_load_ldm_model(config_path, ckpt_path, device)
     autoencoder_dict = {}
@@ -342,7 +345,8 @@ def convert_lora(
     alpha=0.6,
 ):
     # load base model
-    # pipeline = StableDiffusionPipeline.from_pretrained(base_model_path, torch_dtype=torch.float32)
+    # pipeline = StableDiffusionPipeline.from_pretrained(base_model_path,
+    # torch_dtype=torch.float32)
 
     # load LoRA weight from .safetensors
     # state_dict = load_file(checkpoint_path)
@@ -365,7 +369,8 @@ def convert_lora(
 
         print(f"key={key}")
         if "text" in key and LORA_PREFIX_TEXT_ENCODER in key:
-            # layer_infos = key.split(".")[0].split(LORA_PREFIX_TEXT_ENCODER + "_")[-1].split("_")
+            # layer_infos = key.split(".")[0].split(LORA_PREFIX_TEXT_ENCODER +
+            # "_")[-1].split("_")
             layer_infos = ["cond_stage_model", "transformer"] + key.split(".")[0].split(
                 LORA_PREFIX_TEXT_ENCODER + "_"
             )[-1].split("_")
@@ -445,7 +450,7 @@ def change_sd_weight(
 ):
     model_sd = model.state_dict()
     device = model_sd[list(model_sd.keys())[0]].device
-    is_diffuser = check_diffuser_ckpt(sd_sd)
+    check_diffuser_ckpt(sd_sd)
     for k, v in sd_sd.items():
         if "cond_stage_model.model.transformer.text_model.embeddings" in k:
             continue

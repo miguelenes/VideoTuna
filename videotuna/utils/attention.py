@@ -72,7 +72,8 @@ def get_attn_backend() -> AttnBackend:
                     "AMD ROCm" if detect_compute_backend() == "rocm" else "CPU"
                 )
                 raise RuntimeError(
-                    f"VIDEOTUNA_ATTN_BACKEND=flash is not supported on {backend_label}. "
+                    f"VIDEOTUNA_ATTN_BACKEND=flash is not supported on {backend_label}.
+                        "
                     "Use VIDEOTUNA_ATTN_BACKEND=sdpa or eager. "
                     "See docs/install-rocm.md or docs/install-cpu.md."
                 )
@@ -84,7 +85,8 @@ def get_attn_backend() -> AttnBackend:
                     )
                 logger.warning(
                     "VIDEOTUNA_ATTN_BACKEND=flash requested but flash-attn is not "
-                    "installed; falling back to sdpa. Set VIDEOTUNA_ATTN_BACKEND_STRICT=1 "
+                    "installed; falling back to sdpa. Set
+                        VIDEOTUNA_ATTN_BACKEND_STRICT=1 "
                     "to fail instead."
                 )
                 return "sdpa"
@@ -307,7 +309,7 @@ def attention_varlen(
         raise ValueError("batch_size is required for non-flash varlen fallback")
 
     # Reshape packed varlen tensors back to padded batch for sdpa/eager.
-    total_q = q.shape[0]
+    q.shape[0]
     n_heads = q.shape[1]
     head_dim = q.shape[2]
     q_pad = q.view(batch_size, max_seqlen_q, n_heads, head_dim)

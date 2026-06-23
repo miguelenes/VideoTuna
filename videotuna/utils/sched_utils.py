@@ -32,8 +32,13 @@ def noise_like(
     dtype: Optional[torch.dtype] = None,
 ) -> torch.Tensor:
     dtype = dtype or torch.float32
-    repeat_noise = lambda: torch.randn(
-        (1, *shape[1:]), device=device, dtype=dtype
-    ).repeat(shape[0], *((1,) * (len(shape) - 1)))
-    noise = lambda: torch.randn(shape, device=device, dtype=dtype)
+
+    def repeat_noise():
+        return torch.randn((1, *shape[1:]), device=device, dtype=dtype).repeat(
+            shape[0], *((1,) * (len(shape) - 1))
+        )
+
+    def noise():
+        return torch.randn(shape, device=device, dtype=dtype)
+
     return repeat_noise() if repeat else noise()

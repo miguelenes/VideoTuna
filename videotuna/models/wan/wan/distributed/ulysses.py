@@ -25,7 +25,7 @@ def distributed_attention(
     """
     if not dist.is_initialized():
         raise ValueError("distributed group should be initialized.")
-    b = q.shape[0]
+    q.shape[0]
 
     # gather q/k/v sequence
     q = all_to_all(q, scatter_dim=2, gather_dim=1)

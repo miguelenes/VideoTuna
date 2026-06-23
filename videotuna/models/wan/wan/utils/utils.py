@@ -236,7 +236,7 @@ def download_cosyvoice_repo(repo_path):
         import git
     except ImportError:
         raise ImportError("failed to import git, please run pip install GitPython")
-    repo = git.Repo.clone_from(
+    git.Repo.clone_from(
         "https://github.com/FunAudioLLM/CosyVoice.git",
         repo_path,
         multi_options=["--recursive"],

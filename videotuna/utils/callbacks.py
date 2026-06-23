@@ -3,12 +3,6 @@ import time
 from typing import Any, Optional, Union
 from weakref import proxy
 
-from typing_extensions import override
-
-from videotuna.utils.logging_config import bound_logger
-
-mainlogger = bound_logger(phase="t2v", flow="wanvideo")
-
 import pytorch_lightning as pl
 import torch
 import torchvision
@@ -16,10 +10,14 @@ from pytorch_lightning.callbacks import Callback
 from pytorch_lightning.utilities import rank_zero_info, rank_zero_only
 from pytorch_lightning.utilities.types import STEP_OUTPUT
 from torch import Tensor
+from typing_extensions import override
 
 from videotuna.utils.device_utils import empty_accelerator_cache, gpu_is_available
+from videotuna.utils.logging_config import bound_logger
 
 from .save_video import log_local, prepare_to_log
+
+mainlogger = bound_logger(phase="t2v", flow="wanvideo")
 
 
 class LoraModelCheckpoint(pl.callbacks.ModelCheckpoint):
@@ -102,7 +100,8 @@ class VideoTunaModelCheckpoint(pl.callbacks.ModelCheckpoint):
                 or (now - prev_time_check) < train_time_interval.total_seconds()
             )
             # in case we have time differences across ranks
-            # broadcast the decision on whether to checkpoint from rank 0 to avoid possible hangs
+            # broadcast the decision on whether to checkpoint from rank 0 to avoid
+            # possible hangs
             skip_time = trainer.strategy.broadcast(skip_time)
 
         if skip_batch and skip_time:
@@ -138,7 +137,8 @@ class VideoTunaModelCheckpoint(pl.callbacks.ModelCheckpoint):
         if pl_module is None:
             return
 
-        # filepath = self.format_checkpoint_name(monitor_candidates, self.CHECKPOINT_NAME_LAST)
+        # filepath = self.format_checkpoint_name(monitor_candidates,
+        # self.CHECKPOINT_NAME_LAST)
         filepath = self._format_ckpt_path(monitor_candidates, prefix="flow")
 
         if self._enable_version_counter:
@@ -174,7 +174,8 @@ class VideoTunaModelCheckpoint(pl.callbacks.ModelCheckpoint):
         if pl_module is None:
             return
         if self.save_flow:
-            # save all the state including the model, optimizer, and any state that the user has added
+            # save all the state including the model, optimizer, and any state that the
+            # user has added
             self._save_flow_checkpoint(trainer, pl_module, filepath)
         if self.save_only_selected_model:
             # only save the trained parameters
@@ -407,8 +408,10 @@ class ImageLogger(Callback):
     def on_validation_batch_end(
         self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=None
     ):
-        ## different with validation_step() that saving the whole validation set and only keep the latest,
-        ## it records the performance of every validation (without overwritten) by only keep a subset
+        # # different with validation_step() that saving the whole validation set and
+        # only keep the latest,
+        # # it records the performance of every validation (without overwritten) by only
+        # keep a subset
         if self.batch_freq != -1 and pl_module.logdir:
             self.log_batch_imgs(pl_module, batch, batch_idx, split="val")
         if hasattr(pl_module, "calibrate_grad_norm"):
