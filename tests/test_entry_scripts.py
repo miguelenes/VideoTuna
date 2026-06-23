@@ -12,9 +12,9 @@ ENTRY_SCRIPTS = (
 def test_entry_scripts_do_not_manipulate_sys_path():
     for script_path in ENTRY_SCRIPTS:
         source = script_path.read_text(encoding="utf-8")
-        assert (
-            "sys.path.insert" not in source
-        ), f"{script_path.name} must not use sys.path.insert"
-        assert (
-            "/src" not in source
-        ), f"{script_path.name} must not reference dead src/ path"
+        assert "sys.path.insert" not in source, (
+            f"{script_path.name} must not use sys.path.insert"
+        )
+        assert "/src" not in source, (
+            f"{script_path.name} must not reference dead src/ path"
+        )

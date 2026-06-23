@@ -35,7 +35,7 @@ class InferenceBase:
         """
         if n_per_prompt == 1:
             if mode == "default":
-                newnames = [f"prompt-{idx+1:04d}" for idx in range(len(savename))]
+                newnames = [f"prompt-{idx + 1:04d}" for idx in range(len(savename))]
             elif mode == "prompt":
                 newnames = []
                 for idx, name in enumerate(savename):
@@ -47,7 +47,7 @@ class InferenceBase:
                 newnames = []
                 for idx in range(len(savename)):
                     for i in range(n_per_prompt):
-                        newnames.append(f"prompt-{idx+1:04d}-{i:02d}")
+                        newnames.append(f"prompt-{idx + 1:04d}-{i:02d}")
             elif mode == "prompt":
                 newnames = []
                 for idx, name in enumerate(savename):
@@ -99,9 +99,9 @@ class InferenceBase:
         bs = batch_tensors.shape[0]
         n_samples = batch_tensors.shape[1]
         assert batch_tensors.dim() == 6, "Invalid batch shape."
-        assert n_samples * bs == len(
-            filenames
-        ), "Number of filenames must match the batch size."
+        assert n_samples * bs == len(filenames), (
+            "Number of filenames must match the batch size."
+        )
 
         c = 0
         for idx, vid_tensor in enumerate(batch_tensors):
