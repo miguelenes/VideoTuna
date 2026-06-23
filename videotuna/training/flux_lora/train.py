@@ -67,6 +67,7 @@ def _flux_tracker_config(config: FluxLoraTrainConfig) -> dict[str, Any]:
         "learning_rate": config.learning_rate,
         "max_train_steps": config.max_train_steps,
         "resolution": config.resolution,
+        "gradient_accumulation_steps": config.gradient_accumulation_steps,
         "pretrained_model_name_or_path": config.pretrained_model_name_or_path,
     }
 
@@ -399,6 +400,7 @@ def train(config: FluxLoraTrainConfig, data_config: FluxLoraDataConfig) -> None:
     accelerator = create_flux_accelerator(
         output_dir,
         mixed_precision=config.mixed_precision,
+        gradient_accumulation_steps=config.gradient_accumulation_steps,
     )
     log = logger.bind(device=resolve_device_label(accelerator.device))
     if accelerator.is_main_process:
@@ -420,10 +422,11 @@ def train(config: FluxLoraTrainConfig, data_config: FluxLoraDataConfig) -> None:
         global_step = checkpoint_step(resume_path)
         log.info("Resumed LoRA weights from {} (step {})", resume_path, global_step)
     elif config.resume_from_checkpoint:
-        log.info(
-            "No checkpoint found for resume_from_checkpoint={!r}; "
-            "starting from step 0",
-            config.resume_from_checkpoint,
+        raise ValueError(
+            f"No checkpoint found for resume_from_checkpoint="
+            f"{config.resume_from_checkpoint!r} under output_dir={output_dir}. "
+            "Remove resume_from_checkpoint or set it to null to start fresh, "
+            "or point output_dir at a run that contains checkpoint-* directories."
         )
 
     pipeline = FluxPipeline.from_pretrained(
@@ -467,6 +470,13 @@ def train(config: FluxLoraTrainConfig, data_config: FluxLoraDataConfig) -> None:
         transformer, optimizer, dataloader, lr_scheduler
     )
     pipeline.transformer = accelerator.unwrap_model(transformer)
+    if global_step > 0:
+        for _ in range(global_step):
+            lr_scheduler.step()
+        log.info(
+            "Advanced LR scheduler to step {} (optimizer state not restored)",
+            global_step,
+        )
     accelerator.init_trackers("flux-domain-lora", config=_flux_tracker_config(config))
 
     _run_training_loop(
@@ -505,7 +515,7 @@ def run_training(
     config_path: str, data_config_path: str, stamp_output: bool = True
 ) -> None:
     train_cfg, data_cfg = load_train_config(config_path, data_config_path)
-    if stamp_output:
+    if stamp_output and not train_cfg.resume_from_checkpoint:
         train_cfg.output_dir = stamp_output_dir(train_cfg.output_dir)
         with open(config_path) as f:
             raw = json.load(f)

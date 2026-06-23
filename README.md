@@ -12,7 +12,7 @@ The Python package directory remains `videotuna/` for compatibility; Poetry proj
 |-------|-------|------|
 | 1 — T2I | FLUX.1-dev LoRA | Train domain still-image style |
 | 2 — T2V | Wan 2.1 T2V LoRA | Train domain short-video motion |
-| 3 — Validate | Wan 2.2 Diffusers | Production validation (see [wan2.2-inference-profile.md](docs/runbooks/wan2.2-inference-profile.md); bridge work in progress) |
+| 3 — Validate | Wan 2.2 Diffusers | Production domain LoRA validation via `validate-domain-t2v` (see [domain-adult-finetune.md](docs/runbooks/domain-adult-finetune.md)); general 720p inference profile in [wan2.2-inference-profile.md](docs/runbooks/wan2.2-inference-profile.md) |
 
 QA uses **training ImageLogger callbacks** and **LoRA smoke inference** on held-out prompts — not generic T2V benchmarking (VBench removed).
 
@@ -117,7 +117,15 @@ poetry run python scripts/inference_new.py \
   --prompt "sks_style, slow camera push-in"
 ```
 
-**Phase 2 production (Wan 2.2 — deferred):** see [`docs/runbooks/wan2.2-inference-profile.md`](docs/runbooks/wan2.2-inference-profile.md).
+**Phase 2 production (Wan 2.2 domain LoRA validation):**
+
+```bash
+poetry run validate-domain-t2v \
+  --trained_ckpt results/train/.../denoiser-000-000000025.ckpt \
+  --prompt_file inputs/t2v/domain_prompt.txt
+```
+
+See [`docs/runbooks/domain-adult-finetune.md`](docs/runbooks/domain-adult-finetune.md) for VRAM presets and known bridge limitations. For general Wan 2.2 720p inference (non-domain), see [`docs/runbooks/wan2.2-inference-profile.md`](docs/runbooks/wan2.2-inference-profile.md).
 
 ## VRAM and hardware
 

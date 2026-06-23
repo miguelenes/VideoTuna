@@ -7,7 +7,7 @@
 - **Phase 1:** Flux T2I LoRA (`videotuna/training/flux_lora/`, `train-domain-t2i`)
 - **Phase 2:** Wan 2.1 T2V LoRA (`videotuna/flow/wanvideo.py`, `train-domain-t2v`)
 - **Phase 2.5 (optional):** Wan 2.1 I2V LoRA (`train-domain-i2v`) — LoRA-only; full Wan fine-tune is out of scope
-- **Phase 3:** Wan 2.2 Diffusers validation inference — **deferred** (see Prompt 4 / `wan2.2-inference-profile.md`)
+- **Phase 3:** Wan 2.2 Diffusers domain LoRA validation via `validate-domain-t2v` (production-ready; see runbook). General Wan 2.2 720p inference profile remains optional — [`wan2.2-inference-profile.md`](docs/runbooks/wan2.2-inference-profile.md).
 
 Training stacks differ by design — see [ADR-001](docs/decisions/0001-dual-training-stacks.md).
 
@@ -78,8 +78,8 @@ Legacy aliases: `train-flux-lora`, `train-wan2-1-t2v-lora`
 
 ```bash
 poetry run inference-domain-t2i --lorackpt results/train/flux-domain-adult/checkpoint-2000
-poetry run python scripts/inference_new.py --config configs/inference/presets/wan_domain_lora_smoke.yaml ...
-poetry run inference-wan2.2-t2v-720p   # Phase 3 — deferred
+poetry run validate-domain-t2v --trained_ckpt results/train/.../denoiser.ckpt
+poetry run inference-wan2.2-t2v-720p   # general Wan 2.2 720p — optional
 ```
 
 ### Dev tooling

@@ -21,6 +21,7 @@ _ALLOWED_TRAIN_KEYS = frozenset(
         "disable_benchmark",
         "disable_tf32",
         "gradient_checkpointing",
+        "gradient_accumulation_steps",
         "learning_rate",
         "lora_rank",
         "lora_type",
@@ -79,6 +80,7 @@ def _coerce_value(key: str, value: Any) -> Any:
         "num_workers",
         "aspect_bucket_rounding",
         "minimum_image_size",
+        "gradient_accumulation_steps",
     }:
         return int(value)
     if key in {
@@ -143,6 +145,7 @@ class FluxLoraTrainConfig:
     disable_tf32: bool = False
     disable_benchmark: bool = False
     gradient_checkpointing: bool = True
+    gradient_accumulation_steps: int = 1
     caption_dropout_probability: float = 0.0
     write_batch_size: int = 128
     validation_prompt: str | None = None
@@ -248,6 +251,23 @@ def _validate_train_values(normalized: dict[str, Any]) -> None:
         raise ValueError(
             "validation_guidance_rescale is not supported for Flux (must be 0.0)"
         )
+    _validate_gradient_accumulation(normalized)
+    _validate_resume_from_checkpoint(normalized)
+
+
+def _validate_gradient_accumulation(normalized: dict[str, Any]) -> None:
+    grad_accum = int(normalized.get("gradient_accumulation_steps", 1))
+    if grad_accum < 1:
+        raise ValueError(f"gradient_accumulation_steps must be >= 1, got {grad_accum}")
+
+
+def _validate_resume_from_checkpoint(normalized: dict[str, Any]) -> None:
+    resume = normalized.get("resume_from_checkpoint")
+    if resume is not None:
+        if not isinstance(resume, str) or not resume.strip():
+            raise ValueError(
+                "resume_from_checkpoint must be null, 'latest', or a non-empty path"
+            )
 
 
 def _merge_data_config(
@@ -342,6 +362,9 @@ def load_train_config(
         disable_tf32=bool(normalized.get("disable_tf32", False)),
         disable_benchmark=bool(normalized.get("disable_benchmark", False)),
         gradient_checkpointing=bool(normalized.get("gradient_checkpointing", True)),
+        gradient_accumulation_steps=int(
+            normalized.get("gradient_accumulation_steps", 1)
+        ),
         caption_dropout_probability=float(
             normalized.get("caption_dropout_probability", 0.0)
         ),

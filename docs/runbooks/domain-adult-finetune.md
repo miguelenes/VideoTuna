@@ -104,6 +104,19 @@ Checkpoints: `results/train/flux-domain-adult/checkpoint-<step>/` (Diffusers LoR
 
 For a quick smoke on GPU, temporarily set `"--max_train_steps": 50` in the JSON.
 
+### Resume training
+
+Set `"--resume_from_checkpoint": "latest"` (or a relative path like `"checkpoint-500"`) in `flux_t2i.json`.
+
+| Behavior | Detail |
+|----------|--------|
+| First run | `train-domain-t2i` stamps a timestamped `output_dir` (e.g. `flux-domain-adult_20260101120000`) and writes `checkpoint-*` dirs there. |
+| Resume run | When `resume_from_checkpoint` is set, output-dir stamping is **skipped** so `"latest"` resolves checkpoints under the existing stamped directory. |
+| Restored | LoRA safetensors from `checkpoint-{step}/`; training continues from that step; LR scheduler is advanced to match the step. |
+| Not restored | Optimizer momentum, Accelerate RNG, and full experiment metadata. |
+
+To start a fresh run, remove `resume_from_checkpoint` from the JSON or set it to `null`. If resume is requested but no matching checkpoint exists under `output_dir`, training fails with an error.
+
 ### Inference smoke
 
 ```bash
@@ -336,7 +349,12 @@ poetry run test tests/test_poetry_scripts.py -q
 ## Known limitations
 
 - **FLUX.1 only:** Training uses FLUX.1-dev; see [`docs/MODEL_VERSIONS.md`](../MODEL_VERSIONS.md).
-- **Wan 2.1 → 2.2:** LoRA trains on Wan 2.1 native; Wan 2.2 validation uses `videotuna/utils/wan_lora_bridge.py` (loads onto both `transformer` and `transformer_2`).
+- **Flux resume:** LoRA weights and step counter only — optimizer state is not saved or restored.
+- **Wan 2.1 → 2.2 bridge (`validate-domain-t2v`):** Production-ready for domain LoRA QA via `poetry run validate-domain-t2v`. The bridge remaps native Wan 2.1 Lightning keys onto Wan 2.2 Diffusers and loads the **same** LoRA onto both high-noise (`transformer`) and low-noise (`transformer_2`) experts. Limitations:
+  - Default smoke preset uses **4 inference steps** at 720×1280 — use [`balanced_wan2_2_720p.yaml`](../../configs/inference/presets/balanced_wan2_2_720p.yaml) for higher-quality QA.
+  - Remap ratio below 90% logs a warning (does not block load) — run visual QA and `tools/spike_wan_lora_bridge.py --input <ckpt>` if keys look wrong.
+  - Training runs on Wan 2.1 block layout; validate visually after bridge — block-count mismatch may leave some pipeline LoRA slots at init.
+  - Optional offline export: `tools/convert_wan_lora_21_to_22.py` writes `high_noise.safetensors` / `low_noise.safetensors`.
 
 ## Related docs
 

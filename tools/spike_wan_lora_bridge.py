@@ -12,6 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from videotuna.testing.wan_lora_ckpt import build_synthetic_wan_lora_ckpt  # noqa: E402
 from videotuna.utils.wan_lora_bridge import (  # noqa: E402
     analyze_native_wan_lora_ckpt,
     apply_native_wan_lora_to_pipeline,
@@ -23,25 +24,12 @@ from videotuna.utils.wan_lora_bridge import (  # noqa: E402
 
 def _build_synthetic_ckpt(path: Path, *, num_blocks: int = 2, rank: int = 16) -> None:
     """Write a synthetic denoiser ckpt with production-style key names."""
+    build_synthetic_wan_lora_ckpt(path, num_blocks=num_blocks, rank=rank)
     import torch
 
-    dim_in, dim_mid, dim_out = 5120, 13824, 5120
-    state: dict[str, torch.Tensor] = {}
-    for i in range(num_blocks):
-        for p in ("q", "k", "v", "o"):
-            state[f"denoiser.blocks.{i}.self_attn.{p}.lora_A.weight"] = torch.randn(
-                rank, dim_in
-            )
-            state[f"denoiser.blocks.{i}.self_attn.{p}.lora_B.weight"] = torch.randn(
-                dim_in if p != "o" else dim_in, rank
-            )
-        state[f"denoiser.blocks.{i}.ffn.0.lora_A.weight"] = torch.randn(rank, dim_in)
-        state[f"denoiser.blocks.{i}.ffn.0.lora_B.weight"] = torch.randn(dim_mid, rank)
-        state[f"denoiser.blocks.{i}.ffn.2.lora_A.weight"] = torch.randn(rank, dim_mid)
-        state[f"denoiser.blocks.{i}.ffn.2.lora_B.weight"] = torch.randn(dim_out, rank)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    torch.save({"state_dict": state}, path)
-    print(f"Wrote synthetic checkpoint: {path} ({len(state)} tensors)")
+    raw = torch.load(path, map_location="cpu", weights_only=False)
+    count = len(raw.get("state_dict", {}))
+    print(f"Wrote synthetic checkpoint: {path} ({count} tensors)")
 
 
 def _inventory_only(ckpt: Path) -> int:

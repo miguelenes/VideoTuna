@@ -9,6 +9,7 @@ import pytest
 import torch
 from diffusers.models.transformers.transformer_wan import WanTransformer3DModel
 
+from videotuna.testing.wan_lora_ckpt import build_synthetic_wan_lora_ckpt
 from videotuna.utils.wan_lora_bridge import (
     WAN_DIFFUSERS_LORA_TARGETS,
     _infer_lora_rank,
@@ -169,6 +170,9 @@ def test_apply_native_wan_lora_to_dual_transformer():
 
     assert len(reports) == 2
     assert {r.expert for r in reports} == {"transformer", "transformer_2"}
+    for report in reports:
+        assert report.remap_ratio >= 0.9
+        assert report.missing_keys == []
     pipeline.set_adapters.assert_called_once()
     call = pipeline.set_adapters.call_args
     adapters = call.args[0] if call.args else call.kwargs["adapter_names"]
@@ -189,11 +193,7 @@ def test_validate_domain_t2v_gpu_smoke(tmp_path):
     if not torch.cuda.is_available():
         pytest.skip("GPU not available")
 
-    ckpt = tmp_path / "denoiser.ckpt"
-    state = _production_native_keys(block=0)
-    # duplicate for block 1 to match 1-layer tiny model expectations minimally
-    state.update(_production_native_keys(block=0))
-    torch.save({"state_dict": {f"denoiser.{k}": v for k, v in state.items()}}, ckpt)
+    ckpt = build_synthetic_wan_lora_ckpt(tmp_path / "denoiser.ckpt", num_blocks=2)
 
     from diffusers import WanPipeline
 
@@ -202,5 +202,10 @@ def test_validate_domain_t2v_gpu_smoke(tmp_path):
         torch_dtype=torch.bfloat16,
     )
     reports = apply_native_wan_lora_to_pipeline(pipeline, ckpt)
-    assert all(r.loaded_lora_params > 0 for r in reports)
-    assert WAN_DIFFUSERS_LORA_TARGETS  # referenced for coverage
+    assert len(reports) == 2
+    assert {r.expert for r in reports} == {"transformer", "transformer_2"}
+    for report in reports:
+        assert report.remap_ratio >= 0.9
+        assert report.missing_keys == []
+        assert report.loaded_lora_params > 0
+    assert WAN_DIFFUSERS_LORA_TARGETS

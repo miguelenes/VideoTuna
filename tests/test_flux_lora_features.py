@@ -18,11 +18,18 @@ from videotuna.training.flux_lora.bucketing import (
 )
 from videotuna.training.flux_lora.checkpoint import (
     find_latest_checkpoint,
+    load_lora_checkpoint,
     prune_checkpoints,
 )
 from videotuna.training.flux_lora.config import FluxLoraTrainConfig, load_train_config
 from videotuna.training.flux_lora.text_embed_cache import build_or_load_cache
-from videotuna.training.flux_lora.train import _run_validation
+from videotuna.training.flux_lora.train import (
+    _resolve_resume_checkpoint,
+    _run_validation,
+    create_flux_accelerator,
+    run_training,
+    train,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FLUX_CONFIG = REPO_ROOT / "configs" / "domain" / "flux_t2i.json"
@@ -66,6 +73,7 @@ def test_flux_domain_config_loads_all_fields():
     assert train_cfg.validation_num_inference_steps == 10
     assert train_cfg.checkpoints_total_limit == 20
     assert train_cfg.resume_from_checkpoint == "latest"
+    assert train_cfg.gradient_accumulation_steps == 1
     assert train_cfg.write_batch_size == 1
     assert train_cfg.aspect_bucket_rounding == 2
     assert train_cfg.resolution_type == "pixel_area"
@@ -309,3 +317,169 @@ def test_run_validation_skips_when_step_not_divides(tmp_path):
 
     mock_pipeline.assert_not_called()
     assert not (tmp_path / "validation").exists()
+
+
+def test_resolve_resume_checkpoint_latest(tmp_path):
+    (tmp_path / "checkpoint-10").mkdir()
+    (tmp_path / "checkpoint-50").mkdir()
+    config = FluxLoraTrainConfig(
+        pretrained_model_name_or_path="black-forest-labs/FLUX.1-dev",
+        output_dir=str(tmp_path),
+        instance_data_dir="data",
+        resume_from_checkpoint="latest",
+    )
+    resolved = _resolve_resume_checkpoint(config, tmp_path)
+    assert resolved is not None
+    assert resolved.name == "checkpoint-50"
+
+
+def test_resolve_resume_checkpoint_relative_path(tmp_path):
+    (tmp_path / "checkpoint-100").mkdir()
+    config = FluxLoraTrainConfig(
+        pretrained_model_name_or_path="black-forest-labs/FLUX.1-dev",
+        output_dir=str(tmp_path),
+        instance_data_dir="data",
+        resume_from_checkpoint="checkpoint-100",
+    )
+    resolved = _resolve_resume_checkpoint(config, tmp_path)
+    assert resolved is not None
+    assert resolved.name == "checkpoint-100"
+
+
+def test_resolve_resume_checkpoint_missing_returns_none(tmp_path):
+    config = FluxLoraTrainConfig(
+        pretrained_model_name_or_path="black-forest-labs/FLUX.1-dev",
+        output_dir=str(tmp_path),
+        instance_data_dir="data",
+        resume_from_checkpoint="latest",
+    )
+    assert _resolve_resume_checkpoint(config, tmp_path) is None
+
+
+def test_invalid_resume_from_checkpoint_raises(tmp_path):
+    data_path = _minimal_flux_data_backend(tmp_path)
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        '{"--pretrained_model_name_or_path":"black-forest-labs/FLUX.1-dev",'
+        '"--output_dir":"results/train/test",'
+        '"--max_train_steps":10,'
+        '"--resume_from_checkpoint":""}',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="resume_from_checkpoint"):
+        load_train_config(config_path, data_path)
+
+
+def test_gradient_accumulation_steps_parses_from_json(tmp_path):
+    data_path = _minimal_flux_data_backend(tmp_path)
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        '{"--pretrained_model_name_or_path":"black-forest-labs/FLUX.1-dev",'
+        '"--output_dir":"results/train/test",'
+        '"--max_train_steps":10,'
+        '"--gradient_accumulation_steps":4}',
+        encoding="utf-8",
+    )
+    train_cfg, _ = load_train_config(config_path, data_path)
+    assert train_cfg.gradient_accumulation_steps == 4
+
+
+def test_invalid_gradient_accumulation_steps_raises(tmp_path):
+    data_path = _minimal_flux_data_backend(tmp_path)
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        '{"--pretrained_model_name_or_path":"black-forest-labs/FLUX.1-dev",'
+        '"--output_dir":"results/train/test",'
+        '"--max_train_steps":10,'
+        '"--gradient_accumulation_steps":0}',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="gradient_accumulation_steps"):
+        load_train_config(config_path, data_path)
+
+
+def test_create_flux_accelerator_passes_gradient_accumulation_steps(tmp_path):
+    target = "videotuna.training.flux_lora.train.Accelerator"
+    with mock.patch(target) as accelerator_cls:
+        create_flux_accelerator(
+            tmp_path,
+            mixed_precision="bf16",
+            gradient_accumulation_steps=4,
+        )
+    accelerator_cls.assert_called_once()
+    assert accelerator_cls.call_args.kwargs["gradient_accumulation_steps"] == 4
+
+
+def test_run_training_skips_stamp_when_resuming(tmp_path):
+    data_path = _minimal_flux_data_backend(tmp_path)
+    config_path = tmp_path / "config.json"
+    config_path.write_text("{}", encoding="utf-8")
+    train_cfg = FluxLoraTrainConfig(
+        pretrained_model_name_or_path="black-forest-labs/FLUX.1-dev",
+        output_dir=str(tmp_path / "run"),
+        instance_data_dir="data",
+        resume_from_checkpoint="latest",
+    )
+    data_cfg = mock.MagicMock()
+    with (
+        mock.patch(
+            "videotuna.training.flux_lora.train.load_train_config",
+            return_value=(train_cfg, data_cfg),
+        ),
+        mock.patch("videotuna.training.flux_lora.train.stamp_output_dir") as stamp,
+        mock.patch("videotuna.training.flux_lora.train.train") as train_fn,
+    ):
+        run_training(str(config_path), str(data_path))
+    stamp.assert_not_called()
+    train_fn.assert_called_once_with(train_cfg, data_cfg)
+
+
+def test_train_raises_when_resume_checkpoint_missing(tmp_path):
+    config = FluxLoraTrainConfig(
+        pretrained_model_name_or_path="black-forest-labs/FLUX.1-dev",
+        output_dir=str(tmp_path),
+        instance_data_dir="data",
+        resume_from_checkpoint="latest",
+    )
+    data_config = mock.MagicMock()
+    mock_transformer = mock.MagicMock()
+    with (
+        mock.patch(
+            "videotuna.training.flux_lora.train.load_flux_training_models",
+            return_value={
+                "weight_dtype": torch.bfloat16,
+                "transformer": mock_transformer,
+                "vae": mock.MagicMock(),
+                "text_encoder_one": mock.MagicMock(),
+                "text_encoder_two": mock.MagicMock(),
+                "tokenizer_one": mock.MagicMock(),
+                "tokenizer_two": mock.MagicMock(),
+            },
+        ),
+        mock.patch(
+            "videotuna.training.flux_lora.train.create_flux_accelerator",
+            return_value=mock.MagicMock(
+                device=torch.device("cpu"),
+                is_main_process=True,
+            ),
+        ),
+    ):
+        with pytest.raises(ValueError, match="No checkpoint found"):
+            train(config, data_config)
+
+
+def test_load_lora_checkpoint_roundtrip():
+    pytest.importorskip("peft")
+    mock_transformer = mock.MagicMock()
+    lora_state = {"layer.lora_A.weight": torch.zeros(4, 8)}
+    with (
+        mock.patch(
+            "videotuna.training.flux_lora.checkpoint.FluxPipeline.lora_state_dict",
+            return_value=lora_state,
+        ),
+        mock.patch(
+            "videotuna.training.flux_lora.checkpoint.set_peft_model_state_dict",
+        ) as set_state,
+    ):
+        load_lora_checkpoint(mock_transformer, "/tmp/checkpoint-100")
+    set_state.assert_called_once_with(mock_transformer, lora_state)
