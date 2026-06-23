@@ -64,7 +64,7 @@ Debug inventory: `poetry run python tools/spike_wan_lora_bridge.py --synthetic /
 
 ## Wan training stack pins (DeepSpeed + PyTorch Lightning audit)
 
-PrivTune uses a **dual training stack** by design:
+See [ADR-001](decisions/0001-dual-training-stacks.md) for rationale; pins below.
 
 | Phase | Stack | Entry point |
 |-------|-------|-------------|

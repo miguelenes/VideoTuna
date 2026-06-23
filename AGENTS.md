@@ -9,6 +9,8 @@
 - **Phase 2.5 (optional):** Wan 2.1 I2V LoRA (`train-domain-i2v`) — LoRA-only; full Wan fine-tune is out of scope
 - **Phase 3:** Wan 2.2 Diffusers validation inference — **deferred** (see Prompt 4 / `wan2.2-inference-profile.md`)
 
+Training stacks differ by design — see [ADR-001](docs/decisions/0001-dual-training-stacks.md).
+
 Canonical runbook: [`docs/runbooks/domain-adult-finetune.md`](docs/runbooks/domain-adult-finetune.md)
 
 Python 3.11+; Poetry default (`poetry run …`); optional uv.
@@ -130,6 +132,7 @@ docs/runbooks/
 
 | Doc | Topic |
 |-----|-------|
+| [0001-dual-training-stacks.md](docs/decisions/0001-dual-training-stacks.md) | Why Flux uses Accelerate and Wan uses Lightning+DeepSpeed |
 | [domain-adult-finetune.md](docs/runbooks/domain-adult-finetune.md) | Domain training runbook |
 | [wan2.2-inference-profile.md](docs/runbooks/wan2.2-inference-profile.md) | Wan 2.2 rental GPU presets (Phase 3) |
 | [checkpoints.md](docs/checkpoints.md) | Weight layout |
