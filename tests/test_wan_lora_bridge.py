@@ -125,6 +125,23 @@ def test_export_diffusers_lora_state_dicts(tmp_path):
     assert "blocks.0.attn1.to_q.lora_A.weight" in exports["high_noise"]
 
 
+def test_exported_lora_loads_via_diffusers_adapter(tmp_path):
+    """Offline export path: safetensors → WanTransformer3DModel.load_lora_adapter."""
+    from safetensors.torch import save_file
+
+    ckpt = tmp_path / "denoiser.ckpt"
+    state = _production_native_keys()
+    torch.save({"state_dict": state}, ckpt)
+    exports = export_diffusers_lora_state_dicts(ckpt)
+    lora_path = tmp_path / "high_noise.safetensors"
+    save_file(exports["high_noise"], lora_path)
+
+    transformer = _tiny_transformer()
+    transformer.load_lora_adapter(str(lora_path), adapter_name="exported", prefix=None)
+    transformer.set_adapters(["exported"], weights=[1.0])
+    assert _count_lora(transformer) == 12
+
+
 def test_remap_coverage_on_production_fixture():
     native = _production_native_keys()
     transformed, total, coverage = compute_remap_coverage(native)
