@@ -22,6 +22,8 @@ build-backend = "poetry.core.masonry.api"
 #   `poetry install -E cuda --with training -E video-fast`
 # Optional Wan transformer quant (quanto backend):
 #   `poetry install -E cuda -E quanto`
+# Optional Flux Trackio experiment tracking:
+#   `poetry install -E cuda --with training -E trackio`
 # Dev:      `poetry install --with dev`
 
 [tool.poetry.dependencies]
@@ -86,6 +88,8 @@ dashscope = "^1.23.0"
 easydict = "^1.13"
 torchcodec = { version = "~0.2.1", optional = true }
 optimum-quanto = { version = ">=0.2.6", optional = true }
+# Trackio 0.21+ requires huggingface-hub>=1.10; transformers pins hub<1.0.
+trackio = { version = "~0.20.0", optional = true }
 
 [tool.poetry.extras]
 cuda = [
@@ -113,6 +117,7 @@ cuda124 = []
 cuda126 = ["cuda"]
 video-fast = ["torchcodec"]
 quanto = ["optimum-quanto"]
+trackio = ["trackio"]
 
 [tool.poetry.group.training]
 optional = true

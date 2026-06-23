@@ -33,6 +33,7 @@ def test_flux_training_config_loader():
     assert train_cfg.max_train_steps == 2000
     assert train_cfg.checkpoints_total_limit == 20
     assert train_cfg.write_batch_size == 1
+    assert train_cfg.optimizer == "adamw_bf16"
     assert data_cfg.caption_strategy == "filename"
 
 

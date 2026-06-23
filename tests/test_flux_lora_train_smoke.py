@@ -206,7 +206,34 @@ def test_create_flux_accelerator_uses_tensorboard(tmp_path, monkeypatch):
         "videotuna.training.flux_lora.train.Accelerator",
         fake_accelerator,
     )
-    create_flux_accelerator(tmp_path, mixed_precision="bf16")
+    create_flux_accelerator(
+        tmp_path,
+        mixed_precision="bf16",
+        metrics_backend="tensorboard",
+    )
     assert captured["log_with"] == "tensorboard"
     assert captured["project_config"].logging_dir == str(tmp_path / "tensorboard")
     assert captured["project_config"].project_dir == str(tmp_path)
+
+
+def test_create_flux_accelerator_uses_trackio_dual_logging(tmp_path, monkeypatch):
+    from unittest import mock
+
+    from videotuna.training.flux_lora.train import create_flux_accelerator
+
+    captured: dict = {}
+
+    def fake_accelerator(**kwargs):
+        captured.update(kwargs)
+        return mock.MagicMock()
+
+    monkeypatch.setattr(
+        "videotuna.training.flux_lora.train.Accelerator",
+        fake_accelerator,
+    )
+    monkeypatch.setattr(
+        "videotuna.utils.training_metrics.trackio_available",
+        lambda: True,
+    )
+    create_flux_accelerator(tmp_path, mixed_precision="bf16", metrics_backend="trackio")
+    assert captured["log_with"] == ["tensorboard", "trackio"]

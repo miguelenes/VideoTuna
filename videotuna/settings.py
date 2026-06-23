@@ -13,6 +13,7 @@ CpuModeSetting = Literal["off", "smoke", "force"]
 AttnBackendSetting = Literal["auto", "flash", "sdpa", "eager"]
 TorchCompileModeSetting = Literal["reduce-overhead", "max-autotune"]
 MetricsOwnerSetting = Literal["script", "flow"]
+MetricsBackendSetting = Literal["tensorboard", "trackio"]
 
 ENV_PREFIX = "VIDEOTUNA_"
 ENV_COMPUTE_BACKEND = f"{ENV_PREFIX}COMPUTE_BACKEND"
@@ -23,6 +24,9 @@ ENV_ATTN_BACKEND_STRICT = f"{ENV_PREFIX}ATTN_BACKEND_STRICT"
 ENV_TORCH_COMPILE = f"{ENV_PREFIX}TORCH_COMPILE"
 ENV_TORCH_COMPILE_MODE = f"{ENV_PREFIX}TORCH_COMPILE_MODE"
 ENV_METRICS_OWNER = f"{ENV_PREFIX}METRICS_OWNER"
+ENV_METRICS_BACKEND = f"{ENV_PREFIX}METRICS_BACKEND"
+ENV_TRACKIO_SPACE_ID = f"{ENV_PREFIX}TRACKIO_SPACE_ID"
+ENV_TRACKIO_PROJECT = f"{ENV_PREFIX}TRACKIO_PROJECT"
 ENV_LOG_LEVEL = f"{ENV_PREFIX}LOG_LEVEL"
 ENV_BENCH_MODEL = f"{ENV_PREFIX}BENCH_MODEL"
 
@@ -68,6 +72,9 @@ class PrivTuneSettings(BaseSettings):
     torch_compile: bool = False
     torch_compile_mode: TorchCompileModeSetting = "reduce-overhead"
     metrics_owner: MetricsOwnerSetting = "script"
+    metrics_backend: MetricsBackendSetting = "tensorboard"
+    trackio_space_id: str | None = None
+    trackio_project: str | None = None
     log_level: str = "INFO"
     bench_model: str | None = None
 
@@ -75,6 +82,7 @@ class PrivTuneSettings(BaseSettings):
         "compute_backend",
         "attn_backend",
         "metrics_owner",
+        "metrics_backend",
         mode="before",
     )
     @classmethod
@@ -129,9 +137,14 @@ class PrivTuneSettings(BaseSettings):
             return "INFO"
         return str(value).strip().upper()
 
-    @field_validator("bench_model", mode="before")
+    @field_validator(
+        "bench_model",
+        "trackio_space_id",
+        "trackio_project",
+        mode="before",
+    )
     @classmethod
-    def _normalize_bench_model(cls, value: object) -> str | None:
+    def _normalize_optional_string(cls, value: object) -> str | None:
         if value is None:
             return None
         text = str(value).strip()

@@ -41,7 +41,7 @@ poetry run install-deepspeed   # required for Wan LoRA (ZeRO-3 offload)
 
 ## Training metrics
 
-PrivTune uses **TensorBoard only** for training experiment tracking (no wandb, no Trackio). Console logs (stdlib / loguru / tqdm) are for tailing only — not the canonical metrics store.
+PrivTune uses **TensorBoard** as the default training experiment tracker. Console logs (stdlib / loguru / tqdm) are for tailing only — not the canonical metrics store.
 
 | Phase | Canonical metrics path | Logged scalars | Other artifacts (not loggers) |
 |-------|------------------------|----------------|-------------------------------|
@@ -60,6 +60,40 @@ tensorboard --logdir results/train
 ```
 
 On cloud GPUs, see [cloud-gpu-training.md](cloud-gpu-training.md) for SSH port-forward to TensorBoard.
+
+### Optional Trackio (Flux Phase 1)
+
+[Trackio](https://huggingface.co/docs/trackio) is an opt-in Hugging Face experiment tracker that logs **alongside** TensorBoard when enabled. Wan phases remain TensorBoard-only.
+
+```bash
+# Install optional extra (in addition to training profile)
+poetry install -E cuda --with training -E trackio
+
+# Enable dual logging (TensorBoard + Trackio)
+export VIDEOTUNA_METRICS_BACKEND=trackio
+poetry run train-domain-t2i
+```
+
+Logged metrics match TensorBoard: `train/loss`, `train/lr`, and `validation/sample` (preview images).
+
+View the local Trackio dashboard:
+
+```bash
+trackio show
+```
+
+For remote monitoring on rented GPUs (no SSH port-forward), sync to a **private** Hugging Face Space:
+
+```bash
+export HF_TOKEN=...                              # required for Space sync
+export VIDEOTUNA_TRACKIO_SPACE_ID=username/privtune-trackio  # private Space
+export VIDEOTUNA_METRICS_BACKEND=trackio
+poetry run train-domain-t2i
+```
+
+Optional project name override: `VIDEOTUNA_TRACKIO_PROJECT` (default: `flux-domain-lora`).
+
+**Privacy:** domain validation images may contain sensitive content — use **private** Spaces only if syncing to Hugging Face.
 
 **Note:** Wan `ImageLogger` previews require a non-stub `log_images` implementation in `wanvideo.py`; until then, rely on smoke inference for visual QA.
 
