@@ -34,7 +34,7 @@ PrivTune uses **TensorBoard only** for training experiment tracking (no wandb, n
 
 | Phase | Canonical metrics path | Logged scalars | Other artifacts (not loggers) |
 |-------|------------------------|----------------|-------------------------------|
-| **1 — Flux T2I** | `{output_dir}/tensorboard/` | `train/loss`, `train/lr` | LoRA checkpoints, `training_config.json` |
+| **1 — Flux T2I** | `{output_dir}/tensorboard/` | `train/loss`, `train/lr`, `validation/sample` | LoRA checkpoints, `{output_dir}/validation/step-*.png`, `training_config.json` |
 | **2 — Wan T2V** | `{workdir}/tensorboard/` | `train/loss`, LR monitor, `epoch_time_s`, `peak_vram_gb` | `metrics.json` (epoch summary export), `images/train/` previews, `loginfo/*.txt` |
 | **2.5 — Wan I2V** | Same as T2V | Same | Same |
 
@@ -78,6 +78,8 @@ data/t2i/domain/
 |------|---------|
 | `configs/domain/flux_t2i.json` | Training hyperparameters |
 | `configs/domain/flux_t2i_data.json` | Dataset backend (`data/t2i/domain`) |
+
+In-training preview images are controlled by `validation_steps`, `validation_prompt`, and `validation_resolution` in `flux_t2i.json`. Every `validation_steps` training steps, the trainer writes a PNG under `{output_dir}/validation/` and logs it to TensorBoard as `validation/sample`. This is separate from post-training smoke inference via `inference-domain-t2i`.
 
 ### Download base weights
 
